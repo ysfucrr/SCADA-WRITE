@@ -1,0 +1,210 @@
+import { connectToDatabase } from "./mongodb";
+import { backendLogger } from './logger/BackendLogger';
+import { ObjectId } from "mongodb";
+
+// This map will hold trend definitions, and the service will react to events
+const activeTrendLoggers = new Map<string, TrendLogger>();
+// This map will cache the latest value for every register received from the poller
+const lastKnownValues = new Map<string, number>();
+
+export class TrendLoggerService {
+    public isShuttingDown: boolean = false;
+    private configUpdateTimeout: NodeJS.Timeout | null = null;
+
+
+    constructor() {
+        backendLogger.info("[TREND-LOGGER] Service created", "TrendLoggerService");
+        this.setupShutdownHandlers();
+        this.listenForDbChanges();
+    }
+
+    private setupShutdownHandlers(): void {
+        process.on('SIGTERM', () => this.shutdown('SIGTERM'));
+        process.on('SIGINT', () => this.shutdown('SIGINT'));
+        process.on('SIGUSR2', () => this.shutdown('SIGUSR2'));
+    }
+
+    public async shutdown(signal: string): Promise<void> {
+        if (this.isShuttingDown) return;
+        this.isShuttingDown = true;
+        backendLogger.info(`[TREND-LOGGER] Service shutting down (${signal})...`, "TrendLoggerService");
+
+        const savePromises: Promise<void>[] = [];
+        for (const trendLogger of activeTrendLoggers.values()) {
+            const lastValue = lastKnownValues.get(trendLogger.registerId);
+            if (lastValue !== undefined) {
+                savePromises.push(trendLogger.storeRegisterValue(lastValue).catch(err => {
+                    backendLogger.error(`[TREND-LOGGER] Error saving ${trendLogger._id}: ` + (err instanceof Error ? err.message : String(err)), "TrendLoggerService");
+                }));
+            }
+        }
+
+        if (savePromises.length > 0) {
+            await Promise.allSettled(savePromises);
+            backendLogger.info(`[TREND-LOGGER] Saved last values for ${savePromises.length} trend loggers`, "TrendLoggerService");
+        }
+
+        if (['SIGTERM', 'SIGINT'].includes(signal)) {
+            process.exit(0);
+        }
+    }
+    
+    private async listenForDbChanges() {
+        try {
+            const { db } = await connectToDatabase();
+            const changeStream = db.collection('trendLogs').watch();
+
+            changeStream.on('change', (change) => {
+                backendLogger.info('Change detected in trendLogs collection, reloading definitions.', 'TrendLoggerService', { changeType: change.operationType });
+                if (this.configUpdateTimeout) {
+                    clearTimeout(this.configUpdateTimeout);
+                }
+                this.configUpdateTimeout = setTimeout(() => {
+                    this.loadAllTrendLoggers();
+                }, 500); // 500ms debounce window
+            });
+            backendLogger.info('Watching trendLogs collection for changes.', 'TrendLoggerService');
+        } catch (error) {
+            backendLogger.error('Failed to set up watch on trendLogs collection.', 'TrendLoggerService', { error: (error as Error).message });
+        }
+    }
+
+    public initialize(): this {
+        this.loadAllTrendLoggers().catch(err => {
+            backendLogger.error(`[TREND-LOGGER] Error loading trend loggers: ` + (err instanceof Error ? err.message : String(err)), "TrendLoggerService");
+        });
+        return this;
+    }
+
+    public listenToPoller(poller: import('./modbus/ModbusPoller').ModbusPoller): void {
+        poller.on('registerUpdated', (data: { id: string; value: number }) => {
+            lastKnownValues.set(data.id, data.value);
+            
+            const trendLogger = activeTrendLoggers.get(data.id);
+            if (trendLogger) {
+                const now = new Date();
+                
+                // Check if the endDate has passed
+                if (trendLogger.endDate && now > trendLogger.endDate) {
+                    // Optional: Mark as 'stopped' in DB or simply remove from active loggers
+                    activeTrendLoggers.delete(data.id);
+                    backendLogger.info(`Trend logger stopped as endDate has passed for register ${data.id}.`, 'TrendLoggerService');
+                    return; // Stop processing for this logger
+                }
+
+                const intervalMs = trendLogger.getIntervalMs();
+                if (now.getTime() - trendLogger.lastSaveTimestamp >= intervalMs) {
+                    trendLogger.storeRegisterValue(data.value);
+                    trendLogger.lastSaveTimestamp = now.getTime();
+                }
+            }
+        });
+    }
+
+    public async loadAllTrendLoggers() {
+        backendLogger.info("[TREND-LOGGER] Reloading all trend logger definitions...", "TrendLoggerService");
+        const { db } = await connectToDatabase();
+        const trendLogs = await db.collection('trendLogs').find({ status: { $ne: 'stopped' } }).toArray();
+        
+        const newConfigMap = new Map<string, TrendLogger>();
+
+        for (const trendLog of trendLogs) {
+            const registerId = trendLog.registerId;
+            const newLogger = new TrendLogger(trendLog._id.toString(), registerId, trendLog.analyzerId, trendLog.period, trendLog.interval, trendLog.endDate);
+            
+            const existingLogger = activeTrendLoggers.get(registerId);
+            
+            // If a logger for this register already exists and its timing is unchanged, preserve its last save time to avoid resetting the schedule.
+            if (existingLogger && existingLogger.period === newLogger.period && existingLogger.interval === newLogger.interval) {
+                newLogger.lastSaveTimestamp = existingLogger.lastSaveTimestamp;
+            }
+            
+            newConfigMap.set(registerId, newLogger);
+        }
+        
+        // Atomically update the active loggers map.
+        activeTrendLoggers.clear();
+        newConfigMap.forEach((value, key) => {
+            activeTrendLoggers.set(key, value);
+        });
+
+        backendLogger.info(`[TREND-LOGGER] ${activeTrendLoggers.size} trend logger definitions reloaded.`, "TrendLoggerService");
+    }
+
+    public getLastKnownValue(registerId: string): number | undefined {
+        return lastKnownValues.get(registerId);
+    }
+}
+
+export interface TrendLogType {
+    _id: string;
+    analyzerId: string;
+    registerId: string;
+    period: string;
+    interval: number;
+    endDate: string;
+    address: number;
+    dataType: string;
+    byteOrder: string;
+    scale: number;
+}
+
+class TrendLogger {
+    _id: string;
+    registerId: string;
+    analyzerId: string;
+    period: string;
+    interval: number;
+    endDate?: Date; // endDate is now a Date object and optional
+    lastSaveTimestamp: number = 0;
+    
+    constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date) {
+        this._id = _id;
+        this.registerId = registerId;
+        this.analyzerId = analyzerId;
+        this.period = period;
+        this.interval = interval;
+        this.lastSaveTimestamp = Date.now(); // Prime the timestamp to prevent immediate logging
+        if (endDate) {
+            this.endDate = new Date(endDate);
+        }
+    }
+
+    getIntervalMs(): number {
+        const periodLower = this.period.toLowerCase();
+        switch (periodLower) {
+            case 'second':
+                return this.interval * 1000;
+            case 'minute':
+                return this.interval * 60 * 1000;
+            case 'hour':
+                return this.interval * 60 * 60 * 1000;
+            case 'day':
+                return this.interval * 24 * 60 * 60 * 1000;
+            case 'week':
+                return this.interval * 7 * 24 * 60 * 60 * 1000;
+            case 'month':
+                return this.interval * 30 * 24 * 60 * 60 * 1000; // 30 gün olarak hesapla
+            default:
+                return this.interval * 60 * 1000;
+        }
+    }
+
+    async storeRegisterValue(value: number | null) {
+        if (value === null || value === undefined) {
+            return;
+        }
+        try {
+            const { db } = await connectToDatabase();
+            await db.collection('trend_log_entries').insertOne({
+                trendLogId: new ObjectId(this._id),
+                value: value,
+                timestamp: new Date(),
+                analyzerId: this.analyzerId,
+                registerId: this.registerId
+            });
+        } catch (error) {
+            backendLogger.error(`[TREND-LOGGER] Error storing trend log entry: ` + (error instanceof Error ? error.message : String(error)), "TrendLogger", { error: error instanceof Error ? error.stack : String(error) });
+        }
+    }
+}

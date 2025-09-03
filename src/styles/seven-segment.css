@@ -1,0 +1,27 @@
+/* Seven Segment Display CSS */
+@font-face {
+  font-family: 'Seven Segment';
+  src: url('/fonts/Digit.TTF') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.seven-segment {
+  font-family: 'Seven Segment', monospace;
+  /* letter-spacing: 2px;
+  line-height: 1; */
+}
+
+/* Farklı boyutlar için sınıflar */
+/* .seven-segment-sm {
+  font-size: 1.2rem;
+}
+
+.seven-segment-md {
+  font-size: 1.8rem;
+}
+
+.seven-segment-lg {
+  font-size: 2.4rem;
+} */
