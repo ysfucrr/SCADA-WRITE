@@ -671,25 +671,56 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 },
             });
 
+            // Delete boolean register icons (read)
             if (node.data.onIcon) {
-                const deleteResponse =  await fetch('/api/upload', {
+                console.log('Deleting ON icon:', node.data.onIcon);
+                const deleteResponse = await fetch('/api/upload', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filePath: node.data.onIcon.split('/').pop() })
-                  });
+                });
                 if (!deleteResponse.ok) {
-                    throw new Error('Failed to delete image');
+                    throw new Error('Failed to delete ON icon');
                 }
+                console.log('ON icon deleted successfully');
             }
             if (node.data.offIcon) {
-                const deleteResponse =  await fetch('/api/upload', {
+                console.log('Deleting OFF icon:', node.data.offIcon);
+                const deleteResponse = await fetch('/api/upload', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filePath: node.data.offIcon.split('/').pop() })
-                  });
+                });
                 if (!deleteResponse.ok) {
-                    throw new Error('Failed to delete image');
+                    throw new Error('Failed to delete OFF icon');
                 }
+                console.log('OFF icon deleted successfully');
+            }
+
+            // Delete write boolean control icons
+            if (node.data.writeOnIcon) {
+                console.log('Deleting Write ON icon:', node.data.writeOnIcon);
+                const deleteResponse = await fetch('/api/upload', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath: node.data.writeOnIcon.split('/').pop() })
+                });
+                if (!deleteResponse.ok) {
+                    throw new Error('Failed to delete Write ON icon');
+                }
+                console.log('Write ON icon deleted successfully');
+            }
+            if (node.data.writeOffIcon) {
+                console.log('Deleting Write OFF icon:', node.data.writeOffIcon);
+                const deleteResponse = await fetch('/api/upload', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath: node.data.writeOffIcon.split('/').pop() })
+                });
+                if (!deleteResponse.ok) {
+                    throw new Error('Failed to delete Write OFF icon');
+                }
+                console.log('Write OFF icon deleted successfully');
             }
 
 
