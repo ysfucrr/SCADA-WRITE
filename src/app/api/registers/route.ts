@@ -58,3 +58,26 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to fetch registers from database' }, { status: 500 });
   }
 }
+
+export async function POST(request: Request) {
+  try {
+    const { db } = await connectToDatabase();
+    const registerData = await request.json();
+    
+    backendLogger.info('Creating new register', 'API/registers', { registerData });
+    
+    // Register data'yı veritabanına kaydet (gerekirse)
+    // Şu an için sadece success response döndürüyoruz
+    // çünkü register'lar building flowData'sında saklanıyor
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Register created successfully',
+      registerId: registerData.nodeId
+    });
+
+  } catch (error) {
+    backendLogger.error('Failed to create register', 'API/registers', { error });
+    return NextResponse.json({ error: 'Failed to create register' }, { status: 500 });
+  }
+}

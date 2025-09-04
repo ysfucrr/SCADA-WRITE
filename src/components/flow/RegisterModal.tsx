@@ -84,33 +84,33 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
   const [minValue, setMinValue] = useState<number | ''>('');
   const [maxValue, setMaxValue] = useState<number | ''>('');
   const [writePermission, setWritePermission] = useState<boolean>(true);
-  const [readAddress, setReadAddress] = useState<number | "">(0); // Read/Write için ayrı read adresi
-  const [controlType, setControlType] = useState<'numeric' | 'boolean' | 'dropdown' | 'manual'>('numeric'); // Write control türü
-  const [stepValue, setStepValue] = useState<number>(1); // Numeric input için step değeri
-  const [offsetValue, setOffsetValue] = useState<number>(0); // Offset değeri (Raw Value + Offset) * Scale
-  const [decimalPlaces, setDecimalPlaces] = useState<number>(2); // Ondalık basamak sayısı
+  const [readAddress, setReadAddress] = useState<number | "">(0); // Separate read address for Read/Write
+  const [controlType, setControlType] = useState<'numeric' | 'boolean' | 'dropdown' | 'manual'>('numeric'); // Write control type
+  const [stepValue, setStepValue] = useState<number>(1); // Step value for numeric input
+  const [offsetValue, setOffsetValue] = useState<number>(0); // Offset value (Raw Value + Offset) * Scale
+  const [decimalPlaces, setDecimalPlaces] = useState<number>(2); // Number of decimal places
   
-  // Manual input için
+  // For manual input
   const [placeholder, setPlaceholder] = useState<string>('Enter value');
   const [infoText, setInfoText] = useState<string>('');
   
-  // Boolean control için
+  // For boolean control
   const [onValue, setOnValue] = useState<number | string>(1);
   const [offValue, setOffValue] = useState<number | string>(0);
   
-  // Boolean control için icon state'leri
+  // Icon states for boolean control
   const [writeOnIcon, setWriteOnIcon] = useState<string>('');
   const [writeOffIcon, setWriteOffIcon] = useState<string>('');
   const [writeOnIconPreview, setWriteOnIconPreview] = useState<string>('');
   const [writeOffIconPreview, setWriteOffIconPreview] = useState<string>('');
   
-  // Dropdown control için
+  // For dropdown control
   const [dropdownOptions, setDropdownOptions] = useState<Array<{label: string, value: number | string}>>([
     { label: 'Option 1', value: 1 },
     { label: 'Option 2', value: 2 }
   ]);
 
-  // Boolean register için ikon state'leri
+  // Icon states for boolean register
   const [onIcon, setOnIcon] = useState<string>(node?.data?.onIcon || '');
   const [offIcon, setOffIcon] = useState<string>(node?.data?.offIcon || '');
   const [onIconPreview, setOnIconPreview] = useState<string>(node?.data?.onIcon || '');
@@ -134,7 +134,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setAnalyzers(data);
     } catch (error) {
       console.error("Error fetching analyzers:", error);
-      showToast("Analizörler yüklenirken hata oluştu", "error");
+      showToast("Error occurred while loading analyzers", "error");
     } finally {
       setIsLoading(false);
     }
@@ -188,7 +188,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         throw new Error(result.error || 'Failed to upload file');
       }
 
-      return result.filePath; // '/uploads/timestamp-filename.ext' shape
+      return result.filePath; // '/api/image/timestamp-filename.ext' shape
     } catch (error) {
       console.error('Icon upload error:', error);
       showToast('Failed to upload icon', 'error');
@@ -217,7 +217,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       // Upload file to API
       const filePath = await uploadIcon(file);
       if (filePath) {
-        setOnIcon(filePath); // Server returned file path, e.g. '/uploads/1234567890-icon.png'
+        setOnIcon(filePath); // Server returned file path, e.g. '/api/image/1234567890-icon.png'
         showToast('ON icon uploaded successfully', 'success');
       }
     } catch (err) {
@@ -250,7 +250,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       // Upload file to API
       const filePath = await uploadIcon(file);
       if (filePath) {
-        setOffIcon(filePath); // Server returned file path, e.g. '/uploads/1234567890-icon.png'
+        setOffIcon(filePath); // Server returned file path, e.g. '/api/image/1234567890-icon.png'
         showToast('OFF icon uploaded successfully', 'success');
       }
     } catch (err) {
@@ -617,14 +617,15 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
   const handleCancel = async () => {
     console.log("cancel");
 
-    // Boolean register icon check - No action on cancel
-    if (!node?.id && (onIcon || offIcon)) {
+    // Clean up uploaded icons when canceling new register creation
+    if (!node?.id) {
+      // Delete boolean register icons (read)
       if (onIcon) {
         try {
           await fetch('/api/upload', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filePath: onIcon })
+            body: JSON.stringify({ filePath: onIcon.split('/').pop() })
           });
           console.log('ON icon deleted from uploads:', onIcon);
         } catch (error) {
@@ -637,11 +638,38 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
           await fetch('/api/upload', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filePath: offIcon })
+            body: JSON.stringify({ filePath: offIcon.split('/').pop() })
           });
           console.log('OFF icon deleted from uploads:', offIcon);
         } catch (error) {
           console.error('Error deleting OFF icon:', error);
+        }
+      }
+
+      // Delete write boolean control icons
+      if (writeOnIcon) {
+        try {
+          await fetch('/api/upload', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filePath: writeOnIcon.split('/').pop() })
+          });
+          console.log('Write ON icon deleted from uploads:', writeOnIcon);
+        } catch (error) {
+          console.error('Error deleting write ON icon:', error);
+        }
+      }
+
+      if (writeOffIcon) {
+        try {
+          await fetch('/api/upload', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filePath: writeOffIcon.split('/').pop() })
+          });
+          console.log('Write OFF icon deleted from uploads:', writeOffIcon);
+        } catch (error) {
+          console.error('Error deleting write OFF icon:', error);
         }
       }
     }
@@ -675,7 +703,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setOnValue(1);
     setOffValue(0);
     setDropdownOptions([{ label: 'Option 1', value: 1 }, { label: 'Option 2', value: 2 }]);
-    resetIcons(); // İkonları sıfırla
+    resetIcons(); // Reset icons
     onClose();
   };
   // Byte order seçeneği sadece float32 veya int32 için gösterilsin
@@ -687,347 +715,375 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     isLoading ? <div>
       <Spinner variant='bars' fullPage />
     </div> :
-      <Modal isOpen={isOpen} onClose={handleCancel} className="sm:max-w-[700px]">
+      <Modal isOpen={isOpen} onClose={handleCancel} className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <Typography variant="h4">{isEditMode ? 'Edit Register' : 'Add Register'}</Typography>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mt-4">
-            <div className="grid gap-2">
-              <Label htmlFor="label">Label</Label>
-              <Input
-                id="label"
-                value={label}
-                required
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder="Register Label"
-                className="text-black dark:text-white"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="registerType">Register Type <span className="text-red-500">*</span></Label>
-              <select
-                id="registerType"
-                value={registerType}
-                onChange={(e) => setRegisterType(e.target.value as 'read' | 'write' | 'readwrite')}
-                className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
-              >
-                <option value="read">Read Holding Register</option>
-                <option value="write">Write Holding Register</option>
-                <option value="readwrite">Read/Write Holding Register</option>
-              </select>
-            </div>
-
-            {/* Display Mode - sadece read register için göster */}
-            {registerType === 'read' && (
+          
+          {/* General Settings Group */}
+          <div className="mt-6">
+            <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+              General Settings
+            </Typography>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
               <div className="grid gap-2">
-                <Label htmlFor="displayMode">Display Mode</Label>
-                <select
-                  id="displayMode"
-                  value={displayMode}
-                  onChange={(e) => setDisplayMode(e.target.value as 'digit' | 'graph')}
-                  className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
-                >
-                  <option value="digit">Digit</option>
-                  <option value="graph">Graph</option>
-                </select>
-              </div>
-            )}
-
-            <div className="grid gap-2">
-              <Label htmlFor="analyzer">
-                Analyzer <span className="text-red-500">*</span>
-              </Label>
-              <select
-                id="analyzer"
-                className={`h-11 w-full appearance-none rounded-lg border ${!analyzer ? 'border-red-500' : 'border-gray-300'} px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800`}
-                value={analyzer}
-                onChange={(e) => setAnalyzer(e.target.value)}
-                required
-              >
-                <option value="" disabled>Select Analyzer</option>
-                {analyzers.map((a) => (
-                  <option key={a._id} value={a._id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-              {!analyzer && (
-                <p className="text-sm text-red-500 mt-1">Please select an analyzer</p>
-              )}
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="address">
-                {registerType === 'readwrite' ? 'Write Address' : 'Address'}
-              </Label>
-              <Input
-                id="address"
-                type="text"
-                value={address}
-                onChange={(e) => {
-                  // Sadece sayısal değerlere izin ver
-                  const numericValue = e.target.value.replace(/[^0-9]/g, '');
-                  setAddress(numericValue ? parseInt(numericValue) : "");
-                }}
-                placeholder={registerType === 'readwrite' ? 'Write Register Address' : 'Register Address'}
-                className="text-black dark:text-white"
-              />
-            </div>
-
-            {/* Read Address - sadece readwrite için göster */}
-            {registerType === 'readwrite' && (
-              <div className="grid gap-2">
-                <Label htmlFor="readAddress">Read Address</Label>
+                <Label htmlFor="label">Label</Label>
                 <Input
-                  id="readAddress"
-                  type="text"
-                  value={readAddress}
-                  onChange={(e) => {
-                    // Sadece sayısal değerlere izin ver
-                    const numericValue = e.target.value.replace(/[^0-9]/g, '');
-                    setReadAddress(numericValue ? parseInt(numericValue) : "");
-                  }}
-                  placeholder="Read Register Address"
+                  id="label"
+                  value={label}
+                  required
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="Register Label"
                   className="text-black dark:text-white"
                 />
               </div>
-            )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="dataType">Data Type</Label>
-              <select
-                id="dataType"
-                value={dataType}
-                onChange={(e) => setDataType(e.target.value)}
-                className="text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-white"
-              >
-                {dataTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="grid gap-2">
+                <Label htmlFor="registerType">Register Type <span className="text-red-500">*</span></Label>
+                <select
+                  id="registerType"
+                  value={registerType}
+                  onChange={(e) => setRegisterType(e.target.value as 'read' | 'write' | 'readwrite')}
+                  className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
+                >
+                  <option value="read">Read Holding Register</option>
+                  <option value="write">Write Holding Register</option>
+                  <option value="readwrite">Read/Write Holding Register</option>
+                </select>
+              </div>
 
-            {/* Digit modunda gösterilecek inputlar */}
-            {displayMode === 'digit' && (
-              <>
-                {showByteOrderOption && (
-                  <div className="grid gap-2">
-                    <Label htmlFor="byteOrder">Byte Order</Label>
-                    <select
-                      id="byteOrder"
-                      value={byteOrder}
-                      onChange={(e) => setByteOrder(e.target.value)}
-                      className="text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-white"
-                    >
-                      {byteOrderOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              <div className="grid gap-2">
+                <Label htmlFor="analyzer">
+                  Analyzer <span className="text-red-500">*</span>
+                </Label>
+                <select
+                  id="analyzer"
+                  className={`h-11 w-full appearance-none rounded-lg border ${!analyzer ? 'border-red-500' : 'border-gray-300'} px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800`}
+                  value={analyzer}
+                  onChange={(e) => setAnalyzer(e.target.value)}
+                  required
+                >
+                  <option value="" disabled>Select Analyzer</option>
+                  {analyzers.map((a) => (
+                    <option key={a._id} value={a._id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+                {!analyzer && (
+                  <p className="text-sm text-red-500 mt-1">Please select an analyzer</p>
                 )}
+              </div>
 
-                {showBitOption && (
-                  <div className="grid gap-2">
-                    <Label htmlFor="bit">Bit <span className="text-red-500">*</span></Label>
-                    <Input
-                      id="bit"
-                      type="number"
-                      min="0"
-                      max="63"
-                      value={bit < 0 ? "" : bit}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value === "") {
-                          setBit(-1);
-                        } else {
-                          const numValue = parseInt(value);
-                          if (numValue >= 0 && numValue <= 63) {
-                            setBit(numValue);
-                          }
+              <div className="grid gap-2">
+                <Label htmlFor="address">
+                  {registerType === 'readwrite' ? 'Write Address' : 'Address'}
+                </Label>
+                <Input
+                  id="address"
+                  type="text"
+                  value={address}
+                  onChange={(e) => {
+                    // Allow only numeric values
+                    const numericValue = e.target.value.replace(/[^0-9]/g, '');
+                    setAddress(numericValue ? parseInt(numericValue) : "");
+                  }}
+                  placeholder={registerType === 'readwrite' ? 'Write Register Address' : 'Register Address'}
+                  className="text-black dark:text-white"
+                />
+              </div>
+
+              {/* Read Address - show only for readwrite */}
+              {registerType === 'readwrite' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="readAddress">Read Address</Label>
+                  <Input
+                    id="readAddress"
+                    type="text"
+                    value={readAddress}
+                    onChange={(e) => {
+                      // Allow only numeric values
+                      const numericValue = e.target.value.replace(/[^0-9]/g, '');
+                      setReadAddress(numericValue ? parseInt(numericValue) : "");
+                    }}
+                    placeholder="Read Register Address"
+                    className="text-black dark:text-white"
+                  />
+                </div>
+              )}
+
+              <div className="grid gap-2">
+                <Label htmlFor="dataType">Data Type</Label>
+                <select
+                  id="dataType"
+                  value={dataType}
+                  onChange={(e) => setDataType(e.target.value)}
+                  className="text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-white"
+                >
+                  {dataTypes.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Display Mode - show only for read register */}
+              {registerType === 'read' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="displayMode">Display Mode</Label>
+                  <select
+                    id="displayMode"
+                    value={displayMode}
+                    onChange={(e) => setDisplayMode(e.target.value as 'digit' | 'graph')}
+                    className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
+                  >
+                    <option value="digit">Digit</option>
+                    <option value="graph">Graph</option>
+                  </select>
+                </div>
+              )}
+
+              {showByteOrderOption && (
+                <div className="grid gap-2">
+                  <Label htmlFor="byteOrder">Byte Order</Label>
+                  <select
+                    id="byteOrder"
+                    value={byteOrder}
+                    onChange={(e) => setByteOrder(e.target.value)}
+                    className="text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-white"
+                  >
+                    {byteOrderOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {showBitOption && (
+                <div className="grid gap-2">
+                  <Label htmlFor="bit">Bit <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="bit"
+                    type="number"
+                    min="0"
+                    max="63"
+                    value={bit < 0 ? "" : bit}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === "") {
+                        setBit(-1);
+                      } else {
+                        const numValue = parseInt(value);
+                        if (numValue >= 0 && numValue <= 63) {
+                          setBit(numValue);
                         }
-                      }}
-                      placeholder="Bit (0-63)"
-                      className="text-black dark:text-white"
+                      }
+                    }}
+                    placeholder="Bit (0-63)"
+                    className="text-black dark:text-white"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Boolean Icons Section - show only for boolean data type */}
+          {dataType === 'boolean' && (
+            <div className="mt-6">
+              <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+                Boolean Icons
+              </Typography>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* ON Icon Upload */}
+                <div className="grid gap-2">
+                  <Label htmlFor="onIcon">ON Icon</Label>
+                  <div className="flex gap-2">
+                    <div className="relative w-20 h-20 border-dashed border-2 border-gray-300 rounded-md flex items-center justify-center">
+                      {onIconPreview ? (
+                        <div className="relative w-full h-full">
+                          <Image
+                            src={onIconPreview}
+                            alt="ON Icon"
+                            className="max-w-full max-h-full p-1 object-contain"
+                            fill
+                            priority
+                            onError={(e) => {
+                              console.error('ON Icon load error:', onIconPreview);
+                              console.error('Error details:', e);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <Typography className="text-sm text-gray-500">
+                          Icon
+                        </Typography>
+                      )}
+                      {uploadStatus.loading && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-md z-10">
+                          <Typography className="text-sm text-white">
+                            Uploading...
+                          </Typography>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col justify-center gap-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => onIconInputRef.current?.click()}
+                      >
+                        Select Icon
+                      </Button>
+                      {onIconPreview && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={async () => {
+                            console.log('Delete ON icon button clicked, onIcon:', onIcon);
+                            // If icon file exists, delete from uploads
+                            if (onIcon) {
+                              try {
+                                const filename = onIcon.split('/').pop();
+                                console.log('Deleting ON icon filename:', filename);
+                                const deleteResponse = await fetch('/api/upload', {
+                                  method: 'DELETE',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ filePath: filename })
+                                });
+                                console.log('Delete response status:', deleteResponse.status);
+                                if (!deleteResponse.ok) {
+                                  throw new Error('Failed to delete ON icon');
+                                }
+                                console.log('ON icon deleted from uploads:', onIcon);
+                              } catch (error) {
+                                console.error('Error deleting ON icon:', error);
+                                showToast('Failed to delete ON icon', 'error');
+                                return;
+                              }
+                            }
+                            setOnIcon('');
+                            setOnIconPreview('');
+                            showToast('ON icon deleted successfully', 'success');
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      ref={onIconInputRef}
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={handleOnIconChange}
                     />
                   </div>
-                )}
+                  <Typography className="text-sm text-gray-500">
+                    Icon to be displayed in Boolean &quot;ON&quot; state
+                  </Typography>
+                </div>
 
-                {/* ON/OFF icon'larını boolean için yan yana aynı seviyeye getirdik */}
-                {dataType === 'boolean' && (
-                  <div className="grid gap-2 col-span-2">
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* ON Icon Upload */}
-                      <div className="grid gap-2">
-                        <Label htmlFor="onIcon">ON Icon</Label>
-                        <div className="flex gap-2">
-                          <div className="relative w-20 h-20 border-dashed border-2 border-gray-300 rounded-md flex items-center justify-center">
-                            {onIconPreview ? (
-                              <div className="relative w-full h-full">
-                                <Image
-                                  src={onIconPreview}
-                                  alt="ON Icon"
-                                  className="max-w-full max-h-full p-1 object-contain"
-                                  fill
-                                  priority
-                                  onError={(e) => {
-                                    console.error('ON Icon load error:', onIconPreview);
-                                    console.error('Error details:', e);
-                                  }}
-                                />
-                              </div>
-                            ) : (
-                              <Typography className="text-sm text-gray-500">
-                                Icon
-                              </Typography>
-                            )}
-                            {uploadStatus.loading && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-md z-10">
-                                <Typography className="text-sm text-white">
-                                  Uploading...
-                                </Typography>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-col justify-center gap-1">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => onIconInputRef.current?.click()}
-                            >
-                              Select Icon
-                            </Button>
-                            {onIconPreview && (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={async () => {
-                                  // Eğer ikon dosyası varsa uploads'dan sil
-                                  if (onIcon) {
-                                    try {
-                                      await fetch('/api/upload', {
-                                        method: 'DELETE',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ filePath: onIcon })
-                                      });
-                                      console.log('ON icon deleted from uploads:', onIcon);
-                                    } catch (error) {
-                                      console.error('Error deleting ON icon:', error);
-                                    }
-                                  }
-                                  setOnIcon('');
-                                  setOnIconPreview('');
-                                  showToast('ON icon deleted successfully', 'success');
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            )}
-                          </div>
-                          <input
-                            type="file"
-                            ref={onIconInputRef}
-                            accept="image/*"
-                            style={{ display: 'none' }}
-                            onChange={handleOnIconChange}
+                {/* OFF Icon Upload */}
+                <div className="grid gap-2">
+                  <Label htmlFor="offIcon">OFF Icon</Label>
+                  <div className="flex gap-2">
+                    <div className="relative w-20 h-20 border-dashed border-2 border-gray-300 rounded-md flex items-center justify-center">
+                      {offIconPreview ? (
+                        <div className="relative w-full h-full">
+                          <Image
+                            src={offIconPreview}
+                            alt="OFF Icon"
+                            className="max-w-full max-h-full p-1 object-contain"
+                            fill
+                            priority
+                            onError={(e) => {
+                              console.error('OFF Icon load error:', offIconPreview);
+                              console.error('Error details:', e);
+                            }}
                           />
                         </div>
+                      ) : (
                         <Typography className="text-sm text-gray-500">
-                          Icon to be displayed in Boolean &quot;ON&quot; state
+                          Icon
                         </Typography>
-                      </div>
-
-                      {/* OFF Icon Upload */}
-                      <div className="grid gap-2">
-                        <Label htmlFor="offIcon">OFF Icon</Label>
-                        <div className="flex gap-2">
-                          <div className="relative w-20 h-20 border-dashed border-2 border-gray-300 rounded-md flex items-center justify-center">
-                            {offIconPreview ? (
-                              <div className="relative w-full h-full">
-                                <Image
-                                  src={offIconPreview}
-                                  alt="OFF Icon"
-                                  className="max-w-full max-h-full p-1 object-contain"
-                                  fill
-                                  priority
-                                  onError={(e) => {
-                                    console.error('OFF Icon load error:', offIconPreview);
-                                    console.error('Error details:', e);
-                                  }}
-                                />
-                              </div>
-                            ) : (
-                              <Typography className="text-sm text-gray-500">
-                                Icon
-                              </Typography>
-                            )}
-                            {uploadStatus.loading && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-md z-10">
-                                <Typography className="text-sm text-white">
-                                  Loading...
-                                </Typography>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-col justify-center gap-1">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => offIconInputRef.current?.click()}
-                            >
-                              Select Icon
-                            </Button>
-                            {offIconPreview && (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={async () => {
-                                  // Eğer ikon dosyası varsa uploads'dan sil
-                                  if (offIcon) {
-                                    try {
-                                      await fetch('/api/upload', {
-                                        method: 'DELETE',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ filePath: offIcon })
-                                      });
-                                      console.log('OFF icon deleted from uploads:', offIcon);
-                                    } catch (error) {
-                                      console.error('Error deleting OFF icon:', error);
-                                    }
-                                  }
-                                  setOffIcon('');
-                                  setOffIconPreview('');
-                                  showToast('OFF icon deleted successfully', 'success');
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            )}
-                          </div>
-                          <input
-                            type="file"
-                            ref={offIconInputRef}
-                            accept="image/*"
-                            style={{ display: 'none' }}
-                            onChange={handleOffIconChange}
-                          />
+                      )}
+                      {uploadStatus.loading && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-md z-10">
+                          <Typography className="text-sm text-white">
+                            Loading...
+                          </Typography>
                         </div>
-                        <Typography className="text-sm text-gray-500">
-                          Icon to be displayed in Boolean &quot;OFF&quot; state
-                        </Typography>
-                      </div>
+                      )}
                     </div>
+                    <div className="flex flex-col justify-center gap-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => offIconInputRef.current?.click()}
+                      >
+                        Select Icon
+                      </Button>
+                      {offIconPreview && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={async () => {
+                            console.log('Delete OFF icon button clicked, offIcon:', offIcon);
+                            // If icon file exists, delete from uploads
+                            if (offIcon) {
+                              try {
+                                const filename = offIcon.split('/').pop();
+                                console.log('Deleting OFF icon filename:', filename);
+                                const deleteResponse = await fetch('/api/upload', {
+                                  method: 'DELETE',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ filePath: filename })
+                                });
+                                console.log('Delete response status:', deleteResponse.status);
+                                if (!deleteResponse.ok) {
+                                  throw new Error('Failed to delete OFF icon');
+                                }
+                                console.log('OFF icon deleted from uploads:', offIcon);
+                              } catch (error) {
+                                console.error('Error deleting OFF icon:', error);
+                                showToast('Failed to delete OFF icon', 'error');
+                                return;
+                              }
+                            }
+                            setOffIcon('');
+                            setOffIconPreview('');
+                            showToast('OFF icon deleted successfully', 'success');
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      ref={offIconInputRef}
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={handleOffIconChange}
+                    />
                   </div>
-                )}
+                  <Typography className="text-sm text-gray-500">
+                    Icon to be displayed in Boolean &quot;OFF&quot; state
+                  </Typography>
+                </div>
+              </div>
+            </div>
+          )}
 
-                {/* Write-specific fields */}
-                {(registerType === 'write' || registerType === 'readwrite') && (
-                  <div className="grid gap-2 col-span-2">
-                    <div className="border-t pt-4">
-                      <Typography variant="h6" className="mb-4">Write Settings</Typography>
+          {/* Write Settings Group */}
+          {(registerType === 'write' || registerType === 'readwrite') && (
+            <div className="mt-6">
+              <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+                Write Settings
+              </Typography>
+              <div className="space-y-4">
                       
                       {/* Control Type Selection */}
                       <div className="grid gap-2 mb-4">
@@ -1183,15 +1239,25 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                                       variant="secondary"
                                       size="sm"
                                       onClick={async () => {
+                                        console.log('Delete Write ON icon button clicked, writeOnIcon:', writeOnIcon);
                                         if (writeOnIcon) {
                                           try {
-                                            await fetch('/api/upload', {
+                                            const filename = writeOnIcon.split('/').pop();
+                                            console.log('Deleting Write ON icon filename:', filename);
+                                            const deleteResponse = await fetch('/api/upload', {
                                               method: 'DELETE',
                                               headers: { 'Content-Type': 'application/json' },
-                                              body: JSON.stringify({ filePath: writeOnIcon })
+                                              body: JSON.stringify({ filePath: filename })
                                             });
+                                            console.log('Delete response status:', deleteResponse.status);
+                                            if (!deleteResponse.ok) {
+                                              throw new Error('Failed to delete Write ON icon');
+                                            }
+                                            console.log('Write ON icon deleted from uploads:', writeOnIcon);
                                           } catch (error) {
                                             console.error('Error deleting write ON icon:', error);
+                                            showToast('Failed to delete Write ON icon', 'error');
+                                            return;
                                           }
                                         }
                                         setWriteOnIcon('');
@@ -1260,15 +1326,25 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                                       variant="secondary"
                                       size="sm"
                                       onClick={async () => {
+                                        console.log('Delete Write OFF icon button clicked, writeOffIcon:', writeOffIcon);
                                         if (writeOffIcon) {
                                           try {
-                                            await fetch('/api/upload', {
+                                            const filename = writeOffIcon.split('/').pop();
+                                            console.log('Deleting Write OFF icon filename:', filename);
+                                            const deleteResponse = await fetch('/api/upload', {
                                               method: 'DELETE',
                                               headers: { 'Content-Type': 'application/json' },
-                                              body: JSON.stringify({ filePath: writeOffIcon })
+                                              body: JSON.stringify({ filePath: filename })
                                             });
+                                            console.log('Delete response status:', deleteResponse.status);
+                                            if (!deleteResponse.ok) {
+                                              throw new Error('Failed to delete Write OFF icon');
+                                            }
+                                            console.log('Write OFF icon deleted from uploads:', writeOffIcon);
                                           } catch (error) {
                                             console.error('Error deleting write OFF icon:', error);
+                                            showToast('Failed to delete Write OFF icon', 'error');
+                                            return;
                                           }
                                         }
                                         setWriteOffIcon('');
@@ -1415,278 +1491,272 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                           When disabled, this register will be read-only even if it&apos;s configured as writable
                         </Typography>
                       </div>
-                    </div>
-                  </div>
-                )}
+             </div>
+           </div>
+         )}
 
-                {/* Boolean seçildiğinde Scale, Font Family, Text Color, Background Color, Background Opacity alanlarını gizle */}
-                {dataType !== 'boolean' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 col-span-2">
-                    {/* İlk satır: Scale ve Unit */}
-                    <div className="grid gap-2">
-                      <Label htmlFor="scale">Scale (Gain)</Label>
-                      <div className="relative">
-                        <NumericFormat
-                          id="scale"
-                          value={scale}
-                          onValueChange={(values: { floatValue?: number }) => {
-                            const { floatValue } = values;
-                            setScale(floatValue || 0);
-                          }}
-                          decimalScale={4}
-                          fixedDecimalScale={false}
-                          allowNegative={false}
-                          thousandSeparator={false}
-                          decimalSeparator="."
-                          placeholder="Scale Factor (e.g., 0.1)"
-                          className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                        />
-                      </div>
-                    </div>
+         {/* Scale Settings Group - show only for non-boolean data types */}
+         {dataType !== 'boolean' && (displayMode === 'digit') && (
+           <div className="mt-6">
+             <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+               Scale Settings
+             </Typography>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <div className="grid gap-2">
+                 <Label htmlFor="scale">Scale (Gain)</Label>
+                 <div className="relative">
+                   <NumericFormat
+                     id="scale"
+                     value={scale}
+                     onValueChange={(values: { floatValue?: number }) => {
+                       const { floatValue } = values;
+                       setScale(floatValue || 0);
+                     }}
+                     decimalScale={4}
+                     fixedDecimalScale={false}
+                     allowNegative={false}
+                     thousandSeparator={false}
+                     decimalSeparator="."
+                     placeholder="Scale Factor (e.g., 0.1)"
+                     className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                   />
+                 </div>
+               </div>
 
-                    <div className="grid gap-2">
-                      <Label htmlFor="scale-unit">Unit</Label>
-                      <Input
-                        id="scale-unit"
-                        value={scaleUnit}
-                        onChange={(e) => setScaleUnit(e.target.value)}
-                        placeholder="°C, KWh, etc."
-                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                      />
-                    </div>
+               <div className="grid gap-2">
+                 <Label htmlFor="scale-unit">Unit</Label>
+                 <Input
+                   id="scale-unit"
+                   value={scaleUnit}
+                   onChange={(e) => setScaleUnit(e.target.value)}
+                   placeholder="°C, KWh, etc."
+                   className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                 />
+               </div>
 
-                    {/* İkinci satır: Offset ve Decimal Places */}
-                    <div className="grid gap-2">
-                      <Label htmlFor="offsetValue">Offset</Label>
-                      <div className="relative">
-                        <NumericFormat
-                          id="offsetValue"
-                          value={offsetValue}
-                          onValueChange={(values: { floatValue?: number }) => {
-                            const { floatValue } = values;
-                            setOffsetValue(floatValue || 0);
-                          }}
-                          decimalScale={4}
-                          fixedDecimalScale={false}
-                          allowNegative={true}
-                          thousandSeparator={false}
-                          decimalSeparator="."
-                          placeholder="Offset value (e.g., 0)"
-                          className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                        />
-                      </div>
-                      <Typography className="text-xs text-gray-500">
-                        Formula: (Raw Value + Offset) × Scale
-                      </Typography>
-                    </div>
+               <div className="grid gap-2">
+                 <Label htmlFor="offsetValue">Offset</Label>
+                 <div className="relative">
+                   <NumericFormat
+                     id="offsetValue"
+                     value={offsetValue}
+                     onValueChange={(values: { floatValue?: number }) => {
+                       const { floatValue } = values;
+                       setOffsetValue(floatValue || 0);
+                     }}
+                     decimalScale={4}
+                     fixedDecimalScale={false}
+                     allowNegative={true}
+                     thousandSeparator={false}
+                     decimalSeparator="."
+                     placeholder="Offset value (e.g., 0)"
+                     className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                   />
+                 </div>
+                 <Typography className="text-xs text-gray-500">
+                   Formula: (Raw Value + Offset) × Scale
+                 </Typography>
+               </div>
 
-                    <div className="grid gap-2">
-                      <Label htmlFor="decimalPlaces">Decimal Places</Label>
-                      <Input
-                        id="decimalPlaces"
-                        type="number"
-                        min="0"
-                        max="6"
-                        value={decimalPlaces}
-                        onChange={(e) => {
-                          const value = parseInt(e.target.value);
-                          if (value >= 0 && value <= 6) {
-                            setDecimalPlaces(value);
-                          }
-                        }}
-                        placeholder="Decimal places (0-6)"
-                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                      />
-                      <Typography className="text-xs text-gray-500">
-                        Number of decimal places to display
-                      </Typography>
-                    </div>
-                  </div>
-                )}
+               <div className="grid gap-2">
+                 <Label htmlFor="decimalPlaces">Decimal Places</Label>
+                 <Input
+                   id="decimalPlaces"
+                   type="number"
+                   min="0"
+                   max="6"
+                   value={decimalPlaces}
+                   onChange={(e) => {
+                     const value = parseInt(e.target.value);
+                     if (value >= 0 && value <= 6) {
+                       setDecimalPlaces(value);
+                     }
+                   }}
+                   placeholder="Decimal places (0-6)"
+                   className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                 />
+                 <Typography className="text-xs text-gray-500">
+                   Number of decimal places to display
+                 </Typography>
+               </div>
+             </div>
+           </div>
+         )}
 
-                <div className="grid gap-2">
-                  <Label htmlFor="fontFamily">Font Family</Label>
-                  <select
-                    id="fontFamily"
-                    value={fontFamily}
-                    onChange={(e) => setFontFamily(e.target.value)}
-                    className="text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-white"
-                    style={{ colorScheme: 'auto' }}
-                  >
-                    {fontFamilies.map((font) => (
-                      <option key={font.value} value={font.value} style={{ fontFamily: font.value }}>
-                        {font.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+         {/* Appearance Settings Group */}
+         <div className="mt-6">
+           <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+             Appearance Settings
+           </Typography>
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+             <div className="grid gap-2">
+               <Label htmlFor="fontFamily">Font Family</Label>
+               <select
+                 id="fontFamily"
+                 value={fontFamily}
+                 onChange={(e) => setFontFamily(e.target.value)}
+                 className="text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-white"
+                 style={{ colorScheme: 'auto' }}
+               >
+                 {fontFamilies.map((font) => (
+                   <option key={font.value} value={font.value} style={{ fontFamily: font.value }}>
+                     {font.label}
+                   </option>
+                 ))}
+               </select>
+             </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="textColor">Text Color</Label>
-                  <div className="col-span-3 flex gap-2">
-                    <Input
-                      id="textColor"
-                      type="color"
-                      value={textColor}
-                      onChange={(e) => setTextColor(e.target.value)}
-                      className="w-12 h-10 p-1"
-                    />
-                  </div>
-                </div>
+             <div className="grid gap-2">
+               <Label htmlFor="textColor">Text Color</Label>
+               <Input
+                 id="textColor"
+                 type="color"
+                 value={textColor}
+                 onChange={(e) => setTextColor(e.target.value)}
+                 className="w-full h-10 p-1"
+               />
+             </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="backgroundColor">Background Color</Label>
-                  <div className="col-span-3 flex gap-2">
-                    <Input
-                      id="backgroundColor"
-                      type="color"
-                      value={backgroundColor}
-                      onChange={(e) => setBackgroundColor(e.target.value)}
-                      className="w-12 h-10 p-1"
-                    />
-                  </div>
-                </div>
+             <div className="grid gap-2">
+               <Label htmlFor="backgroundColor">Background Color</Label>
+               <Input
+                 id="backgroundColor"
+                 type="color"
+                 value={backgroundColor}
+                 onChange={(e) => setBackgroundColor(e.target.value)}
+                 className="w-full h-10 p-1"
+               />
+             </div>
 
-                <div className="grid gap-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="opacity">Background Opacity</Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Slider
-                      id="opacity"
-                      min={0}
-                      max={100}
-                      value={opacity}
-                      onChange={setOpacity}
-                      className="flex-1"
-                    />
-                    <span className="w-10 text-center text-black dark:text-white">{opacity}%</span>
-                  </div>
-                </div>
+             <div className="grid gap-2 col-span-full">
+               <Label htmlFor="opacity">Background Opacity</Label>
+               <div className="flex items-center gap-2">
+                 <Slider
+                   id="opacity"
+                   min={0}
+                   max={100}
+                   value={opacity}
+                   onChange={setOpacity}
+                   className="flex-1"
+                 />
+                 <span className="w-16 text-center text-black dark:text-white">{opacity}%</span>
+               </div>
+             </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="width">Width</Label>
-                  <div className="relative">
-                    {/* NumericFormat bileşeni ile değiştirdik */}
-                    <NumericFormat
-                      id="width"
-                      value={width}
-                      onValueChange={(values: { floatValue?: number }) => {
-                        const { floatValue } = values;
-                        console.log("values: ", values)
-                        setWidth(floatValue || 0);
-                      }}
-                      decimalScale={4} // 4 ondalık basamak
-                      fixedDecimalScale={false} // Sonda 0 gösterme
-                      allowNegative={false} // Negatif değerlere izin verme
-                      thousandSeparator={false} // Binlik ayracı kullanma
-                      decimalSeparator="." // Ondalık ayracı nokta olarak ayarla
-                      placeholder="Width"
-                      className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                    />
-                  </div>
-                </div>
+             <div className="grid gap-2">
+               <Label htmlFor="width">Width</Label>
+               <NumericFormat
+                 id="width"
+                 value={width}
+                 onValueChange={(values: { floatValue?: number }) => {
+                   const { floatValue } = values;
+                   setWidth(floatValue || 0);
+                 }}
+                 decimalScale={0}
+                 fixedDecimalScale={false}
+                 allowNegative={false}
+                 thousandSeparator={false}
+                 decimalSeparator="."
+                 placeholder="Width"
+                 className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+               />
+             </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="height">Height</Label>
-                  <div className="relative">
-                    {/* NumericFormat bileşeni ile değiştirdik */}
-                    <NumericFormat
-                      id="height"
-                      value={height}
-                      onValueChange={(values: { floatValue?: number }) => {
-                        const { floatValue } = values;
-                        console.log("values: ", values)
-                        setHeight(floatValue || 0);
-                      }}
-                      decimalScale={4} // 4 ondalık basamak
-                      fixedDecimalScale={false} // Sonda 0 gösterme
-                      allowNegative={false} // Negatif değerlere izin verme
-                      thousandSeparator={false} // Binlik ayracı kullanma
-                      decimalSeparator="." // Ondalık ayracı nokta olarak ayarla
-                      placeholder="Scale Factor"
-                      className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
+             <div className="grid gap-2">
+               <Label htmlFor="height">Height</Label>
+               <NumericFormat
+                 id="height"
+                 value={height}
+                 onValueChange={(values: { floatValue?: number }) => {
+                   const { floatValue } = values;
+                   setHeight(floatValue || 0);
+                 }}
+                 decimalScale={0}
+                 fixedDecimalScale={false}
+                 allowNegative={false}
+                 thousandSeparator={false}
+                 decimalSeparator="."
+                 placeholder="Height"
+                 className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+               />
+             </div>
+           </div>
+         </div>
 
-            {/* Graph modunda gösterilecek inputlar */}
-            {displayMode === 'graph' && (
-              <>
-                <div className="grid gap-2">
-                  <Label htmlFor="scale">Scale</Label>
-                  <div className="relative">
-                    <NumericFormat
-                      id="scale"
-                      value={scale}
-                      onValueChange={(values: { floatValue?: number }) => {
-                        const { floatValue } = values;
-                        setScale(floatValue || 0);
-                      }}
-                      decimalScale={4}
-                      fixedDecimalScale={false}
-                      allowNegative={false}
-                      thousandSeparator={false}
-                      decimalSeparator="."
-                      placeholder="Scale Factor"
-                      className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                    />
-                  </div>
-                </div>
+         {/* Graph Mode Settings - show only for graph mode */}
+         {displayMode === 'graph' && (
+           <div className="mt-6">
+             <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+               Graph Settings
+             </Typography>
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+               <div className="grid gap-2">
+                 <Label htmlFor="scale">Scale</Label>
+                 <NumericFormat
+                   id="scale"
+                   value={scale}
+                   onValueChange={(values: { floatValue?: number }) => {
+                     const { floatValue } = values;
+                     setScale(floatValue || 0);
+                   }}
+                   decimalScale={4}
+                   fixedDecimalScale={false}
+                   allowNegative={false}
+                   thousandSeparator={false}
+                   decimalSeparator="."
+                   placeholder="Scale Factor"
+                   className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                 />
+               </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="width">Width</Label>
-                  <div className="relative">
-                    <NumericFormat
-                      id="width"
-                      value={width}
-                      onValueChange={(values: { floatValue?: number }) => {
-                        const { floatValue } = values;
-                        setWidth(floatValue || 0);
-                      }}
-                      decimalScale={4}
-                      fixedDecimalScale={false}
-                      allowNegative={false}
-                      thousandSeparator={false}
-                      decimalSeparator="."
-                      placeholder="Width"
-                      className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                    />
-                  </div>
-                </div>
+               <div className="grid gap-2">
+                 <Label htmlFor="width">Width</Label>
+                 <NumericFormat
+                   id="width"
+                   value={width}
+                   onValueChange={(values: { floatValue?: number }) => {
+                     const { floatValue } = values;
+                     setWidth(floatValue || 0);
+                   }}
+                   decimalScale={0}
+                   fixedDecimalScale={false}
+                   allowNegative={false}
+                   thousandSeparator={false}
+                   decimalSeparator="."
+                   placeholder="Width"
+                   className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                 />
+               </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="height">Height</Label>
-                  <div className="relative">
-                    <NumericFormat
-                      id="height"
-                      value={height}
-                      onValueChange={(values: { floatValue?: number }) => {
-                        const { floatValue } = values;
-                        setHeight(floatValue || 0);
-                      }}
-                      decimalScale={4}
-                      fixedDecimalScale={false}
-                      allowNegative={false}
-                      thousandSeparator={false}
-                      decimalSeparator="."
-                      placeholder="Height"
-                      className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+               <div className="grid gap-2">
+                 <Label htmlFor="height">Height</Label>
+                 <NumericFormat
+                   id="height"
+                   value={height}
+                   onValueChange={(values: { floatValue?: number }) => {
+                     const { floatValue } = values;
+                     setHeight(floatValue || 0);
+                   }}
+                   decimalScale={0}
+                   fixedDecimalScale={false}
+                   allowNegative={false}
+                   thousandSeparator={false}
+                   decimalSeparator="."
+                   placeholder="Height"
+                   className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                 />
+               </div>
+             </div>
+           </div>
+         )}
 
-          <div className="flex justify-end gap-2 mt-6 col-span-2">
-            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
-            <Button onClick={handleConfirm}>{isEditMode ? 'Update' : 'Add'}</Button>
-          </div>
-        </div>
-      </Modal>
+         {/* Action Buttons */}
+         <div className="flex justify-end gap-2 mt-8">
+           <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
+           <Button onClick={handleConfirm}>{isEditMode ? 'Update' : 'Add'}</Button>
+         </div>
+       </div>
+     </Modal>
   );
 };
 
