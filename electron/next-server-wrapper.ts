@@ -70,10 +70,22 @@ function copyDirSync(src: string, dest: string) {
     console.log('[NextWrapper] exists(destStaticDir):', fs.existsSync(destStaticDir), '->', destStaticDir);
     console.log('[NextWrapper] exists(srcStaticDir):', fs.existsSync(srcStaticDir), '->', srcStaticDir);
 
-    if (!fs.existsSync(destStaticDir) && fs.existsSync(srcStaticDir)) {
-      console.log('[NextWrapper] syncing static from parent to standalone/.next/static');
-      copyDirSync(srcStaticDir, destStaticDir);
-      console.log('[NextWrapper] sync completed. exists(dest):', fs.existsSync(destStaticDir));
+    // Static dosyaları daha agresif şekilde kopyala - her zaman kopyala
+    try {
+      if (fs.existsSync(srcStaticDir)) {
+        console.log('[NextWrapper] syncing static from parent to standalone/.next/static');
+        copyDirSync(srcStaticDir, destStaticDir);
+        console.log('[NextWrapper] sync completed. exists(dest):', fs.existsSync(destStaticDir));
+      } else {
+        // Alternatif static kaynak ara
+        const altStaticDir = path.join(resourcesPath, 'app', 'static');
+        if (fs.existsSync(altStaticDir)) {
+          console.log('[NextWrapper] syncing static from alternative location:', altStaticDir);
+          copyDirSync(altStaticDir, destStaticDir);
+        }
+      }
+    } catch (e) {
+      console.error('[NextWrapper] Error copying static files:', e);
     }
   } catch (e: any) {
     console.log('[NextWrapper] static sync error:', e && e.message);
