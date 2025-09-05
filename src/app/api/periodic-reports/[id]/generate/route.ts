@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { ObjectId } from 'mongodb';
-import { mailService, generatePDF } from '@/lib/mail-service';
+import { mailService } from '@/lib/mail-service';
 
 // Generate and send a report immediately
 export async function POST(
@@ -60,38 +60,10 @@ export async function POST(
     // Send the report
     let success = false;
 
-    if (report.format === 'pdf') {
-      try {
-        // Generate PDF from HTML content
-        const pdfBuffer = await generatePDF(reportHtml);
-        
-        // Create a filename for the PDF
-        const reportDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-        const safeReportName = report.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const filename = `${safeReportName}_${reportDate}.pdf`;
-        
-        // Send email with PDF attachment
-        success = await mailService.sendMail(
-          reportSubject,
-          reportText,
-          `<p>Please find the attached report "${report.name}" in PDF format.</p>`,
-          3, // retry count
-          [
-            {
-              filename,
-              content: pdfBuffer,
-              contentType: 'application/pdf'
-            }
-          ]
-        );
-      } catch (error) {
-        console.error('Failed to generate PDF:', error);
-        return NextResponse.json({ error: 'Failed to generate PDF report' }, { status: 500 });
-      }
-    } else {
-      // For HTML reports, we send the report directly as HTML
-      success = await mailService.sendMail(reportSubject, reportText, reportHtml);
-    }
+    // PDF generation logic has been removed from this route.
+    // The primary PDF generation is now handled by the persistent periodic-report-service.
+    // This route will now only send a standard HTML/text email.
+    success = await mailService.sendMail(reportSubject, reportText, reportHtml);
 
     if (!success) {
       return NextResponse.json({ error: 'Failed to send the report email' }, { status: 500 });

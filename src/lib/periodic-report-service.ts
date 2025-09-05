@@ -4,6 +4,11 @@ import { mailService } from './mail-service';
 import { backendLogger } from './logger/BackendLogger';
 import { ObjectId } from 'mongodb';
 
+// a an import and a an import are missing
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+
 class PeriodicReportService {
   constructor() {
     this.initializeSchedules();
@@ -278,13 +283,33 @@ class PeriodicReportService {
       let success = false;
       
       if (report.format === 'pdf') {
-        // For now, we'll just send HTML since PDF generation is not implemented yet
+        const trendLogDataForPdf = new Map();
+        for (const [trendLogId, logEntries] of entriesByTrendLog.entries()) {
+            const trendLog = trendLogMap.get(trendLogId);
+            if (trendLog) {
+                const analyzer = analyzerMap.get(trendLog.analyzerId);
+                const title = analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+                trendLogDataForPdf.set(title, logEntries);
+            }
+        }
+
+        const pdfBuffer = await this.generatePdfReport(report.name, trendLogDataForPdf);
+        
+        // When sending a PDF, the HTML body should be a simple notification, not the full report.
+        const notificationHtml = `<p>Please find the attached report: <strong>${report.name}</strong></p>`;
+        
         success = await mailService.sendMail(
           reportSubject,
-          reportText,
-          reportHtml,
+          "Please find the attached PDF report.", // Simple text body for non-html clients
+          notificationHtml, // Simple HTML body
           3, // retry count
+          [{ // Attachment object
+            filename: `${report.name.replace(/ /g, '_')}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }]
         );
+
       } else {
         success = await mailService.sendMail(
           reportSubject,
@@ -316,6 +341,47 @@ class PeriodicReportService {
         stack: (error as Error).stack
       });
     }
+  }
+
+
+  private async generatePdfReport(reportName: string, trendLogData: Map<string, any[]>): Promise<Buffer> {
+    const doc = new jsPDF();
+    const reportDate = new Date();
+
+    doc.setFontSize(20);
+    doc.text(reportName, doc.internal.pageSize.getWidth() / 2, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`Report Date: ${reportDate.toLocaleDateString()}`, doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+
+    let startY = 40;
+
+    for (const [title, entries] of trendLogData.entries()) {
+      if (startY > 260) { // Add new page if content overflows
+        doc.addPage();
+        startY = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.text(title, 14, startY);
+      startY += 10;
+
+      autoTable(doc, {
+        head: [['Timestamp', 'Value']],
+        body: entries.map(entry => [
+          new Date(entry.timestamp).toLocaleString(),
+          entry.value
+        ]),
+        startY: startY,
+        theme: 'grid',
+        headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
+        styles: { fontSize: 10 },
+      });
+      
+      startY = (doc as any).lastAutoTable.finalY + 15;
+    }
+    
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+    return pdfBuffer;
   }
 
   private async sendDailyReport() {

@@ -1,22 +1,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
-
 export class FileLogger {
     private logFile: string;
     private logDir: string;
 
-    constructor() {
-        // Electron app path'i al, yoksa fallback kullan
+    constructor(appName = 'scada-dashboard', fileName = 'service-debug.log') {
+        // Electron'a bağımlılığı kaldır, platforma göre path belirle
         let userDataPath: string;
-        try {
-            userDataPath = app ? app.getPath('userData') : process.env.APPDATA || process.cwd();
-        } catch {
-            userDataPath = process.env.APPDATA || process.cwd();
+        if (process.env.APPDATA) { // Windows
+            userDataPath = process.env.APPDATA;
+        } else if (process.platform === 'darwin') { // macOS
+            userDataPath = path.join(process.env.HOME!, 'Library', 'Application Support');
+        } else { // Linux
+            userDataPath = path.join(process.env.HOME!, '.config');
         }
 
-        this.logDir = path.join(userDataPath, 'logs');
-        this.logFile = path.join(this.logDir, 'service-debug.log');
+        this.logDir = path.join(userDataPath, appName, 'logs');
+        this.logFile = path.join(this.logDir, fileName);
         
         // Log klasörünü oluştur
         this.ensureLogDir();

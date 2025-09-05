@@ -113,8 +113,25 @@ async function createWindow() {
     const serviceFile = path.join(appPath, "dist-service", "service_bundle.js");
 
     serviceProcess = fork(serviceFile, [], {
-      env: { ...process.env, NODE_ENV: "production" },
-      stdio: "inherit",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        IS_PACKAGED: app.isPackaged ? 'true' : 'false' // isPackaged bilgisini gönder
+      },
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'], // Stdio'yu yakalamak için 'pipe' kullan
+    });
+
+    // Servis sürecinin çıktılarını logla
+    serviceProcess.stdout?.on('data', (data) => {
+      log(`[Service STDOUT]: ${data.toString()}`);
+    });
+    
+    serviceProcess.stderr?.on('data', (data) => {
+      log(`[Service STDERR]: ${data.toString()}`);
+    });
+
+    serviceProcess.on('exit', (code) => {
+      log(`Service process exited with code: ${code}`);
     });
     serviceProcess.setMaxListeners(30);
 

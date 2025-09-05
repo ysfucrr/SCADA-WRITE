@@ -2,7 +2,6 @@ import nodemailer from 'nodemailer';
 import { connectToDatabase } from './mongodb';
 import { MailSettings } from '@/types/mail-settings';
 import { backendLogger } from './logger/BackendLogger';
-import puppeteer from 'puppeteer';
 
 class MailService {
   private transporter: nodemailer.Transporter | null = null;
@@ -106,46 +105,3 @@ class MailService {
 }
 
 export const mailService = new MailService();
-
-// Helper function to generate PDF using Puppeteer
-export async function generatePDF(html: string): Promise<Buffer> {
-  let browser = null;
-  try {
-    // Launch a headless browser
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    
-    // Create a new page
-    const page = await browser.newPage();
-    
-    // Set content to our HTML
-    await page.setContent(html, {
-      waitUntil: 'networkidle0'
-    });
-    
-    // Generate PDF
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '1cm',
-        right: '1cm',
-        bottom: '1cm',
-        left: '1cm'
-      }
-    });
-    
-    // Convert Uint8Array to Buffer
-    return Buffer.from(pdfBuffer);
-  } catch (error) {
-    backendLogger.error('Failed to generate PDF', 'MailService', { error: (error as Error).message });
-    throw error;
-  } finally {
-    // Make sure to close the browser
-    if (browser) {
-      await browser.close();
-    }
-  }
-}

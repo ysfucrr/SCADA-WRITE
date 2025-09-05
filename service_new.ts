@@ -2,7 +2,36 @@
 // dotenv.config({ path: '.env.local' });
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const dotenv = require('dotenv');
-dotenv.config({ path: '.env.local' });
+import path from 'path';
+import fs from 'fs';
+import { fileLogger } from './src/lib/logger/FileLogger';
+
+// Loglama başlangıcı
+fileLogger.info('--- Service Process Starting ---');
+fileLogger.info(`isPackaged: ${!process.env.npm_config_development}`);
+fileLogger.info(`cwd: ${process.cwd()}`);
+fileLogger.info(`__dirname: ${__dirname}`);
+fileLogger.info(`Log file path: ${fileLogger.getLogPath()}`);
+
+// .env dosyasını doğru yerden yükle
+const isPackaged = process.env.IS_PACKAGED === 'true' || (process.env.NODE_ENV === 'production' && !(process.env as any).npm_config_development);
+
+const envPath = isPackaged
+    ? path.join((process as any).resourcesPath, 'app', '.env.local')
+    : path.join(process.cwd(), '.env.local');
+
+fileLogger.info(`Attempting to load .env from: ${envPath}`);
+
+if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    fileLogger.info('.env.local loaded successfully', {
+        NEXTAUTH_SECRET_LOADED: process.env.NEXTAUTH_SECRET ? 'Yes' : 'No',
+        SERVICE_PORT: process.env.SERVICE_PORT || 'Not Set'
+    });
+} else {
+    fileLogger.warn('.env.local not found at expected path.');
+}
+
 import { TrendLoggerService } from "./src/lib/trend-logger-service_new";
 import { ModbusPoller } from "./src/lib/modbus/ModbusPoller";
 import { backendLogger } from "./src/lib/logger/BackendLogger";
@@ -311,21 +340,34 @@ io.on('connection', (socket: Socket) => {
 });
 
 server.listen(Number(port), '0.0.0.0', () => {
-  backendLogger.info(`Express and Socket.IO server listening on port ${port}`, "Server");
+  fileLogger.info(`Express and Socket.IO server listening on port ${port}`, "Server");
 
-  backendLogger.info('Initializing services...', 'Server', {
+  fileLogger.info('Initializing services...', {
+    source: 'Server',
     mailService: !!mailService,
     alertManager: !!alertManager,
     periodicReportService: !!periodicReportService
   });
 
-  modbusPoller.start().catch(err => {
-      backendLogger.error("Modbus Poller Orchestrator failed to start", "Server", { error: (err as Error).message, stack: (err as Error).stack });
-  });
+  try {
+    modbusPoller.start().then(() => {
+        fileLogger.info("Modbus Poller Orchestrator started successfully.", "Server");
+    }).catch(err => {
+        fileLogger.error("Modbus Poller Orchestrator failed to start", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
+    });
 
-  trendLoggerInstance.initialize();
-  trendLoggerInstance.listenToPoller(modbusPoller);
-  alertManager.listenForUpdates(modbusPoller);
+    trendLoggerInstance.initialize();
+    fileLogger.info("TrendLoggerService initialized.", "Server");
+
+    trendLoggerInstance.listenToPoller(modbusPoller);
+    fileLogger.info("TrendLoggerService is listening to poller.", "Server");
+
+    alertManager.listenForUpdates(modbusPoller);
+    fileLogger.info("AlertManager is listening for updates.", "Server");
+
+  } catch (err) {
+      fileLogger.error("An error occurred during service initialization.", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
+  }
 });
 
 // COM portlarını temizleme fonksiyonu
@@ -375,7 +417,10 @@ process.on('beforeExit', (code) => {
 
 // Uncaught exception durumunda da temizle
 process.on('uncaughtException', (err) => {
-  console.log(`Uncaught exception: ${err.message}`);
+  fileLogger.error('--- UNCAUGHT EXCEPTION ---', {
+      message: err.message,
+      stack: err.stack
+  });
   forceCloseAllComPorts("Uncaught exception");
   process.exit(1);
 });
