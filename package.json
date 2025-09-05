@@ -70,6 +70,7 @@
     "p-queue": "^8.1.0",
     "pdfkit": "^0.17.1",
     "pdfkit-table": "^0.1.99",
+    "puppeteer": "^24.19.0",
     "react": "^19.0.0",
     "react-apexcharts": "^1.7.0",
     "react-colorful": "^5.6.1",

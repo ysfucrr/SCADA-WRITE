@@ -3,7 +3,7 @@ import EditableTitle from "@/components/ui/EditableTitle";
 import { Spinner } from "@/components/ui/spinner";
 import { Typography } from "@/components/ui/typography";
 import { useAuth } from "@/hooks/use-auth";
-import { Building, Combine, DoorOpen, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users } from "lucide-react";
+import { Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -124,6 +124,11 @@ const AppSidebar: React.FC = () => {
           path: "/trend-log",
         },
         {
+          icon: <FileText />,
+          name: "Periodic Reports",
+          path: "/periodic-reports",
+        },
+        {
           icon: <ServerCog />,
           name: "System Logs",
           path: "/system-logs",
@@ -166,6 +171,13 @@ const AppSidebar: React.FC = () => {
         icon: <Logs />,
         name: "Trend Log",
         path: "/trend-log",
+      });
+      
+      // Also add access to periodic reports for users with trendLog permission
+      items.push({
+        icon: <FileText />,
+        name: "Periodic Reports",
+        path: "/periodic-reports",
       });
     }
     return items;

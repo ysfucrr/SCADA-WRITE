@@ -2,20 +2,320 @@ import cron from 'node-cron';
 import { connectToDatabase } from './mongodb';
 import { mailService } from './mail-service';
 import { backendLogger } from './logger/BackendLogger';
+import { ObjectId } from 'mongodb';
 
 class PeriodicReportService {
   constructor() {
-    this.scheduleDailyReport();
+    this.initializeSchedules();
   }
 
-  private scheduleDailyReport() {
-    // Schedule to run every day at 08:00 AM
+  private initializeSchedules() {
+    // Schedule to check for reports every minute
+    cron.schedule('* * * * *', () => {
+      this.checkAndSendScheduledReports();
+    }, {
+      timezone: "Europe/Istanbul"
+    });
+
+    // Keep the default daily report for backward compatibility
     cron.schedule('0 8 * * *', () => {
       backendLogger.info('Running daily trend log report job.', 'PeriodicReportService');
       this.sendDailyReport();
     }, {
-      timezone: "Europe/Istanbul" // Or your desired timezone
+      timezone: "Europe/Istanbul"
     });
+  }
+
+  private async checkAndSendScheduledReports() {
+    try {
+      const { db } = await connectToDatabase();
+      const now = new Date();
+
+      // Find all active reports
+      const reports = await db.collection('periodicReports').find({
+        active: true
+      }).toArray();
+
+      if (!reports || reports.length === 0) {
+        return;
+      }
+
+      for (const report of reports) {
+        if (this.shouldSendReport(report, now)) {
+          backendLogger.info(`Sending scheduled report: ${report.name}`, 'PeriodicReportService');
+          await this.sendConfiguredReport(report, db);
+        }
+      }
+    } catch (error) {
+      backendLogger.error('An error occurred checking scheduled reports.', 'PeriodicReportService', {
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      });
+    }
+  }
+
+  private shouldSendReport(report: any, now: Date): boolean {
+    // Check if report should be sent based on schedule
+    const lastSent = report.lastSent ? new Date(report.lastSent) : null;
+    const { frequency, schedule } = report;
+    
+    // If no lastSent time or it's the same minute, don't send
+    if (lastSent &&
+        lastSent.getFullYear() === now.getFullYear() &&
+        lastSent.getMonth() === now.getMonth() &&
+        lastSent.getDate() === now.getDate() &&
+        lastSent.getHours() === now.getHours() &&
+        lastSent.getMinutes() === now.getMinutes()) {
+      return false;
+    }
+
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentDay = now.getDay(); // 0-6 (Sunday-Saturday)
+    const currentDate = now.getDate(); // 1-31
+    
+    // Check if the current time matches the scheduled time
+    if (currentHour === schedule.hour && currentMinute === schedule.minute) {
+      if (frequency === 'daily') {
+        return true;
+      } else if (frequency === 'weekly' && currentDay === schedule.dayOfWeek) {
+        return true;
+      } else if (frequency === 'monthly' && currentDate === schedule.dayOfMonth) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  private async sendConfiguredReport(report: any, db: any) {
+    try {
+      // Convert string IDs to ObjectIds
+      const trendLogIds = report.trendLogIds.map((id: string) => new ObjectId(id));
+      
+      // Note: Email recipients are now managed through centralized mail settings
+      
+      // Get the last 24 hours of data
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      
+      // Fetch trend log entries
+      const entries = await db.collection('trend_log_entries').find({
+        trendLogId: { $in: trendLogIds },
+        timestamp: { $gte: twentyFourHoursAgo }
+      }).sort({ timestamp: 1 }).toArray();
+      
+      if (entries.length === 0) {
+        backendLogger.info(`No trend logs found for report: ${report.name}. Skipping.`, 'PeriodicReportService');
+        return;
+      }
+      
+      // Fetch trend log details for creating better report labels
+      const trendLogs = await db.collection('trendLogs').find({
+        _id: { $in: trendLogIds }
+      }).toArray();
+      
+      // Create a map for quick lookups
+      const trendLogMap = new Map();
+      
+      // Safely fetch analyzer details if possible
+      let analyzerMap = new Map();
+      try {
+        if (trendLogs && trendLogs.length > 0) {
+          // Filter out null or undefined analyzerId values
+          const analyzerIds = trendLogs
+            .filter((log: any) => log && log.analyzerId)
+            .map((log: any) => log.analyzerId)
+            .filter(Boolean);
+            
+          if (analyzerIds && analyzerIds.length > 0) {
+            // Convert string IDs to ObjectIds, handling potential errors
+            const objectIds = analyzerIds
+              .filter((id: any) => id && typeof id === 'string')
+              .map((id: string) => {
+                try {
+                  return new ObjectId(id);
+                } catch (e) {
+                  backendLogger.error(`Invalid ObjectId: ${id}`, 'PeriodicReportService');
+                  return null;
+                }
+              })
+              .filter(Boolean);
+              
+            if (objectIds && objectIds.length > 0) {
+              const analyzers = await db.collection('analyzers').find({
+                _id: { $in: objectIds }
+              }).toArray();
+              
+              // Build analyzer map
+              for (const analyzer of analyzers) {
+                if (analyzer && analyzer._id) {
+                  analyzerMap.set(analyzer._id.toString(), analyzer);
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Don't let analyzer fetch errors stop the whole report
+        backendLogger.error('Error fetching analyzer data for report', 'PeriodicReportService', {
+          error: (error as Error).message
+        });
+      }
+      
+      for (const log of trendLogs) {
+        trendLogMap.set(log._id.toString(), log);
+      }
+      
+      // Group entries by trend log
+      const entriesByTrendLog = new Map();
+      for (const entry of entries) {
+        const trendLogId = entry.trendLogId.toString();
+        
+        if (!entriesByTrendLog.has(trendLogId)) {
+          entriesByTrendLog.set(trendLogId, []);
+        }
+        
+        entriesByTrendLog.get(trendLogId).push(entry);
+      }
+      
+      // Generate report content
+      const reportSubject = `${report.name} - ${new Date().toLocaleDateString()}`;
+      
+      let reportText = `${report.name}\n\nDate: ${new Date().toLocaleDateString()}\n\n`;
+      let reportHtml = `
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            h1 { color: #2563eb; }
+            table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+            th { background-color: #e5edff; color: #1e40af; font-weight: bold; text-align: left; padding: 8px; }
+            td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+            .section { margin-bottom: 30px; }
+          </style>
+        </head>
+        <body>
+          <h1>${report.name}</h1>
+          <p>Date: ${new Date().toLocaleDateString()}</p>
+      `;
+      
+      // Add sections for each trend log
+      for (const [trendLogId, logEntries] of entriesByTrendLog.entries()) {
+        const trendLog = trendLogMap.get(trendLogId);
+        
+        if (trendLog) {
+          let reportTitle;
+          
+          try {
+            // Güvenli bir şekilde analyzer bilgisini alalım
+            const registerId = trendLog.registerId || 'Unknown Register';
+            let analyzerInfo = 'Unknown Analyzer';
+            
+            if (trendLog.analyzerId && analyzerMap.has(trendLog.analyzerId)) {
+              const analyzer = analyzerMap.get(trendLog.analyzerId);
+              if (analyzer && analyzer.name) {
+                analyzerInfo = `${analyzer.name} ${analyzer.slaveId ? `(Slave: ${analyzer.slaveId})` : ''}`;
+              }
+            }
+            
+            reportTitle = `${analyzerInfo}`;
+          } catch (error) {
+            // Fallback to original registerId display if there's any error
+            reportTitle = trendLog.registerId || 'Unknown Register';
+          }
+          
+          // Text formatında rapor
+          reportText += `Trend Log: ${reportTitle}\n`;
+          reportText += `Entries: ${logEntries.length}\n\n`;
+          
+          for (const entry of logEntries) {
+            const timestamp = new Date(entry.timestamp).toLocaleString();
+            reportText += `${timestamp} - Value: ${entry.value}\n`;
+          }
+          
+          reportText += '\n';
+          
+          // HTML formatında rapor
+          reportHtml += `
+            <div class="section">
+              <h2>Trend Log: ${reportTitle}</h2>
+              <p>Entries: ${logEntries.length}</p>
+              
+              <table>
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+          `;
+          
+          for (const entry of logEntries) {
+            const timestamp = new Date(entry.timestamp).toLocaleString();
+            reportHtml += `
+              <tr>
+                <td>${timestamp}</td>
+                <td>${entry.value}</td>
+              </tr>
+            `;
+          }
+          
+          reportHtml += `
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+      }
+      
+      reportHtml += `
+        </body>
+        </html>
+      `;
+      
+      // Send the report based on format
+      let success = false;
+      
+      if (report.format === 'pdf') {
+        // For now, we'll just send HTML since PDF generation is not implemented yet
+        success = await mailService.sendMail(
+          reportSubject,
+          reportText,
+          reportHtml,
+          3, // retry count
+        );
+      } else {
+        success = await mailService.sendMail(
+          reportSubject,
+          reportText,
+          reportHtml,
+          3, // retry count
+        );
+      }
+      
+      if (success) {
+        // Update the lastSent timestamp
+        await db.collection('periodicReports').updateOne(
+          { _id: report._id },
+          {
+            $set: {
+              lastSent: new Date(),
+              updatedAt: new Date()
+            }
+          }
+        );
+        
+        backendLogger.info(`Report "${report.name}" sent successfully.`, 'PeriodicReportService');
+      } else {
+        backendLogger.error(`Failed to send report "${report.name}".`, 'PeriodicReportService');
+      }
+    } catch (error) {
+      backendLogger.error(`An error occurred while sending report "${report.name}".`, 'PeriodicReportService', {
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      });
+    }
   }
 
   private async sendDailyReport() {
@@ -24,13 +324,64 @@ class PeriodicReportService {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       // Fetch trend log entries from the last 24 hours
-      const trendLogs = await db.collection('trend_log_entries').find({
+      const trendLogEntries = await db.collection('trend_log_entries').find({
         timestamp: { $gte: twentyFourHoursAgo }
       }).sort({ timestamp: 1 }).toArray();
 
-      if (trendLogs.length === 0) {
+      if (trendLogEntries.length === 0) {
         backendLogger.info('No new trend logs in the last 24 hours. Skipping report.', 'PeriodicReportService');
         return;
+      }
+
+      // Safely create analyzer map
+      let analyzerMap = new Map();
+      try {
+        if (trendLogEntries && trendLogEntries.length > 0) {
+          // Get unique analyzer IDs safely
+          const analyzerIds = Array.from(
+            new Set(
+              trendLogEntries
+                .filter((entry: any) => entry && entry.analyzerId)
+                .map((entry: any) => entry.analyzerId)
+            )
+          ).filter(Boolean);
+          
+          if (analyzerIds && analyzerIds.length > 0) {
+            // Convert IDs to ObjectIds safely
+            const objectIds = analyzerIds
+              .filter((id: any) => id && typeof id === 'string')
+              .map((id: string) => {
+                try {
+                  return new ObjectId(id);
+                } catch (e) {
+                  backendLogger.error(`Invalid analyzer ObjectId in daily report: ${id}`, 'PeriodicReportService');
+                  return null;
+                }
+              })
+              .filter(Boolean);
+              
+            if (objectIds && objectIds.length > 0) {
+              // Fetch analyzers - cast to remove nulls for typescript
+              const analyzers = await db.collection('analyzers').find({
+                _id: { $in: objectIds as ObjectId[] }
+              }).toArray();
+              
+              // Build map
+              if (analyzers && analyzers.length > 0) {
+                for (const analyzer of analyzers) {
+                  if (analyzer && analyzer._id) {
+                    analyzerMap.set(analyzer._id.toString(), analyzer);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Don't let analyzer issues stop the report
+        backendLogger.error('Error fetching analyzer data for daily report', 'PeriodicReportService', {
+          error: (error as Error).message
+        });
       }
 
       // Generate a simple report
@@ -43,21 +394,43 @@ class PeriodicReportService {
           <thead>
             <tr>
               <th>Timestamp</th>
-              <th>Register ID</th>
+              <th>Analyzer</th>
               <th>Value</th>
             </tr>
           </thead>
           <tbody>
       `;
 
-      for (const log of trendLogs) {
-        const timestamp = new Date(log.timestamp).toLocaleString();
-        reportText += `${timestamp} - Register: ${log.registerId}, Value: ${log.value}\n`;
+      for (const entry of trendLogEntries) {
+        let displayName = "Unknown";
+        const timestamp = new Date(entry.timestamp).toLocaleString();
+        
+        try {
+          if (entry && entry.analyzerId && analyzerMap.has(entry.analyzerId)) {
+            const analyzer = analyzerMap.get(entry.analyzerId);
+            if (analyzer) {
+              // Safely access analyzer properties
+              const analyzerName = analyzer.name || 'Unknown';
+              const analyzerSlaveId = analyzer.slaveId || 'N/A';
+              displayName = `${analyzerName} (Slave: ${analyzerSlaveId})`;
+            }
+          }
+        } catch (error) {
+          // Fallback if any error occurs
+          displayName = "Unknown Analyzer";
+          backendLogger.error('Error formatting analyzer in daily report', 'PeriodicReportService', {
+            analyzerId: entry.analyzerId
+          });
+        }
+        
+        const valueDisplay = entry.value !== undefined && entry.value !== null ? entry.value : "N/A";
+        
+        reportText += `${timestamp} - ${displayName}, Value: ${valueDisplay}\n`;
         reportHtml += `
           <tr>
             <td>${timestamp}</td>
-            <td>${log.registerId}</td>
-            <td>${log.value}</td>
+            <td>${displayName}</td>
+            <td>${valueDisplay}</td>
           </tr>
         `;
       }
@@ -72,9 +445,9 @@ class PeriodicReportService {
       }
 
     } catch (error) {
-      backendLogger.error('An error occurred while generating the daily report.', 'PeriodicReportService', { 
+      backendLogger.error('An error occurred while generating the daily report.', 'PeriodicReportService', {
         error: (error as Error).message,
-        stack: (error as Error).stack 
+        stack: (error as Error).stack
       });
     }
   }
