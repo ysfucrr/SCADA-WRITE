@@ -49,7 +49,7 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
     const [timeout, setTimeout] = useState(analyzer?.timeout || "");
     const [ctRadio, setCTRadio] = useState(analyzer?.ctRadio || "");
     const [vtRadio, setVTRadio] = useState(analyzer?.vtRadio || "");
-    const [connection, setConnection] = useState(analyzer?.connection || "");
+    const [connection, setConnection] = useState(analyzer?.connection || "serial");
     const [gateway, setGateway] = useState(analyzer?.gateway || "");
     const [isLoading, setIsLoading] = useState(true);
     const [buildings, setBuildings] = useState<Building[]>([]);
@@ -137,7 +137,7 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
     };
 
     const connectionTypeOptions = [
-        { value: "serial", label: "Serial (RTU)" },
+        { value: "serial", label: "Serial (Analyzer)" },
         { value: "tcp", label: "TCP / Ethernet (Gateway)" }
     ];
     // const [serialConnectionOptions, setSerialConnectionOptions] = useState<{value:string, label:string}[]>([]);
@@ -155,13 +155,27 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
         // Bağlantı tipine göre mevcut seçenekleri belirle
         const currentOptions = connection === "serial" ? serialOptions : tcpOptions;
         
-        // // Eğer sadece bir seçenek varsa otomatik olarak seç
-        // if (currentOptions.length === 1) {
-        //     setGateway(currentOptions[0].value);
-        // } else {
-        //     setGateway("");
-        // }
-    }, [rtus, connection]);
+        // Reset gateway value when connection type changes
+        const isValidGateway = currentOptions.some((option: any) => option.value === gateway);
+        if (!isValidGateway) {
+            // If current gateway is not valid for the new connection type, reset it
+            setGateway(currentOptions.length > 0 ? currentOptions[0].value : "");
+        }
+    }, [rtus, connection, gateway]);
+
+    // Reset gateway when connection type changes
+    useEffect(() => {
+        if (rtus.length === 0) return;
+        
+        // When editing an analyzer and connection type changes, reset the gateway
+        if (analyzer && connection !== analyzer.connection) {
+            const options = connection === "serial"
+                ? rtus.filter((rtu: any) => rtu.connectionType === "serial").map((rtu: any) => ({ value: rtu._id, label: rtu.name }))
+                : rtus.filter((rtu: any) => rtu.connectionType === "tcp").map((rtu: any) => ({ value: rtu._id, label: rtu.name }));
+            
+            setGateway(options.length > 0 ? options[0].value : "");
+        }
+    }, [connection, rtus, analyzer]);
 
     useEffect(() => {
         fetchBuildings();
@@ -404,9 +418,12 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
                             <span className="text-red-500 ml-1">*</span>
                         </div>
                         <Select
-                            options={connection === "serial" ? rtus.filter((rtu: any) => rtu.connectionType === "serial").map((rtu: any) => ({ value: rtu._id, label: rtu.name })) : rtus.filter((rtu: any) => rtu.connectionType === "tcp").map((rtu: any) => ({ value: rtu._id, label: rtu.name }))}
+                            options={connection === "serial"
+                                ? rtus.filter((rtu: any) => rtu.connectionType === "serial").map((rtu: any) => ({ value: rtu._id, label: rtu.name }))
+                                : rtus.filter((rtu: any) => rtu.connectionType === "tcp").map((rtu: any) => ({ value: rtu._id, label: rtu.name }))}
                             onChange={(value) => setGateway(value)}
                             defaultValue={gateway}
+                            key={`gateway-select-${connection}`} // Add key to force re-render when connection changes
                         />
                         {formErrors.gateway && (
                             <p className="text-sm text-red-500 mt-1">{formErrors.gateway}</p>

@@ -239,6 +239,13 @@ export default function AnalyzersPage() {
                 connection: analyzerData.connection,
                 gateway: analyzerData.gateway
             };
+            
+            console.log("Editing analyzer with data:", {
+                oldConnection: selectedAnalyzer.connection,
+                newConnection: analyzerData.connection,
+                oldGateway: selectedAnalyzer.gateway,
+                newGateway: analyzerData.gateway
+            });
 
             const response = await fetch(`/api/analyzers/${selectedAnalyzer._id}`, {
                 method: "PUT",
@@ -372,12 +379,12 @@ export default function AnalyzersPage() {
                                                         <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Type: </SmallText>
                                                             <SmallText className="text-gray-700 dark:text-gray-300">
-                                                                {analyzer.connection == "serial" ? "Serial" : "TCP / Ethernet"}
+                                                                {analyzer.connection === "serial" ? "Serial (Analyzer)" : "TCP / Ethernet"}
                                                             </SmallText>
                                                         </div>
                                                         <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Gateway: </SmallText>
-                                                            <SmallText className="text-gray-700 dark:text-gray-300">{rtus.find(rtu => rtu._id === analyzer.gateway)?.name || analyzer.gateway}</SmallText>
+                                                            <SmallText className="text-gray-700 dark:text-gray-300">{rtus.find(rtu => rtu._id === analyzer.gateway)?.name || "Unknown Gateway"}</SmallText>
                                                         </div>
                                                         {/* <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Unit: </SmallText>
@@ -387,12 +394,12 @@ export default function AnalyzersPage() {
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
                                                     <Paragraph className="font-medium text-gray-500 dark:text-gray-400">
-                                                        {analyzer.connection == "serial" ? "Serial (Analyzer)" : "IP Gateway"}
+                                                        {analyzer.connection === "serial" ? "Serial (Analyzer)" : "IP Gateway"}
                                                     </Paragraph>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell">
                                                     <span className={`inline-block px-2 py-1 rounded-full text-gray-500 dark:text-gray-400`}>
-                                                        {rtus.find(rtu => rtu._id === analyzer.gateway)?.name || analyzer.gateway}
+                                                        {rtus.find(rtu => rtu._id === analyzer.gateway)?.name || "Unknown Gateway"}
                                                     </span>
                                                 </td>
                                                 {/* <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell">
