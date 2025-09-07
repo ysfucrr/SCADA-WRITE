@@ -430,14 +430,16 @@ export default function TrendLogPage() {
             <PageBreadcrumb pageTitle="Trend Log Settings" />
 
             <div className="flex justify-between items-center mb-6">
-                {/* <div>  </div> */}
-                <Button
-                    onClick={openAddTrendLogModal}
-                    leftIcon={<PlusCircle size={16} />}
-                    variant="primary"
-                >
-                    Add Trend Log
-                </Button>
+                {/* "Add Trend Log" butonunu sadece admin kullanıcılar görebilir */}
+                {isAdmin && (
+                    <Button
+                        onClick={openAddTrendLogModal}
+                        leftIcon={<PlusCircle size={16} />}
+                        variant="primary"
+                    >
+                        Add Trend Log
+                    </Button>
+                )}
             </div>
 
             {isLoading ? (
@@ -549,23 +551,29 @@ export default function TrendLogPage() {
                                                             shape="circle"
                                                             className="px-2 sm:px-3"
                                                         /> */}
-                                                        <IconButton
-                                                            size="sm"
-                                                            onClick={() => openEditTrendLogModal(TrendLog)}
-                                                            icon={<Pencil size={14} />}
-                                                            variant="warning"
-                                                            shape="circle"
-                                                            className="px-2 sm:px-3"
-                                                        />
-                                                        <IconButton
-                                                            disabled={deleting}
-                                                            size="sm"
-                                                            onClick={() => handleDeleteTrendLog(TrendLog)}
-                                                            icon={<Trash2 size={14} />}
-                                                            variant="error"
-                                                            shape="circle"
-                                                            className="px-2 sm:px-3"
-                                                        />
+                                                        {/* Düzenleme butonu sadece admin kullanıcılar tarafından görülür */}
+                                                        {isAdmin && (
+                                                            <IconButton
+                                                                size="sm"
+                                                                onClick={() => openEditTrendLogModal(TrendLog)}
+                                                                icon={<Pencil size={14} />}
+                                                                variant="warning"
+                                                                shape="circle"
+                                                                className="px-2 sm:px-3"
+                                                            />
+                                                        )}
+                                                        {/* Silme butonu sadece admin kullanıcılar tarafından görülür */}
+                                                        {isAdmin && (
+                                                            <IconButton
+                                                                disabled={deleting}
+                                                                size="sm"
+                                                                onClick={() => handleDeleteTrendLog(TrendLog)}
+                                                                icon={<Trash2 size={14} />}
+                                                                variant="error"
+                                                                shape="circle"
+                                                                className="px-2 sm:px-3"
+                                                            />
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

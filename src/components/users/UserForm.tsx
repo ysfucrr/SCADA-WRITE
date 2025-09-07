@@ -15,6 +15,7 @@ interface UserFormProps {
             users: boolean;
             units: boolean;
             trendLog: boolean;
+            periodicReports: boolean;
         };
         buildingPermissions: {
             [buildingId: string]: boolean;
@@ -31,6 +32,7 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
         users: user?.permissions?.users || false,
         units: user?.permissions?.units || false,
         trendLog: user?.permissions?.trendLog || false,
+        periodicReports: user?.permissions?.periodicReports || false,
     });
     const [buildingPermissions, setBuildingPermissions] = useState<{ [key: string]: boolean }>({});
     const [buildings, setBuildings] = useState<Array<{ _id: string, name: string }>>([]);
@@ -239,6 +241,23 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
                                         setPermissions({
                                             ...permissions,
                                             trendLog: value,
+                                        })
+                                    }
+                                />
+                            </div>
+                        </div>
+
+                        {/* Periodic Reports permission */}
+                        <div className="flex items-center space-x-2">
+                            <div className="switch-container">
+                                <Switch
+                                    disabled={loginedUser?.role !== "admin"}
+                                    label="Periodic Reports"
+                                    defaultChecked={permissions.periodicReports}
+                                    onChange={(value) =>
+                                        setPermissions({
+                                            ...permissions,
+                                            periodicReports: value,
                                         })
                                     }
                                 />

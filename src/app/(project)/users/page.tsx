@@ -23,6 +23,7 @@ export interface UserType {
         users: boolean;
         units: boolean;
         trendLog: boolean;
+        periodicReports: boolean;
     };
     buildingPermissions?: {
         [buildingId: string]: boolean;

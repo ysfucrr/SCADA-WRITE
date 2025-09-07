@@ -131,10 +131,13 @@ export default function PeriodicReportsPage() {
   };
 
   useEffect(() => {
-    if (!isAuthLoading && (isAdmin || user?.permissions?.trendLog)) {
+    // Admin her zaman erişebilir, normal kullanıcılar sadece periodicReports izni varsa
+    if (!isAuthLoading && isAdmin) {
+      fetchData();
+    } else if (!isAuthLoading && user?.permissions && 'periodicReports' in user.permissions && user.permissions.periodicReports) {
       fetchData();
     }
-  }, [isAuthLoading]);
+  }, [isAuthLoading, isAdmin, user]);
 
   // Open add report modal
   const openAddModal = () => {
@@ -299,13 +302,16 @@ export default function PeriodicReportsPage() {
       <PageBreadcrumb pageTitle="Periodic Reports" />
 
       <div className="flex justify-between items-center mb-6">
-        <Button
-          onClick={openAddModal}
-          leftIcon={<PlusCircle size={16} />}
-          variant="primary"
-        >
-          Add Periodic Report
-        </Button>
+        {/* "Add Periodic Report" butonunu sadece admin kullanıcılar görebilir */}
+        {isAdmin && (
+          <Button
+            onClick={openAddModal}
+            leftIcon={<PlusCircle size={16} />}
+            variant="primary"
+          >
+            Add Periodic Report
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -382,25 +388,31 @@ export default function PeriodicReportsPage() {
                             className="p-2 sm:p-3"
                             title="Generate Report Now"
                           />
-                          <IconButton
-                            size="sm"
-                            onClick={() => openEditModal(report)}
-                            icon={<Pencil size={14} />}
-                            variant="warning"
-                            shape="circle"
-                            className="p-2 sm:p-3"
-                            title="Edit Report"
-                          />
-                          <IconButton
-                            disabled={deleting}
-                            size="sm"
-                            onClick={() => handleDeleteReport(report)}
-                            icon={<Trash2 size={14} />}
-                            variant="error"
-                            shape="circle"
-                            className="p-2 sm:p-3"
-                            title="Delete Report"
-                          />
+                          {/* Düzenleme butonu sadece admin kullanıcılar tarafından görülür */}
+                          {isAdmin && (
+                            <IconButton
+                              size="sm"
+                              onClick={() => openEditModal(report)}
+                              icon={<Pencil size={14} />}
+                              variant="warning"
+                              shape="circle"
+                              className="p-2 sm:p-3"
+                              title="Edit Report"
+                            />
+                          )}
+                          {/* Silme butonu sadece admin kullanıcılar tarafından görülür */}
+                          {isAdmin && (
+                            <IconButton
+                              disabled={deleting}
+                              size="sm"
+                              onClick={() => handleDeleteReport(report)}
+                              icon={<Trash2 size={14} />}
+                              variant="error"
+                              shape="circle"
+                              className="p-2 sm:p-3"
+                              title="Delete Report"
+                            />
+                          )}
                         </div>
                       </td>
                     </tr>
