@@ -15,9 +15,12 @@
     "start-electron": "cross-env NODE_ENV=production electron .",
     "start": "yarn start-electron",
     "lint": "next lint",
-    "build:service-main": "esbuild service_new.ts --bundle --platform=node --target=node18 --outfile=dist-service/service_bundle.js && node scripts/obfuscate-service.js service_bundle.js",
-    "build:service-workers": "esbuild src/lib/modbus/ModbusPollerWorker.ts --bundle --platform=node --target=node18 --outfile=dist-service/ModbusPollerWorker.js && node scripts/obfuscate-service.js ModbusPollerWorker.js",
-    "build:service": "yarn build:service-main && yarn build:service-workers",
+    "prepare-serial-modules": "node scripts/prepare-serial-modules.js",
+    "simplify-serial-modules": "node scripts/simplify-serial-modules.js",
+    "build:service-main": "node esbuild.service.js",
+    "build:service-workers": "esbuild src/lib/modbus/ModbusPollerWorker.ts --bundle --platform=node --target=node18 --external:serialport --external:@serialport/* --outfile=dist-service/ModbusPollerWorker.js",
+    "obfuscate-service": "node scripts/obfuscate-service.js service_bundle.js ModbusPollerWorker.js",
+    "build:service": "yarn prepare-serial-modules && yarn simplify-serial-modules && yarn build:service-main && yarn build:service-workers && yarn obfuscate-service",
     "build:electron": "tsc -p electron/tsconfig.json",
     "electron-dev": "tsc -p electron/tsconfig.json && cross-env NODE_ENV=development concurrently --kill-others \"cross-env IS_PACKAGED=false yarn service\" \"yarn dev\" \"wait-on http://localhost:3000 && electron .\"",
     "electron-build": "yarn build:service && yarn next build && yarn build:electron",
@@ -112,10 +115,17 @@
       "**/*.node",
       "dist-service/**/*",
       "node_modules/serialport/**",
+      "node_modules/@serialport/**",
+      "node_modules/modbus-serial/**",
+      "node_modules/bindings/**",
+      "node_modules/node-gyp-build/**",
       "node_modules/dotenv/**",
       "node_modules/mongodb/**",
-      "app/next-standalone/node_modules/**"
+      "app/dist-service/node_modules/mongodb/**"
     ],
+    "asar": {
+      "smartUnpack": true
+    },
     "extraResources": [
       {
         "from": "assets/",
@@ -151,7 +161,9 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icons/favicon.ico",
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      "executableName": "SCADAMulticore",
+      "artifactName": "SCADA-Multicore-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,

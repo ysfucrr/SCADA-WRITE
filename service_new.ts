@@ -415,12 +415,69 @@ process.on('beforeExit', (code) => {
   forceCloseAllComPorts("Before exit");
 });
 
-// Uncaught exception durumunda da temizle
+// Uncaught exception durumunda akıllı hata yönetimi
 process.on('uncaughtException', (err) => {
   fileLogger.error('--- UNCAUGHT EXCEPTION ---', {
       message: err.message,
       stack: err.stack
   });
+
+  // SerialPort ile ilgili hataları daha güvenli şekilde işle
+  const isSerialPortError = err.name === 'SerialPortError' ||
+                           (err.message && (
+                              err.message.includes('SerialPort') ||
+                              err.message.includes('COM port') ||
+                              err.message.includes('Port is not open') ||
+                              err.message.includes('File not found') ||
+                              err.message.includes('Access denied')
+                           ));
+  
+  // Tüm portları temizle
   forceCloseAllComPorts("Uncaught exception");
-  process.exit(1);
+
+  // Sadece kritik olmayan SerialPort hatalarında yaşamaya devam et
+  if (isSerialPortError) {
+    fileLogger.warn('SerialPort error detected. Attempting to recover without terminating service process.', {
+      errorType: err.name,
+      errorMessage: err.message
+    });
+    
+    // Opsiyonel: 10 saniye sonra bir yeniden bağlantı girişimi yap
+    setTimeout(() => {
+      try {
+        // SerialPoller varsa yeniden bağlanma döngüsünü tetikle
+        if ((modbusPoller as any).serialPoller) {
+          fileLogger.info('Attempting to recover SerialPort connections after uncaught exception');
+          // Tüm analizörleri yeniden başlatmaya çalış
+          (modbusPoller as any).serialPoller.analyzers.forEach((analyzer: any) => {
+            if ((modbusPoller as any).serialPoller.startPolling) {
+              (modbusPoller as any).serialPoller.startPolling(analyzer);
+            }
+          });
+        }
+      } catch (recoveryErr) {
+        fileLogger.error('Failed to recover after SerialPort error', {
+          error: (recoveryErr as Error).message
+        });
+      }
+    }, 10000);
+    
+  } else {
+    // Kritik hatalarda servisi sonlandır
+    fileLogger.error('Critical uncaught exception, terminating service process', {
+      errorType: err.name
+    });
+    process.exit(1);
+  }
+});
+
+// Diğer önemli bir hata türü olan unhandledRejection'ları da yönet
+process.on('unhandledRejection', (reason, promise) => {
+  fileLogger.error('--- UNHANDLED REJECTION ---', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : 'No stack trace',
+  });
+  
+  // Promise reddedilmeleri genellikle daha az kritiktir, servisi sonlandırmayız
+  // Sadece loglama yapıp devam ederiz
 });

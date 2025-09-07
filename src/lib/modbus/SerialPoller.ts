@@ -25,6 +25,8 @@ export class SerialPoller extends EventEmitter {
     private noRegisterLoggedConnections: Set<string> = new Set(); // Log spam'ini önlemek için
     private connectionLossLoggedConnections: Set<string> = new Set(); // Connection loss log spam'ini önlemek için
     private reconnectTimers: Map<string, NodeJS.Timeout> = new Map(); // Reconnect timer'larını takip et
+    private portReconnectTimers: Map<string, NodeJS.Timeout> = new Map(); // COM port bazlı reconnect timer'ları
+    private activeReconnects: Set<string> = new Set(); // Aktif reconnect işlemleri
 
     constructor() {
         super();
@@ -130,34 +132,85 @@ export class SerialPoller extends EventEmitter {
 
     private async ensureConnection(analyzer: AnalyzerSettings): Promise<ModbusConnection | null> {
         const connectionId = analyzer.getConnectionId();
+        const portName = String(analyzer.portName);
+        
+        // Önce bağlantı var mı kontrol et
         if (this.connections.has(connectionId)) {
             const conn = this.connections.get(connectionId)!;
+            
+            // Bağlantı açık mı? Değilse tekrar aç
             if(!conn.isConnected) {
                 try {
-                    await conn.connect();
+                    // Aktif reconnect işlemi kontrolü
+                    if (this.activeReconnects.has(portName)) {
+                        backendLogger.debug(`Port ${portName} already has an active reconnect process. Waiting...`, "SerialPoller");
+                        // Aktif reconnect var, bu işlemi şimdilik atla
+                        return conn;
+                    }
+                    
+                    // Aktif reconnect işaretleyici
+                    this.activeReconnects.add(portName);
+                    
+                    try {
+                        await conn.connect();
+                        
+                        // Bağlantı kurulduğunu bildir
+                        this.emit('connectionStatusChanged', {
+                            gatewayId: portName,
+                            status: 'connected',
+                            connectionId
+                        });
+                    } finally {
+                        // Her durumda aktif reconnect işaretleyiciyi temizle
+                        setTimeout(() => {
+                            this.activeReconnects.delete(portName);
+                        }, 5000); // 5 saniye sonra temizle
+                    }
                 } catch(e) { /* ignore connect error, will be retried */ }
             }
             return conn;
         }
 
         try {
-            const connection = new ModbusSerialConnection(String(analyzer.portName), {
-                baudRate: Number(analyzer.baudRate),
-                parity: analyzer.parity,
-                stopBits: analyzer.stopBits,
-            });
-            await connection.connect();
-            this.connections.set(connectionId, connection);
+            // Aktif reconnect işlemi kontrolü
+            if (this.activeReconnects.has(portName)) {
+                backendLogger.debug(`Port ${portName} already has an active reconnect process. Waiting...`, "SerialPoller");
+                return null;
+            }
             
-            // Bağlantı kurulduğunu bildir
-            const gatewayId = connectionId.split('@')[0]; // Serial için format: portName@baudRate
-            this.emit('connectionStatusChanged', {
-                gatewayId,
-                status: 'connected',
-                connectionId
-            });
+            // Aktif reconnect işaretleyici
+            this.activeReconnects.add(portName);
             
-            return connection;
+            try {
+                // Yeni bağlantı oluştur
+                const connection = new ModbusSerialConnection(portName, {
+                    baudRate: Number(analyzer.baudRate),
+                    parity: analyzer.parity,
+                    stopBits: analyzer.stopBits,
+                });
+                
+                await connection.connect();
+                this.connections.set(connectionId, connection);
+                
+                // Bağlantı kurulduğunu bildir
+                this.emit('connectionStatusChanged', {
+                    gatewayId: portName,
+                    status: 'connected',
+                    connectionId
+                });
+                
+                // Bu port için tüm connection loss flag'lerini temizle
+                Array.from(this.connectionLossLoggedConnections.keys())
+                    .filter(id => id.startsWith(portName + '@'))
+                    .forEach(id => this.connectionLossLoggedConnections.delete(id));
+                
+                return connection;
+            } finally {
+                // Her durumda aktif reconnect işaretleyiciyi temizle
+                setTimeout(() => {
+                    this.activeReconnects.delete(portName);
+                }, 5000); // 5 saniye sonra temizle
+            }
         } catch (err) {
             // Hata zaten SerialConnection tarafından loglanıyor, burada tekrar loglama
             // if (err instanceof Error) backendLogger.error(`Serial connection failed for ${connectionId}: ${err.message}`, "SerialPoller");
@@ -167,7 +220,7 @@ export class SerialPoller extends EventEmitter {
 
     private handleConnectionLoss(connection: ModbusConnection): void {
         const connectionId = connection.connectionId;
-        const gatewayId = connectionId.split('@')[0]; // Serial için format: portName@baudRate
+        const portName = connectionId.split('@')[0]; // Serial için format: portName@baudRate (örn: COM3@9600)
         
         // Eğer bu connection için zaten işlem yapıldıysa, tekrar yapma
         if (this.connectionLossLoggedConnections.has(connectionId)) {
@@ -184,51 +237,108 @@ export class SerialPoller extends EventEmitter {
         
         // Bağlantı durumu değişikliğini bildir
         this.emit('connectionStatusChanged', {
-            gatewayId,
+            gatewayId: portName,
             status: 'disconnected',
             connectionId
         });
         
         // TCP'deki gibi register kontrolü yap - sadece aktif register'ı olan analizörler için reconnect dene
-        const hasActiveRegisters = this.checkActiveRegistersForConnection(gatewayId); // gatewayId kullan (COM3)
+        const hasActiveRegisters = this.checkActiveRegistersForConnection(portName);
         
         if (hasActiveRegisters) {
-            backendLogger.info(`Active registers found for serial connection ${gatewayId}. Will attempt reconnect in 30 seconds.`, "SerialPoller");
+            // ÖNEMLİ: Port bazlı yeniden bağlantı zamanlayıcısı kullan (bağlantı bazlı değil)
+            // Bu, aynı port için tüm bağlantı isteklerini tek bir işlemde toplayacak
+            if (!this.portReconnectTimers.has(portName)) {
+                backendLogger.info(`Active registers found for serial port ${portName}. Will attempt reconnect in 30 seconds.`, "SerialPoller");
+                
+                // Port bazlı tek bir reconnect işlemi zamanla
+                const reconnectTimer = setTimeout(() => {
+                    this.portReconnectTimers.delete(portName);
+                    
+                    // Aktif reconnect işlemi kontrolü - çakışmaları önle
+                    if (this.activeReconnects.has(portName)) {
+                        backendLogger.info(`Port ${portName} already has an active reconnect process. Skipping duplicate reconnect.`, "SerialPoller");
+                        return;
+                    }
+                    
+                    // Aktif reconnect işaretleyici
+                    this.activeReconnects.add(portName);
+                    
+                    backendLogger.info(`Connection lost for serial port ${portName}. Re-initiating polling sequence with reconnect logic.`, "SerialPoller");
+                    
+                    // İlgili tüm analizörlerin bağlantı ID'lerini topla
+                    const affectedConnectionIds = new Set<string>();
+                    
+                    this.analyzers.forEach(analyzer => {
+                        const analyzerConnectionId = analyzer.getConnectionId();
+                        if (analyzerConnectionId.startsWith(portName + '@')) {
+                            affectedConnectionIds.add(analyzerConnectionId);
+                        }
+                    });
+                    
+                    // Tüm etkilenen bağlantılar için Connection Loss flag'ini temizle
+                    affectedConnectionIds.forEach(connId => {
+                        this.connectionLossLoggedConnections.delete(connId);
+                    });
+                    
+                    // Port için ilk analizör ile bağlantıyı yeniden kur
+                    // Bu, port açma işlemini bir kez yapacak ve diğer analizörler aynı bağlantıyı paylaşacak
+                    let reconnectStarted = false;
+                    
+                    for (const analyzer of this.analyzers.values()) {
+                        const analyzerConnectionId = analyzer.getConnectionId();
+                        
+                        if (analyzerConnectionId.startsWith(portName + '@') && !reconnectStarted) {
+                            reconnectStarted = true;
+                            
+                            // Bu analizör için bağlantıyı başlat
+                            setTimeout(async () => {
+                                try {
+                                    await this.ensureConnection(analyzer);
+                                    
+                                    // Bağlantı başarılı olduysa, diğer analizörlerin polling'ini başlat
+                                    setTimeout(() => {
+                                        this.analyzers.forEach(otherAnalyzer => {
+                                            const otherConnectionId = otherAnalyzer.getConnectionId();
+                                            if (otherConnectionId.startsWith(portName + '@') && otherAnalyzer.id !== analyzer.id) {
+                                                this.startPolling(otherAnalyzer);
+                                            }
+                                        });
+                                        
+                                        // Aktif reconnect işaretleyiciyi temizle
+                                        this.activeReconnects.delete(portName);
+                                    }, 2000); // Diğer analizörler için 2 saniye bekle
+                                    
+                                } catch (err) {
+                                    backendLogger.error(`Port ${portName} reconnect failed: ${(err as Error).message}`, "SerialPoller");
+                                    this.activeReconnects.delete(portName);
+                                }
+                            }, 1000);
+                            
+                            break;
+                        }
+                    }
+                    
+                }, 30000); // 30 saniye bekle
+                
+                this.portReconnectTimers.set(portName, reconnectTimer);
+            } else {
+                backendLogger.debug(`Port ${portName} already has a scheduled reconnect timer. Not creating a duplicate.`, "SerialPoller");
+            }
             
-            // Eğer zaten bir reconnect timer varsa, iptal et
+            // Eski bağlantı bazlı zamanlayıcıyı temizle
             if (this.reconnectTimers.has(connectionId)) {
                 clearTimeout(this.reconnectTimers.get(connectionId)!);
                 this.reconnectTimers.delete(connectionId);
             }
             
-            // Serial bağlantılar için reconnect mantığı - tek seferlik timer
-            const reconnectTimer = setTimeout(() => {
-                backendLogger.info(`Connection lost for serial. Re-initiating polling sequence with reconnect logic.`, "SerialPoller");
-                
-                this.analyzers.forEach(analyzer => {
-                    const analyzerConnectionId = analyzer.getConnectionId();
-                    const isMatch = analyzerConnectionId === connectionId || analyzerConnectionId.startsWith(gatewayId + '@');
-                    
-                    if (isMatch) {
-                        this.startPolling(analyzer);
-                    }
-                });
-                
-                // Timer'ı temizle
-                this.reconnectTimers.delete(connectionId);
-                // Connection loss flag'ini temizle ki tekrar bağlantı kesilirse işlem yapılabilsin
-                this.connectionLossLoggedConnections.delete(connectionId);
-            }, 30000);
-            
-            this.reconnectTimers.set(connectionId, reconnectTimer);
-            
         } else {
-            backendLogger.info(`No active registers for serial connection ${gatewayId}. Reconnect will not be attempted.`, "SerialPoller");
+            backendLogger.info(`No active registers for serial port ${portName}. Reconnect will not be attempted.`, "SerialPoller");
             
             // Register'ı olmayan analizörler için polling timer'larını durdur
             this.analyzers.forEach(analyzer => {
                 const analyzerConnectionId = analyzer.getConnectionId();
-                const isMatch = analyzerConnectionId === connectionId || analyzerConnectionId.startsWith(gatewayId + '@');
+                const isMatch = analyzerConnectionId === connectionId || analyzerConnectionId.startsWith(portName + '@');
                 
                 if (isMatch) {
                     const timer = this.pollingTimers.get(analyzer.id);

@@ -1,11 +1,193 @@
-import ModbusRTU from "modbus-serial";
+// Global initialization - will run before any module imports
+(function initializeModuleResolver() {
+  try {
+    // Sadece kritik hataları logla, diğer detayları kaldır
+    // Check if running in packaged mode
+    // TypeScript-safe check for Electron resourcesPath property
+    const hasResourcesPath = (() => {
+      try {
+        return typeof (process as any).resourcesPath !== 'undefined';
+      } catch (e) {
+        return false;
+      }
+    })();
+    
+    const isPackaged = process.env.IS_PACKAGED === 'true' ||
+                      process.env.NODE_ENV === 'production' ||
+                      hasResourcesPath;
+    
+    if (isPackaged) {
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Get resource path - TypeScript-safe
+      const resourcePath = hasResourcesPath ? (process as any).resourcesPath || '' : '';
+      
+      // Define possible module paths in priority order
+      const possiblePaths = [
+        path.join(resourcePath, 'app', 'dist-service', 'serial'),
+        path.join(resourcePath, 'app.asar.unpacked', 'node_modules'),
+        path.join(resourcePath, 'app', 'dist-service', 'node_modules'),
+        path.join(resourcePath, 'app', 'node_modules'),
+        path.join(resourcePath, 'app.asar', 'node_modules'),
+        path.join(process.cwd(), 'node_modules'),
+      ];
+      
+      // Filter valid paths
+      const validPaths = possiblePaths.filter(p => {
+        try {
+          return fs.existsSync(p);
+        } catch (err: unknown) {
+          return false;
+        }
+      });
+      
+      // Add all valid paths to module.paths
+      for (const validPath of validPaths) {
+        module.paths.unshift(validPath);
+      }
+      
+      // Enhanced require function for critical modules
+      try {
+        const originalRequire = module.constructor.prototype.require;
+        const criticalModules = ['serialport', '@serialport', 'modbus-serial'];
+        
+        module.constructor.prototype.require = function(moduleName: string) {
+          try {
+            // First try normal require
+            return originalRequire.call(this, moduleName);
+          } catch (err) {
+            // If this is a critical module, try custom paths
+            if (criticalModules.some(m => moduleName === m || moduleName.startsWith(`${m}/`))) {
+              // Try all valid paths
+              for (const validPath of validPaths) {
+                try {
+                  const fullPath = path.join(validPath, moduleName);
+                  const result = originalRequire.call(this, fullPath);
+                  return result;
+                } catch (pathErr: unknown) {
+                  // Sadece devam et, bir sonraki yolu dene
+                }
+              }
+              
+              // Try direct index.js loading
+              if (moduleName === 'serialport') {
+                for (const validPath of validPaths) {
+                  try {
+                    const indexPath = path.join(validPath, moduleName, 'index.js');
+                    if (fs.existsSync(indexPath)) {
+                      const SerialPortModule = originalRequire.call(this, indexPath);
+                      return SerialPortModule;
+                    }
+                  } catch (indexErr: unknown) {
+                    // Sadece devam et, bir sonraki yolu dene
+                  }
+                }
+              }
+            }
+            
+            // If all attempts failed, throw the original error
+            throw err;
+          }
+        };
+      } catch (monkeyPatchErr: unknown) {
+        console.error(`MODULE RESOLVER ERROR: Failed to monkey patch require: ${monkeyPatchErr instanceof Error ? monkeyPatchErr.message : String(monkeyPatchErr)}`);
+      }
+    }
+  } catch (err: unknown) {
+    console.error(`MODULE RESOLVER ERROR: ${err instanceof Error ? err.message : String(err)}`);
+  }
+})();
+
+// Now import other modules
 import PQueue from "p-queue";
 import { backendLogger } from "../logger/BackendLogger";
+// Not: Bu dosyada gereksiz debug logları kaldırıldı, sadece kritik hata ve uyarı logları bırakıldı
 import { ModbusConnection } from "./ModbusConnection";
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// Serial portlar için paylaşılan queue'lar - KALDIRILDI (timeout sorununa neden oluyordu)
-// const serialPortQueues = new Map<string, PQueue>();
+import path from "path";
+import * as fs from 'fs';
 
+// Define extended ModbusRTU type with _driver property
+interface ExtendedModbusRTU {
+  _port?: any;
+  _driver?: any;
+  _onReceive?: (data: Buffer) => void;
+  _onError?: (err: Error) => void;
+  _events?: any;
+  _eventsCount?: number;
+  _maxListeners?: number;
+  _transactions?: any;
+  _timeout?: number;
+  _unitID?: number;
+  _debugEnabled?: boolean;
+  connectRTUBuffered(path: string, options: any): Promise<void>;
+  setTimeout(timeout: number): void;
+  setID(id: number): void;
+  readHoldingRegisters(address: number, quantity: number): Promise<any>;
+  writeRegister(address: number, value: number): Promise<any>;
+  writeRegisters(address: number, values: number[]): Promise<any>;
+  close(callback: () => void): void;
+}
+
+// Load critical modules dynamically
+let ModbusRTU: any; // Cannot use typeof with interface, use any instead
+let SerialPortConstructor: any = null;
+
+// Load ModbusRTU
+try {
+  ModbusRTU = require('modbus-serial');
+  // ModbusRTU detaylı inceleme logları kaldırıldı
+} catch (err) {
+  backendLogger.error(`Failed to load ModbusRTU: ${(err as Error).message}`, "ModuleLoader");
+  throw new Error(`ModbusRTU load error: ${(err as Error).message}`);
+}
+
+// Load SerialPort
+try {
+  // SerialPort v13'de import yöntemi değişti
+  try {
+    // Önce yeni import yapısını dene
+    const serialportModule = require('serialport');
+    // Gereksiz detaylı modül logları kaldırıldı
+    
+    if (serialportModule && typeof serialportModule.SerialPort === 'function') {
+      SerialPortConstructor = serialportModule.SerialPort;
+      // SerialPort constructor detaylı logları kaldırıldı
+    } else if (typeof serialportModule === 'function') {
+      SerialPortConstructor = serialportModule;
+      // SerialPort constructor detaylı logları kaldırıldı
+    } else {
+      // Fallback - try direct import
+      const { SerialPort } = require('serialport');
+      if (typeof SerialPort === 'function') {
+        SerialPortConstructor = SerialPort;
+        // SerialPort constructor detaylı logları kaldırıldı
+      } else {
+        throw new Error('SerialPort constructor not found in any import format');
+      }
+    }
+  } catch (importErr) {
+    backendLogger.warning(`Modern import failed: ${(importErr as Error).message}, trying legacy import`, "ModuleLoader");
+    
+    // Fallback to legacy
+    try {
+      const SerialPortLegacy = require('serialport');
+      if (typeof SerialPortLegacy === 'function') {
+        SerialPortConstructor = SerialPortLegacy;
+      } else {
+        throw new Error('Legacy SerialPort import succeeded but no constructor found');
+      }
+    } catch (legacyErr) {
+      throw new Error(`All SerialPort import methods failed: ${(legacyErr as Error).message}`);
+    }
+  }
+  
+  // SerialPort başarıyla yüklendi
+} catch (err) {
+  backendLogger.error(`Failed to load SerialPort: ${(err as Error).message}`, "ModuleLoader");
+}
+
+// Connection options interface
 interface ConnectionOptions {
     baudRate?: number;
     dataBits?: number;
@@ -14,9 +196,23 @@ interface ConnectionOptions {
     port?: number;
 }
 
+/**
+ * Seri port bağlantıları için tek kuyruk sistemi
+ * Bu sayede aynı COM port için birden fazla kuyruk oluşması engellenir
+ */
+// Statik kuyruk havuzu - her port için tek bir kuyruk
+const serialQueuePool: Map<string, PQueue> = new Map();
+// Kuyruk kullanım sayacı - her kuyruk için kaç bağlantı kullanıyor
+const queueUsageCounter: Map<string, number> = new Map();
+// Kuyruk sağlık izleme - son timeout zamanı
+const queueLastTimeout: Map<string, number> = new Map();
+// Port açma işlemi için lock mekanizması
+const portOpenLocks: Map<string, boolean> = new Map();
+// Port açma işlemi için bekleyen işlemler
+const portOpenQueue: Map<string, Array<() => void>> = new Map();
 
 /**
- * ModbusSerialConnection sınıfı - Seri port bağlantısını yönetir
+ * ModbusSerialConnection class - Manages serial port connection
  */
 export class ModbusSerialConnection extends ModbusConnection {
     portName: string;
@@ -24,6 +220,8 @@ export class ModbusSerialConnection extends ModbusConnection {
     dataBits: number;
     stopBits: number;
     parity: string;
+    // Kuyruk kimliği - port adı ve baudrate birleşimi
+    private queueId: string;
 
     constructor(portName: string, options: ConnectionOptions = {}) {
         super(portName);
@@ -33,17 +231,52 @@ export class ModbusSerialConnection extends ModbusConnection {
         this.stopBits = options.stopBits || 1;
         this.parity = options.parity || 'none';
         
-        // Serial için concurrency'yi başlangıçta 1 olarak ayarla
+        // Kuyruk kimliğini oluştur: "COM3@9600" formatında
+        this.queueId = `${this.portName}@${this.baudRate}`;
+        
+        // Set concurrency to 1 for serial connections
         this.concurrency = 1;
     }
 
     /**
-     * Serial connection için kendi queue'sunu oluşturur (paylaşım yok)
-     * Her serial connection kendi queue'sunu kullanır - referans kodla uyumlu
+     * Seri bağlantı için kuyruk oluşturur veya varolan kuyruğu kullanır
+     * Aynı porta ait tüm bağlantılar tek bir kuyruğu paylaşır
      */
     protected createOwnQueue(): PQueue {
-        const concurrency = 1; // Serial portlar için concurrency her zaman 1 olmalı
-        backendLogger.debug(`Creating own queue for ${this.portName}, concurrency: ${concurrency}`, "SerialConnection");
+        // Kuyruk kullanım sayacını artır
+        const currentCount = queueUsageCounter.get(this.queueId) || 0;
+        queueUsageCounter.set(this.queueId, currentCount + 1);
+        
+        // Kuyruk sağlık kontrolü - son 10 saniye içinde timeout olduysa resetle
+        const lastTimeoutTime = queueLastTimeout.get(this.queueId) || 0;
+        const now = Date.now();
+        const shouldResetQueue = lastTimeoutTime > 0 && (now - lastTimeoutTime < 10000);
+        
+        // Eğer kuyruk resetlenmesi gerekiyorsa veya kuyruk yoksa
+        if (shouldResetQueue && serialQueuePool.has(this.queueId)) {
+            backendLogger.warning(`Queue for ${this.queueId} had recent timeout, resetting it`, "SerialConnection");
+            const oldQueue = serialQueuePool.get(this.queueId);
+            if (oldQueue) {
+                try {
+                    oldQueue.clear();
+                    oldQueue.pause();
+                } catch (err) {
+                    // Ignore cleanup errors
+                }
+            }
+            serialQueuePool.delete(this.queueId);
+            queueLastTimeout.delete(this.queueId);
+        }
+        
+        // Önce statik havuzda bu port için kuyruk var mı kontrol et
+        if (serialQueuePool.has(this.queueId)) {
+            backendLogger.info(`Reusing existing queue for ${this.queueId} (users: ${currentCount + 1})`, "SerialConnection");
+            const existingQueue = serialQueuePool.get(this.queueId)!;
+            return existingQueue;
+        }
+        
+        // Yoksa yeni kuyruk oluştur
+        const concurrency = 1; // Seri portlar için her zaman 1
         
         const queue = new PQueue({
             concurrency: concurrency,
@@ -52,13 +285,23 @@ export class ModbusSerialConnection extends ModbusConnection {
             carryoverConcurrencyCount: true
         });
         
+        // Timeout izleme
+        queue.on('error', (err) => {
+            if (err && err.message && (err.message.includes('timed out') || err.name === 'TimeoutError')) {
+                queueLastTimeout.set(this.queueId, Date.now());
+                backendLogger.warning(`Queue timeout detected for ${this.queueId}, marked for potential reset`, "SerialConnection");
+            }
+        });
+        
+        // Kuyruğu havuza ekle
+        serialQueuePool.set(this.queueId, queue);
+        backendLogger.info(`Created new queue for ${this.queueId}`, "SerialConnection");
+        
         return queue;
     }
 
-    // lastSlaveId takibi kaldırıldı - referans kodla uyumlu hale getirildi
-
     /**
-     * Akıllı timeout hesaplama - UI değeri + RTT tabanlı minimum koruma
+     * Calculate smart timeout - UI value + RTT-based minimum protection
      */
     calculateSmartTimeout(userTimeout: number): number {
         const cappedRTT = Math.min(this.avgRTT, 2000);
@@ -74,15 +317,11 @@ export class ModbusSerialConnection extends ModbusConnection {
         const smartTimeout = Math.max(userTimeout, rttMinimum);
         const finalTimeout = Math.min(smartTimeout, 15000);
         
-        if (finalTimeout !== userTimeout) {
-            //backendLogger.debug(`${this.connectionId} timeout adjusted: UI=${userTimeout}ms, RTT=${this.avgRTT}ms, capped=${cappedRTT}ms, multiplier=${multiplier}, min=${rttMinimum}ms, final=${finalTimeout}ms`, "ModbusConnection");
-        }
-        
         return finalTimeout;
     }
 
     /**
-     * RTT değerini günceller
+     * Updates RTT value
      */
     updateRTT(elapsed: number): void {
         this.rttSamples.push(elapsed);
@@ -110,19 +349,17 @@ export class ModbusSerialConnection extends ModbusConnection {
     }
 
     /**
-     * Okuma hatalarını işler
+     * Handles read errors
      */
     handleReadError(err: any): void {
         super.handleReadError(err);
-        // REFERANS kodunda timeout strike mekanizması yok - kaldırıldı
-        // Sadece basit hata işleme yapılıyor
+        // Simple error handling - no timeout strike mechanism
     }
 
     /**
-     * Modbus üzerinden register okur - Serial için optimize edilmiş versiyon
+     * Reads holding registers via Modbus - optimized for Serial
      */
     async readHoldingRegisters(slaveId: number, startAddr: number, quantity: number, timeoutMs: number): Promise<number[]> {
-        backendLogger.debug(`[SERIAL] ReadHoldingRegisters called: slaveId=${slaveId}, startAddr=${startAddr}, quantity=${quantity}, timeout=${timeoutMs}ms`, "SerialConnection");
         
         if (!this.client || !this.isConnected) {
             backendLogger.error(`[SERIAL] Connection not established: client=${!!this.client}, isConnected=${this.isConnected}`, "SerialConnection");
@@ -133,8 +370,6 @@ export class ModbusSerialConnection extends ModbusConnection {
             backendLogger.error(`[SERIAL] Queue not initialized`, "SerialConnection");
             throw new Error("Queue is not initialized");
         }
-
-        backendLogger.debug(`[SERIAL] Queue status: size=${this.queue.size}, pending=${this.queue.pending}, concurrency=${this.queue.concurrency}`, "SerialConnection");
 
         const startTime = Date.now();
         
@@ -149,10 +384,10 @@ export class ModbusSerialConnection extends ModbusConnection {
                         throw new Error("Connection lost");
                     }
 
-                    // Referans kodla tamamen uyumlu - basit ve temiz
+                    // Fully compatible with reference code - simple and clean
                     this.client.setID(Math.max(1, Math.min(255, slaveId)));
                     
-                    // Akıllı timeout - UI değeri + RTT tabanlı koruma
+                    // Smart timeout - UI value + RTT-based protection
                     const smartTimeout = this.calculateSmartTimeout(timeoutMs);
                     this.client.setTimeout(smartTimeout);
 
@@ -167,7 +402,7 @@ export class ModbusSerialConnection extends ModbusConnection {
             const elapsed = Date.now() - startTime;
             this.updateRTT(elapsed);
 
-            // Başarılı okuma, timeout sayacını sıfırlar
+            // Successful read, reset timeout counter
             this.timeoutStrikes = 0;
 
             if (result && 'data' in result) {
@@ -177,7 +412,10 @@ export class ModbusSerialConnection extends ModbusConnection {
         } catch (err: unknown) {
             const elapsed = Date.now() - startTime;
             const errorMessage = err instanceof Error ? err.message : String(err);
-            backendLogger.warning(`Read error (${slaveId}:${startAddr}x${quantity}): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection", { connectionId: this.connectionId });
+            // Her okuma hatasını loglama, sadece en önemli hataları logla
+            if (errorMessage.includes('timeout') || errorMessage.includes('CRC') || errorMessage.includes('Port is not open')) {
+                backendLogger.warning(`Read error (${slaveId}:${startAddr}x${quantity}): ${errorMessage}`, "SerialConnection", { connectionId: this.connectionId });
+            }
             
             this.handleReadError(err);
             throw err;
@@ -185,10 +423,9 @@ export class ModbusSerialConnection extends ModbusConnection {
     }
 
     /**
-     * Modbus üzerinden tek register yazar - Serial için optimize edilmiş versiyon
+     * Writes a single holding register via Modbus - optimized for Serial
      */
     async writeHoldingRegister(slaveId: number, address: number, value: number, timeoutMs: number): Promise<void> {
-        backendLogger.debug(`[SERIAL] WriteHoldingRegister called: slaveId=${slaveId}, address=${address}, value=${value}, timeout=${timeoutMs}ms`, "SerialConnection");
         
         if (!this.client || !this.isConnected) {
             backendLogger.error(`[SERIAL] Connection not established: client=${!!this.client}, isConnected=${this.isConnected}`, "SerialConnection");
@@ -203,16 +440,16 @@ export class ModbusSerialConnection extends ModbusConnection {
         const startTime = Date.now();
 
         try {
-            const result = await this.queue.add(
+            await this.queue.add(
                 async () => {
                     if (!this.client || !this.isConnected) {
                         throw new Error("Connection lost");
                     }
 
-                    // Serial için basit ve temiz
+                    // Simple and clean for Serial
                     this.client.setID(Math.max(1, Math.min(255, slaveId)));
                     
-                    // Akıllı timeout
+                    // Smart timeout
                     const smartTimeout = this.calculateSmartTimeout(timeoutMs);
                     this.client.setTimeout(smartTimeout);
 
@@ -227,15 +464,16 @@ export class ModbusSerialConnection extends ModbusConnection {
             const elapsed = Date.now() - startTime;
             this.updateRTT(elapsed);
 
-            // Başarılı yazma, timeout sayacını sıfırlar
+            // Successful write, reset timeout counter
             this.timeoutStrikes = 0;
-
-            backendLogger.info(`[SERIAL] Write successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Value:${value}`, "SerialConnection");
 
         } catch (err: unknown) {
             const elapsed = Date.now() - startTime;
             const errorMessage = err instanceof Error ? err.message : String(err);
-            backendLogger.warning(`[SERIAL] Write error (${slaveId}:${address}=${value}): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection", { connectionId: this.connectionId });
+            // Her yazma hatasını loglama, sadece en önemli hataları logla
+            if (errorMessage.includes('timeout') || errorMessage.includes('CRC') || errorMessage.includes('Port is not open')) {
+                backendLogger.warning(`Write error (${slaveId}:${address}=${value}): ${errorMessage}`, "SerialConnection", { connectionId: this.connectionId });
+            }
             
             this.handleWriteError(err);
             throw err;
@@ -243,10 +481,9 @@ export class ModbusSerialConnection extends ModbusConnection {
     }
 
     /**
-     * Modbus üzerinden çoklu register yazar - Serial için optimize edilmiş versiyon
+     * Writes multiple holding registers via Modbus - optimized for Serial
      */
     async writeHoldingRegisters(slaveId: number, address: number, values: number[], timeoutMs: number): Promise<void> {
-        backendLogger.debug(`[SERIAL] WriteHoldingRegisters called: slaveId=${slaveId}, address=${address}, values=[${values.join(',')}], timeout=${timeoutMs}ms`, "SerialConnection");
         
         if (!this.client || !this.isConnected) {
             throw new Error("Connection is not established");
@@ -259,7 +496,7 @@ export class ModbusSerialConnection extends ModbusConnection {
         const startTime = Date.now();
 
         try {
-            const result = await this.queue.add(
+            await this.queue.add(
                 async () => {
                     if (!this.client || !this.isConnected) {
                         throw new Error("Connection lost");
@@ -282,12 +519,13 @@ export class ModbusSerialConnection extends ModbusConnection {
             this.updateRTT(elapsed);
             this.timeoutStrikes = 0;
 
-            backendLogger.info(`[SERIAL] Write multiple successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Values:[${values.join(',')}]`, "SerialConnection");
-
         } catch (err: unknown) {
             const elapsed = Date.now() - startTime;
             const errorMessage = err instanceof Error ? err.message : String(err);
-            backendLogger.warning(`[SERIAL] Write multiple error (${slaveId}:${address}=[${values.join(',')}]): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection", { connectionId: this.connectionId });
+            // Her yazma hatasını loglama, sadece en önemli hataları logla
+            if (errorMessage.includes('timeout') || errorMessage.includes('CRC') || errorMessage.includes('Port is not open')) {
+                backendLogger.warning(`Write multiple error (${slaveId}:${address}=[${values.join(',')}]): ${errorMessage}`, "SerialConnection", { connectionId: this.connectionId });
+            }
             
             this.handleWriteError(err);
             throw err;
@@ -295,20 +533,18 @@ export class ModbusSerialConnection extends ModbusConnection {
     }
 
     /**
-     * Yazma hatalarını işler (Serial için)
+     * Handles write errors (for Serial)
      */
     protected handleWriteError(err: any): void {
         super.handleWriteError(err);
-        // Serial için basit hata işleme - timeout strike mekanizması yok
+        // Simple error handling - no timeout strike mechanism
     }
     
     /**
-     * Serial portlar için concurrency değerini her zaman 1 olarak zorla
+     * Force concurrency value to 1 for Serial ports
      */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     updateConcurrency(_forceUpdate: boolean = false): number {
-        // Seri portlar doğası gereği sıralı çalışır. Eş zamanlılık her zaman 1 olmalıdır.
-        // Bu fonksiyon, ana sınıfla uyumluluk için ve bu kuralı zorunlu kılmak için vardır.
+        // Serial ports are inherently sequential. Concurrency should always be 1.
         if (this.queue && this.queue.concurrency !== 1) {
              this.queue.concurrency = 1;
         }
@@ -317,29 +553,82 @@ export class ModbusSerialConnection extends ModbusConnection {
     }
     
     /**
-     * Seri port bağlantısı kurar
+     * Port açma lock mekanizması - aynı COM port için senkronizasyon sağlar
+     */
+    private async acquirePortLock(portName: string): Promise<void> {
+        return new Promise((resolve) => {
+            if (!portOpenLocks.has(portName) || portOpenLocks.get(portName) === false) {
+                portOpenLocks.set(portName, true);
+                resolve();
+            } else {
+                // Eğer bu port için queue yoksa oluştur
+                if (!portOpenQueue.has(portName)) {
+                    portOpenQueue.set(portName, []);
+                }
+                // Çözümleme fonksiyonunu kuyruğa ekle
+                portOpenQueue.get(portName)!.push(resolve);
+            }
+        });
+    }
+
+    /**
+     * Port açma lock mekanizmasını serbest bırak
+     */
+    private releasePortLock(portName: string): void {
+        // Eğer bekleyen işlem varsa, ilk bekleyeni serbest bırak
+        if (portOpenQueue.has(portName) && portOpenQueue.get(portName)!.length > 0) {
+            const nextResolve = portOpenQueue.get(portName)!.shift();
+            if (nextResolve) {
+                nextResolve();
+            }
+        } else {
+            // Bekleyen işlem yoksa lock'u kaldır
+            portOpenLocks.set(portName, false);
+        }
+    }
+
+    /**
+     * Establishes a serial port connection
      */
     async connect(): Promise<void> {
         if (this.isConnected && this.client) {
             return;
         }
     
+        // Port açma lock'unu al - aynı COM port için çakışmaları önle
+        await this.acquirePortLock(this.portName);
+
         try {
-            // USB yeniden takıldığında eski handle'ları temizle
+            // Önce bu port hala açık mı kontrol et (başka bir instance tarafından)
+            const existingConnections = Array.from(serialQueuePool.keys())
+                .filter(qid => qid.startsWith(this.portName + '@'));
+
+            if (existingConnections.length > 0) {
+                backendLogger.info(`Port ${this.portName} may be in use by other connections. Ensuring clean state before reconnect.`, "SerialConnection");
+            }
+
+            // Clean up old handles when USB is reconnected
             if (this.client) {
+                backendLogger.info(`Aggressively closing port ${this.portName} before reconnect`, "SerialConnection");
+                
+                // Port bağlantısını tamamen temizleyelim
                 this.forceClosePort();
-                // Kısa bir bekleme süresi ekle - Windows'un port handle'ını serbest bırakması için
-                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Windows'ta port handle'ını tam serbest bırakmak için daha uzun bekle
+                // USB cihaz takma-çıkarma sonrasında daha uzun bekleme (2→5 saniye)
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+                // Kuyruk havuzunu temizle - temiz başlangıç için
+                if (serialQueuePool.has(this.queueId)) {
+                    serialQueuePool.delete(this.queueId);
+                    backendLogger.info(`Removed queue for ${this.queueId} before reconnect for clean start`, "SerialConnection");
+                }
             }
             
-            // Sunucu yeniden başlatıldığında port handle çakışmasını önlemek için
-            // Daha uzun bekleme süresi ekle
-            backendLogger.debug(`[SERIAL] Waiting for port handle cleanup before connecting to ${this.portName}`, "SerialConnection");
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Add longer wait to prevent port handle conflicts when server restarts
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
-            backendLogger.info(`[SERIAL] Attempting connection to ${this.portName} with baudRate: ${this.baudRate}, dataBits: ${this.dataBits}, stopBits: ${this.stopBits}, parity: ${this.parity}`, "SerialConnection");
-            
-            // "Unknown error code 31" (SetCommState) hatası için retry mekanizması
+            // Retry mechanism for "Unknown error code 31" (SetCommState) error
             let connectionAttempts = 0;
             const maxAttempts = 3;
             let lastError: any = null;
@@ -347,28 +636,246 @@ export class ModbusSerialConnection extends ModbusConnection {
             while (connectionAttempts < maxAttempts) {
                 try {
                     connectionAttempts++;
-                    backendLogger.debug(`[SERIAL] Connection attempt ${connectionAttempts}/${maxAttempts} for ${this.portName}`, "SerialConnection");
                     
+                    // SerialPortConstructor null kontrolü
+                    if (SerialPortConstructor === null) {
+                        throw new Error("SerialPort constructor is null - module not loaded properly");
+                    }
+                    
+                    // Tanılama logları kaldırıldı
+                    
+                    // Pass SerialPort constructor directly to ModbusRTU
                     this.client = new ModbusRTU();
-                    await this.client.connectRTUBuffered(this.portName, {
-                        baudRate: this.baudRate,
-                        dataBits: this.dataBits,
-                        stopBits: this.stopBits,
-                        parity: this.parity,
-                    });
                     
-                    backendLogger.info(`[SERIAL] Successfully connected to ${this.portName} on attempt ${connectionAttempts}`, "SerialConnection");
-                    break; // Başarılı bağlantı, döngüden çık
+                    // KRITIK FIX: ModbusRTU'nun metodlarını override et
+                    // Bu, obfuscation'dan etkilenmeyen bir implementasyon sağlar
+                    if (this.client) {
+                        // Reference'ı saklayalım, böylece lambda içinde null hatası olmaz
+                        const modbusClient = this.client as any; // any kullanarak TypeScript hatalarını bypass et
+                        const originalConnectRTUBuffered = modbusClient.connectRTUBuffered;
+                        
+                        // ModbusRTU _onError metodunu override et - uncaught exception önlemek için kritik
+                        if (typeof modbusClient._onError === 'function') {
+                            const originalOnError = modbusClient._onError;
+                            modbusClient._onError = (err: any) => {
+                                try {
+                                    backendLogger.error(`ModbusRTU error safely handled: ${err.message}`, "SerialConnection", {
+                                        connectionId: this.connectionId,
+                                        portName: this.portName,
+                                        errorName: err.name || 'Unknown',
+                                        errno: err.errno || 'None'
+                                    });
+                                    
+                                    // COM port hatası durumunda bağlantıyı kaybetmiş olarak işaretle
+                                    if (err.message && (
+                                        err.message.includes('Port is not open') ||
+                                        err.message.includes('Port Not Open') ||
+                                        err.message.includes('File not found') ||
+                                        err.message.includes('Access denied') ||
+                                        err.message.includes('Resource busy')
+                                    )) {
+                                        backendLogger.warning(`Port error detected, marking connection as lost: ${err.message}`, "SerialConnection");
+                                        this.handleConnectionLoss();
+                                    }
+                                    
+                                    // Hata bunu çağıran metoda iletilsin, ama global scope'a fırlatılmasın
+                                    // Bu sayede fonksiyonlar kendi içlerinde hataları yakalayabilir
+                                    
+                                } catch (handlerErr) {
+                                    backendLogger.error(`Error in safe _onError handler: ${(handlerErr as Error).message}`, "SerialConnection");
+                                    // Orijinal metodu çağırma, çünkü bu unhandled exception'a neden olabilir
+                                }
+                            };
+                            // Override edildi
+                        }
+                        
+                        // connectRTUBuffered metodunu güvenli bir versiyonla değiştir
+                        modbusClient.connectRTUBuffered = async (portPath: string, options: any = {}) => {
+                            try {
+                                // Bağlantı oluşturma
+                                
+                                // SerialPort constructor'ının ilk parametresi için farklı yaklaşımlar deneyelim
+                                let port;
+                                try {
+                                    const portOptions = {
+                                        path: portPath,
+                                        baudRate: options.baudRate || 9600,
+                                        dataBits: options.dataBits || 8,
+                                        stopBits: options.stopBits || 1,
+                                        parity: options.parity || 'none',
+                                        autoOpen: false
+                                    };
+                                    
+                                    // SerialPort oluştur
+                                    port = new SerialPortConstructor(portOptions);
+                                } catch (portError: any) {
+                                    backendLogger.warning(`Failed with options object: ${portError.message}`, "SerialConnection");
+                                    
+                                    // Alternatif olarak doğrudan path parametresi deneyelim
+                                    try {
+                                        // Alternatif yöntem
+                                        port = new SerialPortConstructor(portPath, {
+                                            baudRate: options.baudRate || 9600,
+                                            dataBits: options.dataBits || 8,
+                                            stopBits: options.stopBits || 1,
+                                            parity: options.parity || 'none',
+                                            autoOpen: false
+                                        });
+                                    } catch (directPathError: any) {
+                                        backendLogger.warning(`Failed with direct path parameter: ${directPathError.message}`, "SerialConnection");
+                                        throw new Error(`Cannot create SerialPort with any known approach: ${directPathError.message}`);
+                                    }
+                                }
+                                
+                                // _port özelliğini doğrudan atayarak ModbusRTU'nun içindeki SerialPort kullanımını bypass et
+                                modbusClient._port = port;
+                                
+                                // Gerekli event listener'ları ekle - modbusClient'ı any olarak kullanıyoruz
+                                port.on('data', (data: Buffer) => {
+                                    if (modbusClient && typeof modbusClient._onReceive === 'function') {
+                                        modbusClient._onReceive(data);
+                                    }
+                                });
+                                
+                                port.on('error', (err: Error) => {
+                                    try {
+                                        backendLogger.error(`SerialPort error: ${err.message}`, "SerialConnection", { portPath });
+                                        
+                                        if (modbusClient && typeof modbusClient._onError === 'function') {
+                                            modbusClient._onError(err); // Artık güvenli _onError çağrılıyor
+                                        }
+                                    } catch (handlerErr) {
+                                        // Port error handler'daki hatalar asla dışarı sızmamalı
+                                        backendLogger.error(`Exception in port.on('error') handler: ${(handlerErr as Error).message}`, "SerialConnection");
+                                    }
+                                });
+                                
+                                // SerialPort v13'te open methodu callback kabul etmez, promise döndürür
+                                // Port aç - Access Denied hatası için yeniden deneme mekanizması ekle
+                                try {
+                                    // Önce normal açmayı dene
+                                    await port.open();
+                                    return Promise.resolve();
+                                } catch (openErr: any) {
+                                    // Eğer "Access Denied" hatası alındıysa, biraz bekleyip yeniden dene
+                                    if (openErr.message && openErr.message.includes('Access denied')) {
+                                        backendLogger.warning(`Access denied for port ${portPath}, waiting 3 seconds before retry`, "SerialConnection");
+                                        
+                                        // Access Denied hatası alındığında GC'yi zorla ve bekle
+                                        if (typeof global !== 'undefined' && (global as any).gc) {
+                                            try {
+                                                (global as any).gc();
+                                            } catch (gcErr) {
+                                                // Ignore GC errors
+                                            }
+                                        }
+                                        
+                                        // Daha uzun bekle ve tekrar dene
+                                        await new Promise(resolve => setTimeout(resolve, 3000));
+                                        
+                                        try {
+                                            // Yeniden dene
+                                            await port.open();
+                                            backendLogger.info(`Successfully opened port ${portPath} after Access Denied retry`, "SerialConnection");
+                                            return Promise.resolve();
+                                        } catch (retryErr: any) {
+                                            backendLogger.error(`Still failed to open port ${portPath} after retry: ${retryErr.message}`, "SerialConnection");
+                                            throw retryErr;
+                                        }
+                                    } else {
+                                        backendLogger.error(`Error opening port ${portPath}: ${openErr.message}`, "SerialConnection");
+                                        throw openErr;
+                                    }
+                                }
+                            } catch (err: unknown) {
+                                const errorMsg = err instanceof Error ? err.message : String(err);
+                                backendLogger.error(`Protected connectRTUBuffered failed: ${errorMsg}`, "SerialConnection");
+                                throw err;
+                            }
+                        };
+                        
+                    }
+                    
+                    if (this.client) {
+                        try {
+                            if (!(this.client as any)._driver) {
+                                // _driver'a atama yap
+                                (this.client as any)._driver = SerialPortConstructor;
+                                
+                                // Kritik uyarı
+                                if (typeof (this.client as any)._driver !== 'function') {
+                                    backendLogger.warning(`WARNING: ModbusRTU _driver is NOT a function after setting!`, "SerialConnection");
+                                }
+                            }
+                        } catch (driverErr) {
+                            backendLogger.error(`Failed to set SerialPort driver: ${(driverErr as Error).message}`, "SerialConnection");
+                        }
+                    }
+                    
+                    // Verify ModbusRTU was loaded correctly
+                    if (!this.client || typeof this.client.connectRTUBuffered !== 'function') {
+                        backendLogger.error(`ModbusRTU correctly instantiated but missing connectRTUBuffered: ${JSON.stringify(Object.keys(this.client || {}))}`, "SerialConnection");
+                        throw new Error("ModbusRTU instantiated but connectRTUBuffered not found");
+                    }
+                    
+                    // connectRTUBuffered metodunu çağırmadan önce ek kontrol
+                    if (!this.client.connectRTUBuffered) {
+                        backendLogger.error(`connectRTUBuffered method is missing on ModbusRTU instance`, "SerialConnection");
+                        throw new Error("ModbusRTU instance doesn't have connectRTUBuffered method");
+                    }
+                    
+                    // Bağlantı kurulumu
+                    
+                    try {
+                        await this.client.connectRTUBuffered(this.portName, {
+                            baudRate: this.baudRate,
+                            dataBits: this.dataBits,
+                            stopBits: this.stopBits,
+                            parity: this.parity,
+                        });
+                        // Bağlantı başarılı
+                    } catch (connectBufferedErr: unknown) {
+                        const errorMsg = connectBufferedErr instanceof Error ? connectBufferedErr.message : String(connectBufferedErr);
+                        backendLogger.error(`Error in connectRTUBuffered: ${errorMsg}`, "SerialConnection");
+                        
+                        // Özellikle SerialPort constructor hatasını inceleyelim
+                        if (errorMsg.includes('not a constructor')) {
+                            backendLogger.error(`CRITICAL: SerialPort constructor error detected!`, "SerialConnection");
+                            
+                            // Acil çözüm dene
+                            try {
+                                // Access denied hatası için bilinen çözümler:
+                                // 1. SerialPort construction yöntemini değiştir
+                                try {
+                                    if (typeof SerialPortConstructor === 'function') {
+                                        backendLogger.info(`Trying different constructor approach for ${this.portName}`, "SerialConnection");
+                                        (this.client as any)._driver = SerialPortConstructor;
+                                    }
+                                } catch (err) {
+                                    // Ignore errors
+                                }
+                            } catch (fixErr: unknown) {
+                                backendLogger.error(`Failed emergency fix: ${fixErr instanceof Error ? fixErr.message : String(fixErr)}`, "SerialConnection");
+                            }
+                        }
+                        
+                        // Hatayı yukarı fırlat
+                        throw connectBufferedErr;
+                    }
+                    
+                    break; // Successful connection, exit loop
                     
                 } catch (connectErr: any) {
                     lastError = connectErr;
                     const errorMsg = connectErr.message || String(connectErr);
                     
-                    // "Unknown error code 31" (SetCommState) hatası için özel işlem
-                    if (errorMsg.includes('Unknown error code 31') || errorMsg.includes('SetCommState')) {
+                    // Special handling for Windows port errors
+                    if (errorMsg.includes('Unknown error code 31') ||
+                        errorMsg.includes('SetCommState') ||
+                        errorMsg.includes('Access denied')) {
                         backendLogger.warning(`[SERIAL] SetCommState error on attempt ${connectionAttempts}/${maxAttempts} for ${this.portName}: ${errorMsg}`, "SerialConnection");
                         
-                        // Client'ı temizle
+                        // Clean up client
                         if (this.client) {
                             try {
                                 if (typeof this.client.close === 'function') {
@@ -380,20 +887,20 @@ export class ModbusSerialConnection extends ModbusConnection {
                             this.client = null;
                         }
                         
-                        // Son deneme değilse bekle
+                        // Wait if not the last attempt
                         if (connectionAttempts < maxAttempts) {
                             const waitTime = connectionAttempts * 1000; // 1s, 2s, 3s
-                            backendLogger.info(`[SERIAL] Waiting ${waitTime}ms before retry for ${this.portName}`, "SerialConnection");
+                            // Bekleme detay logu kaldırıldı
                             await new Promise(resolve => setTimeout(resolve, waitTime));
                         }
                     } else {
-                        // Diğer hatalar için hemen çık
+                        // For other errors, exit immediately
                         throw connectErr;
                     }
                 }
             }
             
-            // Tüm denemeler başarısız olduysa son hatayı fırlat
+            // Throw last error if all attempts failed
             if (connectionAttempts >= maxAttempts && lastError) {
                 throw lastError;
             }
@@ -411,41 +918,37 @@ export class ModbusSerialConnection extends ModbusConnection {
                 });
             }
     
-            backendLogger.debug(`Device count: ${this.deviceCount}`, "SerialConnection");
-            
-            // Her serial connection kendi queue'sunu oluşturur (paylaşım yok)
+            // Statik kuyruk havuzundan kuyruk al veya oluştur
             this.queue = this.createOwnQueue();
             
-            // Serial için concurrency'yi kesinlikle 1 olarak ayarla
+            // Eşzamanlılık değerini mutlaka 1 olarak ayarla
             this.concurrency = 1;
             this.queue.concurrency = 1;
-            
-            backendLogger.debug(`Queue using concurrency: ${this.queue.concurrency} for connection ${this.connectionId}`, "SerialConnection");
             
             this.setupQueueEvents();
     
             this.isConnected = true;
             this.retryCount = 0;
-            backendLogger.info(`Connected ${this.connectionId}`, "SerialConnection");
             this.emit('connected');
         } catch (err: unknown) {
             this.retryCount++;
+            // Bağlantı hatası - kritik log korundu
             const errorMessage = err instanceof Error ? err.message : String(err);
             backendLogger.error(`Connection failed for ${this.connectionId}: ${errorMessage}`, "SerialConnection");
     
             this.emit('connectionLost');
-            // Artık otomatik reconnect yapmıyoruz - SerialPoller register kontrolü ile karar verecek
-            // this.scheduleReconnect(); // KALDIRILDI
             throw err;
+        } finally {
+            // Her durumda port lock'unu serbest bırak
+            this.releasePortLock(this.portName);
         }
     }
 
     /**
-     * Kuyruk olaylarını dinler
+     * Sets up queue event listeners
      */
     setupQueueEvents(): void {
         if (!this.queue) {
-            backendLogger.warning(`${this.connectionId} Queue not created yet, cannot bind events`, "ModbusConnection");
             return;
         }
         
@@ -463,51 +966,105 @@ export class ModbusSerialConnection extends ModbusConnection {
     }
 
     /**
-     * Bağlantı kaybı durumunda event emit eder - reconnect kararını SerialPoller verir
+     * Handles connection loss - SerialPoller makes reconnect decision
      */
     protected handleConnectionLoss(): void {
         if (this.isShuttingDown) {
-            backendLogger.debug(`Connection ${this.connectionId} is shutting down, ignoring connectionLost event.`, "SerialConnection");
             return;
         }
         if (!this.isConnected || this.connectionLostEmitted) return;
 
         this.isConnected = false;
-        this.connectionLostEmitted = true; // Bayrağı ayarla
+        this.connectionLostEmitted = true; // Set flag
         
-        // USB çıkarıldığında agresif port temizleme
+        // Aggressive port cleanup when USB is disconnected
         this.forceClosePort();
         this.emit('connectionLost');
-        
-        // Artık otomatik reconnect yapmıyoruz - SerialPoller register kontrolü ile karar verecek
-        // this.scheduleReconnect(); // KALDIRILDI
     }
 
     /**
-     * USB çıkarıldığında port handle'ını agresif şekilde temizler
+     * Aggressively cleans up port handle when USB is disconnected
      */
+    /**
+     * Windows COM portları için özel çözüm
+     * COM port erişim engellerini çözmek için ekstra önlemler alır
+     *
+     * @returns true if successful
+     */
+    private releaseWindowsComPort(): boolean {
+        try {
+            // Windows COM portları için özel temizlik işlemleri
+            backendLogger.info(`Special Windows COM port release process for ${this.portName}`, "SerialConnection");
+            
+            // Statik kuyruk havuzunda bu porta ait kuyruğu temizleyelim
+            const queueId = `${this.portName}@${this.baudRate}`;
+            if (serialQueuePool.has(queueId)) {
+                const queue = serialQueuePool.get(queueId);
+                if (queue) {
+                    queue.clear();
+                    queue.pause();
+                    backendLogger.info(`Cleared and paused queue for ${queueId} to help release port`, "SerialConnection");
+                }
+                
+                // Kuyruk havuzundan geçici olarak kaldır (yeni bağlantı denemesinde yeniden oluşturulacak)
+                serialQueuePool.delete(queueId);
+                queueUsageCounter.delete(queueId);
+                queueLastTimeout.delete(queueId);
+                backendLogger.info(`Temporarily removed queue for ${queueId} from pool to help release port`, "SerialConnection");
+            }
+            
+            // Bu port için lock mekanizmasını temizle
+            if (portOpenLocks.has(this.portName)) {
+                portOpenLocks.delete(this.portName);
+            }
+            if (portOpenQueue.has(this.portName)) {
+                portOpenQueue.delete(this.portName);
+            }
+            
+            // Ek bellek temizliği
+            if (typeof global !== 'undefined' && (global as any).gc) {
+                try {
+                    (global as any).gc();
+                    backendLogger.info(`Forced garbage collection to help release port ${this.portName}`, "SerialConnection");
+                } catch (gcErr) {
+                    // Ignore GC errors
+                }
+            }
+            return true;
+        } catch (err) {
+            // Ignore errors during special release
+            return false;
+        }
+    }
+
     public forceClosePort(): void {
         try {
             if (this.client && this.client._port) {
                 const port = this.client._port as any;
                 
-                // Port durumunu zorla kapalı olarak işaretle
+                // Önce kuyruktaki tüm işlemleri iptal et
+                if (this.queue) {
+                    this.queue.clear();
+                    backendLogger.info(`Cleared queue for ${this.connectionId} during force close`, "SerialConnection");
+                }
+                
+                // Force port status to closed
                 if (port.isOpen !== undefined) {
                     try {
-                        // Windows'ta isOpen property'si read-only olabilir, descriptor'ı değiştir
+                        // isOpen property might be read-only in Windows, change descriptor
                         Object.defineProperty(port, 'isOpen', {
                             value: false,
                             writable: true,
                             configurable: true
                         });
                     } catch (propErr) {
-                        // Property tanımlama başarısız olursa internal state'i değiştirmeye çalış
+                        // If property definition fails, try to change internal state
                         if (port._isOpen !== undefined) port._isOpen = false;
                         if (port.opened !== undefined) port.opened = false;
                     }
                 }
                 
-                // Port'u destroyed olarak işaretle
+                // Mark port as destroyed
                 if (port.destroyed !== undefined) {
                     try {
                         Object.defineProperty(port, 'destroyed', {
@@ -520,19 +1077,19 @@ export class ModbusSerialConnection extends ModbusConnection {
                     }
                 }
                 
-                // Tüm listener'ları temizle
+                // Clean up all listeners
                 if (typeof port.removeAllListeners === 'function') {
                     port.removeAllListeners();
                 }
                 
-                // Port'u senkron olarak zorla kapat
+                // Force close port synchronously
                 if (typeof port.close === 'function') {
                     try {
-                        // Callback olmadan senkron close dene
+                        // Try synchronous close without callback
                         if (port.close.length === 0) {
                             port.close();
                         } else {
-                            // Callback ile async close
+                            // Async close with callback
                             port.close(() => {});
                         }
                     } catch (closeErr) {
@@ -540,7 +1097,7 @@ export class ModbusSerialConnection extends ModbusConnection {
                     }
                 }
                 
-                // Port'u zorla destroy et
+                // Force destroy port
                 if (typeof port.destroy === 'function') {
                     try {
                         port.destroy();
@@ -549,16 +1106,17 @@ export class ModbusSerialConnection extends ModbusConnection {
                     }
                 }
                 
-                // Port file descriptor'ını temizle (Windows için)
+                // Clean up file descriptor (for Windows)
                 if (port.fd !== undefined) {
                     try {
                         port.fd = null;
+                        backendLogger.info(`Nullified file descriptor for ${this.connectionId}`, "SerialConnection");
                     } catch (fdErr) {
                         // Ignore fd errors
                     }
                 }
                 
-                // Port handle'ını temizle (Windows için)
+                // Clean up port handle (for Windows)
                 if (port.handle !== undefined) {
                     try {
                         port.handle = null;
@@ -567,52 +1125,53 @@ export class ModbusSerialConnection extends ModbusConnection {
                     }
                 }
                 
-                // Port referansını temizle
+                // Clear port reference
                 this.client._port = undefined;
-                backendLogger.debug(`Aggressively force closed and nullified port for ${this.connectionId}`, "SerialConnection");
             }
             
-            // Client referansını da temizle
+            // Clean up client reference
             this.client = null;
             this.portListeners.clear();
             
-            // Connection state'ini sıfırla
+            // Reset connection state
             this.isConnected = false;
             this.connectionLostEmitted = false;
             
         } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : String(err);
-            backendLogger.debug(`Error during aggressive force port close for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
+            // Ignore errors during force port close
+        } finally {
+            // Windows COM port için özel serbest bırakma işlemi
+            const released = this.releaseWindowsComPort();
+            if (released) {
+                backendLogger.info(`Successfully released Windows COM port ${this.portName}`, "SerialConnection");
+            }
         }
     }
 
     /**
-     * TCP'deki gibi attemptReconnect metodu - PollingEngine tarafından çağrılır
+     * Attempt reconnect method like TCP - called by PollingEngine
      */
     public async attemptReconnect(): Promise<void> {
         if (this.isShuttingDown || this.isConnected) {
             return;
         }
 
-        // Yeniden bağlanma denemesinden önce bu bayrağı sıfırla
+        // Reset this flag before attempting reconnection
         this.connectionLostEmitted = false;
         
-        backendLogger.info(`Attempting to reconnect ${this.connectionId} (attempt ${this.retryCount + 1})`, "SerialConnection");
         try {
             await this.connect();
         } catch {
-            // Hata zaten connect içinde ele alınıyor ve connectionLost yayılıyor
+            // Error is already handled in connect and connectionLost is emitted
         }
     }
 
     /**
-     * Yeniden bağlanma - REFERANS kodundan alındı
-     * Artık sadece SerialPoller tarafından register kontrolü ile çağrılacak
+     * Schedule reconnect - from REFERENCE code
+     * Now only called by SerialPoller with register check
      */
     public scheduleReconnect(delay = 30000): void {
         if ((this as any).reconnectTimer || this.isShuttingDown) return;
-    
-        backendLogger.info(`Reconnect ${this.connectionId} in ${delay / 1000}s`, this.constructor.name);
     
         (this as any).reconnectTimer = setTimeout(async () => {
             (this as any).reconnectTimer = null;
@@ -621,53 +1180,61 @@ export class ModbusSerialConnection extends ModbusConnection {
                 await this.connect();
                 this.emit('reconnected');
             } catch {
-                // Hata zaten connect içinde ele alınıyor
+                // Error is already handled in connect
             }
         }, delay);
     }
     
     /**
-     * Seri port bağlantısını kapatır - gelişmiş port temizleme içerir
+     * Close serial port connection - includes advanced port cleanup
      */
     override close(): void {
         if (!this.isConnected && !this.client) {
-            backendLogger.debug(`${this.connectionId} already closed, skipping`, "SerialConnection");
             return;
         }
         
         this.isConnected = false;
         
-        
+        // Kuyruğu temizle, ancak havuzdan silme (diğer bağlantılar kullanabilir)
         if (this.queue) {
             try {
-                backendLogger.debug(`Clearing queue for ${this.connectionId}`, "SerialConnection");
+                // Sadece kuyruktaki işlemleri temizle ama kuyruğu yok etme
                 this.queue.clear();
+                
+                // Kuyruk kullanım sayacını azalt
+                const currentCount = queueUsageCounter.get(this.queueId) || 0;
+                if (currentCount > 0) {
+                    queueUsageCounter.set(this.queueId, currentCount - 1);
+                    backendLogger.info(`Decreased usage count for queue ${this.queueId} to ${currentCount - 1}`, "SerialConnection");
+                }
+                
+                // Eğer statik havuzda bu kuyruk yoksa, veya kullanım sayacı 0'a düşmüşse, temizle
+                if (!serialQueuePool.has(this.queueId)) {
+                    this.queue = null;
+                } else if (currentCount <= 1) {
+                    // Kimse kullanmıyorsa kuyruğu temizle, ama havuzda tut
+                    backendLogger.info(`Queue ${this.queueId} now has 0 users, keeping in pool but clearing all operations`, "SerialConnection");
+                } else {
+                    // Kuyruğa referansı koru ama sadece içeriği temizle
+                    backendLogger.info(`Keeping shared queue for ${this.queueId} (still has ${currentCount - 1} users) but clearing pending operations`, "SerialConnection");
+                }
             } catch (queueErr: unknown) {
                 const errorMsg = queueErr instanceof Error ? queueErr.message : String(queueErr);
                 backendLogger.warning(`Error clearing queue for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
             }
         }
         
-        backendLogger.debug(`Closing connection ${this.connectionId}...`, "SerialConnection");
-        
-        this.cleanupListenersWithTimeout(2000).then((success) => {
-            if (!success) {
-                backendLogger.warning(`Listener cleanup failed during close for ${this.connectionId}`, "SerialConnection");
-            }
-        });
+        this.cleanupListenersWithTimeout(2000).catch(() => {});
         
         try {
             if (this.client) {
                 if (typeof this.client.close === 'function') {
                     try {
                         this.client.close(() => {}); // Provide empty callback to match signature
-                        backendLogger.debug(`Client close called for ${this.connectionId}`, "SerialConnection");
                     } catch (closeErr: unknown) {
                         const errorMsg = closeErr instanceof Error ? closeErr.message : String(closeErr);
-                        // "Port is not open" hatası normal bir durum, warning yerine debug seviyesinde logla
-                        if (errorMsg.includes('Port is not open')) {
-                            backendLogger.debug(`Port already closed for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
-                        } else {
+                        // Only log non-standard errors as warnings
+                        if (!errorMsg.includes('Port is not open')) {
                             backendLogger.warning(`Error in client.close() for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
                         }
                     }
@@ -676,20 +1243,15 @@ export class ModbusSerialConnection extends ModbusConnection {
                 if (this.client._port) {
                     if (typeof this.client._port.close === 'function') {
                         try {
-                            // Port durumunu kontrol et - eğer zaten kapalıysa close() çağırma
+                            // Check port status - don't call close() if already closed
                             const port = this.client._port as any;
-                            if (port.isOpen === false || port.destroyed === true) {
-                                backendLogger.debug(`Port already closed/destroyed for ${this.connectionId}`, "SerialConnection");
-                            } else {
+                            if (!(port.isOpen === false || port.destroyed === true)) {
                                 this.client._port.close();
-                                backendLogger.debug(`Port close called for ${this.connectionId}`, "SerialConnection");
                             }
                         } catch (portCloseErr: unknown) {
                             const errorMsg = portCloseErr instanceof Error ? portCloseErr.message : String(portCloseErr);
-                            // "Port is not open" hatası normal bir durum, warning yerine debug seviyesinde logla
-                            if (errorMsg.includes('Port is not open')) {
-                                backendLogger.debug(`Port already closed for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
-                            } else {
+                            // Only log non-standard errors as warnings
+                            if (!errorMsg.includes('Port is not open')) {
                                 backendLogger.warning(`Error in port.close() for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
                             }
                         }
@@ -698,11 +1260,8 @@ export class ModbusSerialConnection extends ModbusConnection {
                     if (typeof this.client._port.destroy === 'function') {
                         try {
                             this.client._port.destroy();
-                            backendLogger.debug(`Port destroy called for ${this.connectionId}`, "SerialConnection");
                         } catch (destroyErr: unknown) {
-                            const errorMsg = destroyErr instanceof Error ? destroyErr.message : String(destroyErr);
-                            // Destroy hatalarını da daha yumuşak ele al
-                            backendLogger.debug(`Error in port.destroy() for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
+                            // Ignore destroy errors
                         }
                     }
                     
@@ -710,22 +1269,17 @@ export class ModbusSerialConnection extends ModbusConnection {
                         const client = this.client as { _port?: unknown };
                         if (client && client._port) {
                             client._port = null;
-                            backendLogger.debug(`Port reference nullified for ${this.connectionId}`, "SerialConnection");
                         }
                     } catch (nullErr: unknown) {
-                        const errorMsg = nullErr instanceof Error ? nullErr.message : String(nullErr);
-                        backendLogger.debug(`Error nullifying port for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
+                        // Ignore errors when nullifying port
                     }
                 }
             }
         } catch (err: unknown) {
-            const errorMsg = err instanceof Error ? err.message : String(err);
-            // Genel hataları da daha yumuşak ele al
-            backendLogger.debug(`Error during thorough close for ${this.connectionId}: ${errorMsg}`, "SerialConnection");
+            // Ignore general close errors
         } finally {
             this.client = null;
             this.portListeners.clear();
-            backendLogger.debug(`Connection ${this.connectionId} fully closed`, "SerialConnection");
         }
     }
 }
