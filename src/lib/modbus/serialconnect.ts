@@ -412,10 +412,8 @@ export class ModbusSerialConnection extends ModbusConnection {
         } catch (err: unknown) {
             const elapsed = Date.now() - startTime;
             const errorMessage = err instanceof Error ? err.message : String(err);
-            // Her okuma hatasını loglama, sadece en önemli hataları logla
-            if (errorMessage.includes('timeout') || errorMessage.includes('CRC') || errorMessage.includes('Port is not open')) {
-                backendLogger.warning(`Read error (${slaveId}:${startAddr}x${quantity}): ${errorMessage}`, "SerialConnection", { connectionId: this.connectionId });
-            }
+            // Kısıtlamayı kaldır: Her türlü okuma hatasını detaylarıyla logla.
+            backendLogger.warning(`Read error on ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity}): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection");
             
             this.handleReadError(err);
             throw err;
@@ -470,10 +468,8 @@ export class ModbusSerialConnection extends ModbusConnection {
         } catch (err: unknown) {
             const elapsed = Date.now() - startTime;
             const errorMessage = err instanceof Error ? err.message : String(err);
-            // Her yazma hatasını loglama, sadece en önemli hataları logla
-            if (errorMessage.includes('timeout') || errorMessage.includes('CRC') || errorMessage.includes('Port is not open')) {
-                backendLogger.warning(`Write error (${slaveId}:${address}=${value}): ${errorMessage}`, "SerialConnection", { connectionId: this.connectionId });
-            }
+            // Kısıtlamayı kaldır: Her türlü yazma hatasını detaylarıyla logla.
+            backendLogger.warning(`Write error on ${this.connectionId} (Slave: ${slaveId}, Address: ${address}=${value}): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection");
             
             this.handleWriteError(err);
             throw err;
@@ -522,10 +518,8 @@ export class ModbusSerialConnection extends ModbusConnection {
         } catch (err: unknown) {
             const elapsed = Date.now() - startTime;
             const errorMessage = err instanceof Error ? err.message : String(err);
-            // Her yazma hatasını loglama, sadece en önemli hataları logla
-            if (errorMessage.includes('timeout') || errorMessage.includes('CRC') || errorMessage.includes('Port is not open')) {
-                backendLogger.warning(`Write multiple error (${slaveId}:${address}=[${values.join(',')}]): ${errorMessage}`, "SerialConnection", { connectionId: this.connectionId });
-            }
+            // Kısıtlamayı kaldır: Her türlü çoklu yazma hatasını detaylarıyla logla.
+            backendLogger.warning(`Write multiple error on ${this.connectionId} (Slave: ${slaveId}, Address: ${address}=[${values.join(',')}]): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection");
             
             this.handleWriteError(err);
             throw err;
@@ -1208,16 +1202,18 @@ export class ModbusSerialConnection extends ModbusConnection {
                     backendLogger.info(`Decreased usage count for queue ${this.queueId} to ${currentCount - 1}`, "SerialConnection");
                 }
                 
-                // Eğer statik havuzda bu kuyruk yoksa, veya kullanım sayacı 0'a düşmüşse, temizle
-                if (!serialQueuePool.has(this.queueId)) {
-                    this.queue = null;
-                } else if (currentCount <= 1) {
-                    // Kimse kullanmıyorsa kuyruğu temizle, ama havuzda tut
-                    backendLogger.info(`Queue ${this.queueId} now has 0 users, keeping in pool but clearing all operations`, "SerialConnection");
-                } else {
-                    // Kuyruğa referansı koru ama sadece içeriği temizle
-                    backendLogger.info(`Keeping shared queue for ${this.queueId} (still has ${currentCount - 1} users) but clearing pending operations`, "SerialConnection");
+                // Eğer bu son kullanıcı ise, kuyruğu havuzdan tamamen kaldır.
+                if (currentCount <= 1) {
+                    if (serialQueuePool.has(this.queueId)) {
+                        const q = serialQueuePool.get(this.queueId);
+                        q?.clear();
+                        q?.pause();
+                        serialQueuePool.delete(this.queueId);
+                        queueUsageCounter.delete(this.queueId);
+                        backendLogger.info(`Queue ${this.queueId} has no more users and has been removed from the pool.`, "SerialConnection");
+                    }
                 }
+                this.queue = null;
             } catch (queueErr: unknown) {
                 const errorMsg = queueErr instanceof Error ? queueErr.message : String(queueErr);
                 backendLogger.warning(`Error clearing queue for ${this.connectionId}: ${errorMsg}`, "SerialConnection");

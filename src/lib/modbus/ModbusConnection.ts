@@ -226,18 +226,13 @@ export abstract class ModbusConnection extends EventEmitter {
         const port = this.client?._port;
         if (!port) return;
 
-        // Önce aynı tip listener var mı kontrol et
-        const existingHandler = this.portListeners.get(eventName);
-        if (existingHandler) {
-            try {
-                port.removeListener(eventName, existingHandler);
-            } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                backendLogger.warning(`Error removing existing ${eventName} listener: ${errorMsg}`, "ModbusConnection");
-            }
+        // KESİN ÇÖZÜM: Porta zaten bu event için bir dinleyici atanmış mı diye KENDİSİNE sor.
+        // Bu, yeniden bağlanma döngülerinde mükerrer eklemeyi tamamen engeller.
+        if (typeof port.listenerCount === 'function' && port.listenerCount(eventName) > 0) {
+            return; // Zaten bir dinleyici var, tekrar ekleme.
         }
 
-        // Yeni listener'ı ekle ve kaydet
+        // Yeni listener'ı ekle ve kendi listemize de kaydet
         port.on(eventName, handler);
         this.portListeners.set(eventName, handler);
         backendLogger.debug(`Added ${eventName} listener for ${this.connectionId}`, "ModbusConnection");
