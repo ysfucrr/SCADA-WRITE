@@ -1386,7 +1386,7 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                             <ConnectionStatus />
                         </div>
                         <WorkAreaBoundary bounds={[[xMin, yMin], [xMax, yMax]]} backgroundImage={backgroundImage} backgroundOpacity={backgroundOpacity} backgroundColor={backgroundColor} />
-                        {(isAdmin || true) ? <Background
+                        {isAdmin ? <Background
                             color={showGrids ? "#9ca3af" : "transparent"}
                             variant={isAdmin ? BackgroundVariant.Dots : undefined}
                             gap={12}
