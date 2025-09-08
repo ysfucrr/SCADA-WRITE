@@ -137,7 +137,7 @@ export async function middleware(request: NextRequest) {
                     }
                 }
                 //block admin only routes
-                if (pathname.startsWith('/rtu-settings') || pathname.startsWith('/analyzers')) {
+                if (pathname.startsWith('/gateway-settings') || pathname.startsWith('/analyzers')) {
                     return NextResponse.redirect(new URL('/access-denied', request.url));
                 }
 
@@ -167,7 +167,7 @@ export const config = {
         '/units/:path*',
         '/template/:path*',
         '/analyzers/:path*',
-        '/rtu-settings/:path*',
+        '/gateway-settings/:path*',
         '/trend-log/:path*'
     ],
 };

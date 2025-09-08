@@ -88,15 +88,15 @@ export class ModbusPoller extends EventEmitter {
         try {
             const { db } = await connectToDatabase();
 
-            const rtuDocs = await db.collection('rtus').find({}).toArray();
-            const rtusById: Record<string, any> = {};
-            rtuDocs.forEach(rtu => { rtusById[rtu._id.toString()] = rtu; });
+            const gatewayDocs = await db.collection('gateway').find({}).toArray();
+            const gatewaysById: Record<string, any> = {};
+            gatewayDocs.forEach(gateway => { gatewaysById[gateway._id.toString()] = gateway; });
 
             const analyzerDocs = await db.collection('analyzers').find({}).toArray();
             const buildingDocs = await db.collection('buildings').find({}).toArray();
 
             const fullAnalyzerConfigs = analyzerDocs.map(doc => {
-                const rtu = doc.gateway ? rtusById[doc.gateway.toString()] : null;
+                const gateway = doc.gateway ? gatewaysById[doc.gateway.toString()] : null;
                 return {
                     id: doc._id.toString(),
                     name: doc.name,
@@ -105,11 +105,11 @@ export class ModbusPoller extends EventEmitter {
                     timeoutMs: parseInt(doc.timeout) || 1000,
                     connType: doc.connection,
                     gatewayId: doc.gateway?.toString() || '',
-                    ip: rtu?.ipAddress,
-                    port: rtu ? (doc.connection === 'tcp' ? parseInt(rtu.port) : rtu.port) : undefined,
-                    baudRate: rtu ? parseInt(rtu.baudRate) : undefined,
-                    parity: rtu?.parity,
-                    stopBits: rtu ? parseInt(rtu.stopBits) : undefined,
+                    ip: gateway?.ipAddress,
+                    port: gateway ? (doc.connection === 'tcp' ? parseInt(gateway.port) : gateway.port) : undefined,
+                    baudRate: gateway ? parseInt(gateway.baudRate) : undefined,
+                    parity: gateway?.parity,
+                    stopBits: gateway ? parseInt(gateway.stopBits) : undefined,
                 };
             });
 
@@ -299,7 +299,7 @@ export class ModbusPoller extends EventEmitter {
     }
 
     private setupChangeStreams(): void {
-        const setup = async (collectionName: 'buildings' | 'analyzers' | 'rtus', handler: (change: any) => void) => {
+        const setup = async (collectionName: 'buildings' | 'analyzers' | 'gateway', handler: (change: any) => void) => {
             try {
                 const { db } = await connectToDatabase();
                 const changeStream = db.collection(collectionName).watch([], { fullDocumentBeforeChange: "whenAvailable" });
@@ -439,7 +439,7 @@ export class ModbusPoller extends EventEmitter {
         };
 
         setup('analyzers', analyzerChangeHandler);
-        setup('rtus', bulkUpdateHandler);
+        setup('gateway', bulkUpdateHandler);
         setup('buildings', buildingChangeHandler);
     }
 
@@ -684,10 +684,10 @@ export class ModbusPoller extends EventEmitter {
                 return null;
             }
 
-            // RTU bilgilerini de al
-            let rtu = null;
+            // gateway bilgilerini de al
+            let gateway = null;
             if (analyzer.gateway) {
-                rtu = await db.collection('rtus').findOne({ _id: analyzer.gateway });
+                gateway = await db.collection('gateway').findOne({ _id: analyzer.gateway });
             }
 
             return {
@@ -696,12 +696,12 @@ export class ModbusPoller extends EventEmitter {
                 slaveId: parseInt(analyzer.slaveId) || 1,
                 timeoutMs: parseInt(analyzer.timeout) || 5000,
                 gatewayId: analyzer.gateway?.toString(),
-                ip: rtu?.ipAddress,
-                port: rtu?.port,
-                portName: rtu?.port,
-                baudRate: rtu ? parseInt(rtu.baudRate) : undefined,
-                parity: rtu?.parity,
-                stopBits: rtu ? parseInt(rtu.stopBits) : undefined,
+                ip: gateway?.ipAddress,
+                port: gateway?.port,
+                portName: gateway?.port,
+                baudRate: gateway ? parseInt(gateway.baudRate) : undefined,
+                parity: gateway?.parity,
+                stopBits: gateway ? parseInt(gateway.stopBits) : undefined,
             };
         } catch (error) {
             backendLogger.error(`Error finding analyzer ${analyzerId}`, "ModbusPoller", { error: (error as Error).message });

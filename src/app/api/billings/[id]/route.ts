@@ -96,7 +96,7 @@ export async function PUT(
     return NextResponse.json({ success: true, message: 'billing updated successfully' });
   } catch (error) {
     console.error('billing update failed:', error);
-    return NextResponse.json({ error: 'RTU update failed' }, { status: 500 });
+    return NextResponse.json({ error: 'gateway update failed' }, { status: 500 });
   }
 }
 

@@ -6,14 +6,14 @@ import { Button, OutlineButton } from "@/components/ui/button/CustomButton";
 import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
 import { Heading3, Paragraph, SmallText } from "@/components/ui/typography";
-import RTUForm from "@/components/RTUs/RTUForm";
+import GatewayForm from "@/components/gateway/GatewayForm";
 import { useAuth } from "@/hooks/use-auth";
 import { Pencil, PlusCircle, Trash2, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import IconButton from "@/components/ui/icon-button";
 
 // Kullanıcı tipi
-export interface RTUType {
+export interface GatewayType {
     _id: string;
     name: string;
     connectionType: string;
@@ -25,35 +25,35 @@ export interface RTUType {
     createdAt: string;
 }
 
-export default function RTUSettingsPage() {
-    const [RTUs, setRTUs] = useState<RTUType[]>([]);
+export default function GatewaySettingsPage() {
+    const [gateways, setGateways] = useState<GatewayType[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
     // Modal durumları
-    const [isAddRTUModalOpen, setIsAddRTUModalOpen] = useState(false);
-    const [isEditRTUModalOpen, setIsEditRTUModalOpen] = useState(false);
-    const [selectedRTU, setSelectedRTU] = useState<RTUType | undefined>(undefined);
+    const [isAddGatewayModalOpen, setIsAddGatewayModalOpen] = useState(false);
+    const [isEditGatewayModalOpen, setIsEditGatewayModalOpen] = useState(false);
+    const [selectedGateway, setSelectedGateway] = useState<GatewayType | undefined>(undefined);
     const { user, isAdmin, isLoading: isAuthLoading } = useAuth();
     useEffect(() => {
         if (!isAuthLoading && isAdmin) {
-            fetchRTUs();
+            fetchGateways();
         }
     }, [isAuthLoading, isAdmin]);
     // Kullanıcıları getir
-    const fetchRTUs = async () => {
+    const fetchGateways = async () => {
         try {
             setIsLoading(true);
-            const response = await fetch("/api/RTUs");
+            const response = await fetch("/api/gateway");
 
             if (!response.ok) {
-                throw new Error("Error fetching RTUs");
+                throw new Error("Error fetching gateway");
             }
 
             const data = await response.json();
-            setRTUs(data);
+            setGateways(data);
         } catch (error) {
-            console.error("Error fetching  RTUs:", error);
-            showToast("Error fetching RTUs", "error");
+            console.error("Error fetching  gateway:", error);
+            showToast("Error fetching gateway", "error");
         } finally {
             setIsLoading(false);
         }
@@ -61,57 +61,57 @@ export default function RTUSettingsPage() {
 
 
     // Kullanıcı ekle modalını aç
-    const openAddRTUModal = () => {
-        setSelectedRTU(undefined);
-        setIsAddRTUModalOpen(true);
+    const openAddGatewayModal = () => {
+        setSelectedGateway(undefined);
+        setIsAddGatewayModalOpen(true);
     };
 
     // Kullanıcı ekle
-    const handleAddRTU = async (RTUData: { name: string; connectionType: string; ipAddress: string; port: string; baudRate: string; parity: string; stopBits: string; }) => {
+    const handleAddGateway = async (gatewayData: { name: string; connectionType: string; ipAddress: string; port: string; baudRate: string; parity: string; stopBits: string; }) => {
         try {
-            const response = await fetch("/api/RTUs", {
+            const response = await fetch("/api/gateway", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify(RTUData),
+                body: JSON.stringify(gatewayData),
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error || "RTU could not be added");
+                throw new Error(errorData.error || "gateway could not be added");
             }
 
-            showToast("RTU added successfully");
-            setIsAddRTUModalOpen(false);
-            fetchRTUs();
+            showToast("gateway added successfully");
+            setIsAddGatewayModalOpen(false);
+            fetchGateways();
         } catch (error: any) {
-            showToast(error.message || "RTU could not be added", "error");
+            showToast(error.message || "gateway could not be added", "error");
         }
     };
 
     // Kullanıcı düzenle modalını aç
-    const openEditRTUModal = (RTU: RTUType) => {
-        setSelectedRTU(RTU);
-        setIsEditRTUModalOpen(true);
+    const openEditGatewayModal = (gateway: GatewayType) => {
+        setSelectedGateway(gateway);
+        setIsEditGatewayModalOpen(true);
     };
 
     // Kullanıcı düzenle
-    const handleEditRTU = async (RTUData: { name: string; connectionType: string; ipAddress: string; port: string; baudRate: string; parity: string; stopBits: string; }) => {
-        if (!selectedRTU) return;
+    const handleEditGateway = async (gatewayData: { name: string; connectionType: string; ipAddress: string; port: string; baudRate: string; parity: string; stopBits: string; }) => {
+        if (!selectedGateway) return;
 
         try {
             const dataToSend = {
-                name: RTUData.name,
-                connectionType: RTUData.connectionType,
-                ipAddress: RTUData.ipAddress,
-                port: RTUData.port,
-                baudRate: RTUData.baudRate,
-                parity: RTUData.parity,
-                stopBits: RTUData.stopBits
+                name: gatewayData.name,
+                connectionType: gatewayData.connectionType,
+                ipAddress: gatewayData.ipAddress,
+                port: gatewayData.port,
+                baudRate: gatewayData.baudRate,
+                parity: gatewayData.parity,
+                stopBits: gatewayData.stopBits
             };
 
-            const response = await fetch(`/api/RTUs/${selectedRTU._id}`, {
+            const response = await fetch(`/api/gateway/${selectedGateway._id}`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
@@ -121,48 +121,48 @@ export default function RTUSettingsPage() {
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error || "RTU could not be updated");
+                throw new Error(errorData.error || "gateway could not be updated");
             }
 
-            showToast("RTU updated successfully");
-            setIsEditRTUModalOpen(false);
-            fetchRTUs();
+            showToast("gateway updated successfully");
+            setIsEditGatewayModalOpen(false);
+            fetchGateways();
         } catch (error: any) {
-            showToast(error.message || "RTU could not be updated", "error");
+            showToast(error.message || "gateway could not be updated", "error");
         }
     };
 
     // Kullanıcı sil
-    const handleDeleteRTU = async (RTU: RTUType) => {
-        const anlyzerHasThisRTU = await fetch(`/api/analyzers?gateway=${RTU._id}`);
+    const handleDeleteGateway = async (gateway: GatewayType) => {
+        const analyzerHasThisGateway = await fetch(`/api/analyzers?gateway=${gateway._id}`);
 
-        const anlyzerHasThisRTUData = await anlyzerHasThisRTU.json();
-        if (anlyzerHasThisRTUData.length > 0) {
-            showErrorAlert("RTU is used by an analyzer");
+        const analyzerHasThisGatewayData = await analyzerHasThisGateway.json();
+        if (analyzerHasThisGatewayData.length > 0) {
+            showErrorAlert("gateway is used by an analyzer");
             return;
         }
         const result = await showConfirmAlert(
-            "Delete RTU",
-            `"${RTU.name}" RTU will be deleted. Are you sure?`,
+            "Delete gateway",
+            `"${gateway.name}" gateway will be deleted. Are you sure?`,
             "Yes",
             "Cancel",
         );
 
         if (result.isConfirmed) {
             try {
-                const response = await fetch(`/api/RTUs/${RTU._id}`, {
+                const response = await fetch(`/api/gateway/${gateway._id}`, {
                     method: "DELETE",
                 });
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.error || "RTU could not be deleted");
+                    throw new Error(errorData.error || "gateway could not be deleted");
                 }
 
-                showToast("RTU deleted successfully");
-                fetchRTUs();
+                showToast("gateway deleted successfully");
+                fetchGateways();
             } catch (error: any) {
-                showToast(error.message || "RTU could not be deleted", "error");
+                showToast(error.message || "gateway could not be deleted", "error");
             }
         }
     };
@@ -173,11 +173,11 @@ export default function RTUSettingsPage() {
 
     return (
         <div>
-            <PageBreadcrumb pageTitle="Gteway Settings" />
+            <PageBreadcrumb pageTitle="Gateway Settings" />
 
             <div className="flex justify-between items-center mb-6">
                 <Button
-                    onClick={openAddRTUModal}
+                    onClick={openAddGatewayModal}
                     leftIcon={<PlusCircle size={16} />}
                     variant="primary"
                 >
@@ -211,56 +211,56 @@ export default function RTUSettingsPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {RTUs.length === 0 ? (
+                                    {gateways.length === 0 ? (
                                         <tr>
                                             <td colSpan={4} className="px-4 sm:px-6 py-4 text-center">
-                                                <SmallText className="text-gray-500 dark:text-gray-400">No RTUs found</SmallText>
+                                                <SmallText className="text-gray-500 dark:text-gray-400">No gateway found</SmallText>
                                             </td>
                                         </tr>
                                     ) : (
-                                        RTUs.map((RTU) => (
-                                            <tr key={RTU._id} className="hover:bg-gray-50 dark:bg-gray-800/30">
+                                        gateways.map((gateway) => (
+                                            <tr key={gateway._id} className="hover:bg-gray-50 dark:bg-gray-800/30">
                                                 <td className="px-4 sm:px-6 py-4 whitespace-normal">
-                                                    <Paragraph className="hidden sm:block font-medium text-gray-800 dark:text-gray-300">{RTU.name}</Paragraph>
+                                                    <Paragraph className="hidden sm:block font-medium text-gray-800 dark:text-gray-300">{gateway.name}</Paragraph>
                                                     <div className="sm:hidden mt-1 space-y-1">
                                                         <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Name: </SmallText>
-                                                            <SmallText className="text-gray-700 dark:text-gray-300">{RTU.name}</SmallText>
+                                                            <SmallText className="text-gray-700 dark:text-gray-300">{gateway.name}</SmallText>
                                                         </div>
                                                         <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Type: </SmallText>
                                                             <SmallText className="text-gray-700 dark:text-gray-300">
-                                                                {RTU.connectionType == "serial" ? "Serial (RTU)" : "IP Gateway"}
+                                                                {gateway.connectionType == "serial" ? "Serial (gateway)" : "IP Gateway"}
                                                             </SmallText>
                                                         </div>
                                                         <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Address:Port: </SmallText>
-                                                            <SmallText className="text-blue-600 dark:text-blue-400">{RTU.connectionType == "serial" ? RTU.port : (RTU.ipAddress + ":" + RTU.port)}</SmallText>
+                                                            <SmallText className="text-blue-600 dark:text-blue-400">{gateway.connectionType == "serial" ? gateway.port : (gateway.ipAddress + ":" + gateway.port)}</SmallText>
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
                                                     <Paragraph className="font-medium text-gray-500 dark:text-gray-400">
-                                                        {RTU.connectionType == "serial" ? "Serial (RTU)" : "IP Gateway"}
+                                                        {gateway.connectionType == "serial" ? "Serial (gateway)" : "IP Gateway"}
                                                     </Paragraph>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell">
                                                     <span className={`inline-block px-2 py-1 rounded-full text-blue-600 dark:text-blue-400`}>
-                                                        {RTU.connectionType == "serial" ? RTU.port : (RTU.ipAddress + ":" + RTU.port)}
+                                                        {gateway.connectionType == "serial" ? gateway.port : (gateway.ipAddress + ":" + gateway.port)}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right">
                                                     <div className="flex justify-end space-x-1 sm:space-x-2">
                                                         <IconButton
                                                             size="sm"
-                                                            onClick={() => openEditRTUModal(RTU)}
+                                                            onClick={() => openEditGatewayModal(gateway)}
                                                             icon={<Pencil size={14} />}
                                                             variant="warning"
                                                             className="p-2 sm:p-3"
                                                         />
                                                         <IconButton
                                                             size="sm"
-                                                            onClick={() => handleDeleteRTU(RTU)}
+                                                            onClick={() => handleDeleteGateway(gateway)}
                                                             icon={<Trash2 size={14} />}
                                                             variant="error"
                                                             className="p-2 sm:p-3"
@@ -279,27 +279,27 @@ export default function RTUSettingsPage() {
 
             {/* Kullanıcı Ekle Modal */}
             <Modal
-                isOpen={isAddRTUModalOpen}
-                onClose={() => setIsAddRTUModalOpen(false)}
+                isOpen={isAddGatewayModalOpen}
+                onClose={() => setIsAddGatewayModalOpen(false)}
                 className="max-w-2xl"
             >
-                <RTUForm
-                    onSubmit={handleAddRTU}
-                    onCancel={() => setIsAddRTUModalOpen(false)}
+                <GatewayForm
+                    onSubmit={handleAddGateway}
+                    onCancel={() => setIsAddGatewayModalOpen(false)}
                 />
             </Modal>
 
             {/* Kullanıcı Düzenle Modal */}
             <Modal
-                isOpen={isEditRTUModalOpen}
-                onClose={() => setIsEditRTUModalOpen(false)}
+                isOpen={isEditGatewayModalOpen}
+                onClose={() => setIsEditGatewayModalOpen(false)}
                 className="max-w-2xl"
             >
-                {selectedRTU && (
-                    <RTUForm
-                        rtu={selectedRTU}
-                        onSubmit={handleEditRTU}
-                        onCancel={() => setIsEditRTUModalOpen(false)}
+                {selectedGateway && (
+                    <GatewayForm
+                        gateway={selectedGateway}
+                        onSubmit={handleEditGateway}
+                        onCancel={() => setIsEditGatewayModalOpen(false)}
                     />
                 )}
             </Modal>

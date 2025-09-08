@@ -73,7 +73,7 @@ export default function Dashboard() {
       const response = await fetch("/api/billings");
 
       if (!response.ok) {
-        throw new Error("Error fetching RTUs");
+        throw new Error("Error fetching gateway");
       }
 
       const data = await response.json();

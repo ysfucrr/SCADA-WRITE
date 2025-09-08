@@ -288,16 +288,16 @@ export class SerialPoller extends EventEmitter {
     private async loadConfiguration(): Promise<void> {
         const { db } = await connectToDatabase();
         const analyzerDocs = await db.collection('analyzers').find({ connection: 'serial' }).toArray();
-        const rtuDocs = await db.collection('rtus').find({}).toArray();
-        const rtusById: Record<string, any> = {};
-        rtuDocs.forEach((rtu: any) => { rtusById[rtu._id.toString()] = rtu; });
+        const gatewayDocs = await db.collection('gateway').find({}).toArray();
+        const gatewaysById: Record<string, any> = {};
+        gatewayDocs.forEach((gateway: any) => { gatewaysById[gateway._id.toString()] = gateway; });
 
         this.analyzers.clear();
         this.registers.clear();
 
         for (const doc of analyzerDocs) {
-            const rtu = doc.gateway ? rtusById[doc.gateway.toString()] : null;
-            if (!rtu) continue;
+            const gateway = doc.gateway ? gatewaysById[doc.gateway.toString()] : null;
+            if (!gateway) continue;
 
             const analyzerId = doc._id.toString();
             const analyzerConfig: AnalyzerConfig = {
@@ -305,10 +305,10 @@ export class SerialPoller extends EventEmitter {
                 slaveId: parseInt(doc.slaveId) || 1, pollMs: parseInt(doc.poll) || 1000,
                 timeoutMs: parseInt(doc.timeout) || 1000, connType: doc.connection,
                 gatewayId: doc.gateway?.toString() || '',
-                portName: rtu.port,
-                baudRate: parseInt(rtu.baudRate),
-                parity: rtu.parity,
-                stopBits: parseInt(rtu.stopBits),
+                portName: gateway.port,
+                baudRate: parseInt(gateway.baudRate),
+                parity: gateway.parity,
+                stopBits: parseInt(gateway.stopBits),
             };
             this.analyzers.set(analyzerId, new AnalyzerSettings(analyzerConfig));
         }
@@ -374,7 +374,7 @@ export class SerialPoller extends EventEmitter {
     }
 
     private setupChangeStreams(): void {
-        const setup = async (collectionName: 'analyzers' | 'rtus', handler: (change: any) => void) => {
+        const setup = async (collectionName: 'analyzers' | 'gateway', handler: (change: any) => void) => {
             try {
                 const { db } = await connectToDatabase();
                 const changeStream = db.collection(collectionName).watch([], { fullDocumentBeforeChange: "whenAvailable" });
@@ -425,7 +425,7 @@ export class SerialPoller extends EventEmitter {
             this.handleBulkUpdate(`Analyzer ${analyzerId} updated`);
         };
 
-        setup('rtus', () => this.handleBulkUpdate("RTU definition changed"));
+        setup('gateway', () => this.handleBulkUpdate("gateway definition changed"));
         setup('analyzers', analyzerChangeHandler);
     }
 

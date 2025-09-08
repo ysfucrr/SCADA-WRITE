@@ -4,7 +4,7 @@ export class FileLogger {
     private logFile: string;
     private logDir: string;
 
-    constructor(appName = 'scada-dashboard', fileName = 'service-debug.log') {
+    constructor(appName = 'SCADA Multicore', fileName = 'service-debug.log') {
         // Electron'a bağımlılığı kaldır, platforma göre path belirle
         let userDataPath: string;
         if (process.env.APPDATA) { // Windows

@@ -12,19 +12,19 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const { db } = await connectToDatabase();
-    const rtus = await db.collection('rtus').find().toArray();
+    const gateway = await db.collection('gateway').find().toArray();
 
     // ObjectId'leri string'e dönüştür
-    const formattedRTUs = rtus.map(rtus => ({
-      ...rtus,
-      _id: rtus._id.toString(),
-      createdAt: rtus.createdAt ? new Date(rtus.createdAt).toISOString() : null
+    const formattedGateways = gateway.map(gateway => ({
+      ...gateway,
+      _id: gateway._id.toString(),
+      createdAt: gateway.createdAt ? new Date(gateway.createdAt).toISOString() : null
     }));
 
-    return NextResponse.json(formattedRTUs);
+    return NextResponse.json(formattedGateways);
   } catch (error) {
-    console.error('RTUs could not be fetched:', error);
-    return NextResponse.json({ error: 'RTUs could not be fetched' }, { status: 500 });
+    console.error('gateway could not be fetched:', error);
+    return NextResponse.json({ error: 'gateway could not be fetched' }, { status: 500 });
   }
 }
 
@@ -73,12 +73,12 @@ export async function POST(request: Request) {
     const { db } = await connectToDatabase();
 
     // Kullanıcı adının benzersiz olup olmadığını kontrol et
-    const existingRTU = await db.collection('rtus').findOne({ name });
-    if (existingRTU) {
-      return NextResponse.json({ error: 'RTU with the same name already exists' }, { status: 400 });
+    const existingGateway = await db.collection('gateway').findOne({ name });
+    if (existingGateway) {
+      return NextResponse.json({ error: 'gateway with the same name already exists' }, { status: 400 });
     }
 
-    const newRTU = {
+    const newGateway = {
       name,
       connectionType,
       ipAddress,
@@ -89,15 +89,15 @@ export async function POST(request: Request) {
       createdAt: new Date()
     };
 
-    const result = await db.collection('rtus').insertOne(newRTU);
+    const result = await db.collection('gateway').insertOne(newGateway);
 
     return NextResponse.json({
       _id: result.insertedId.toString(),
-      ...newRTU,
-      createdAt: newRTU.createdAt.toISOString()
+      ...newGateway,
+      createdAt: newGateway.createdAt.toISOString()
     }, { status: 201 });
   } catch (error) {
-    console.error('RTU could not be added:', error);
-    return NextResponse.json({ error: 'RTU could not be added' }, { status: 500 });
+    console.error('gateway could not be added:', error);
+    return NextResponse.json({ error: 'gateway could not be added' }, { status: 500 });
   }
 }

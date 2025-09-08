@@ -55,7 +55,7 @@ const AlertRulesPage: React.FC = () => {
         try {
             const [rulesRes, gatewaysRes, unitsRes, analyzersRes] = await Promise.all([
                 axios.get('/api/alert-rules'),
-                axios.get('/api/RTUs'),
+                axios.get('/api/gateway'),
                 axios.get('/api/units'),
                 axios.get('/api/analyzers')
             ]);

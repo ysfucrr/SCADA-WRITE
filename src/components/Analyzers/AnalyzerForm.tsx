@@ -50,30 +50,30 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
     const [ctRadio, setCTRadio] = useState(analyzer?.ctRadio || "");
     const [vtRadio, setVTRadio] = useState(analyzer?.vtRadio || "");
     const [connection, setConnection] = useState(analyzer?.connection || "serial");
-    const [gateway, setGateway] = useState(analyzer?.gateway || "");
+    const [selectedGateway, setSelectedGateway] = useState(analyzer?.gateway || "");
     const [isLoading, setIsLoading] = useState(true);
     const [buildings, setBuildings] = useState<Building[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [unit, setUnit] = useState('');
-    const [rtus, setRTUs] = useState<any[]>([]);
+    const [gateways, setGateways] = useState<any[]>([]);
 
     useEffect(() => {
-       console.log("gateway changed: ", gateway)
-    }, [gateway]);
+       console.log("gateway changed: ", selectedGateway)
+    }, [selectedGateway]);
 
-    const fetchRTUs = async () => {
+    const fetchGateways = async () => {
         setIsLoading(true);
         try {
-            const response = await fetch('/api/RTUs');
+            const response = await fetch('/api/gateway');
             const data = await response.json();
             if (typeof data === 'object' ) {
-                setRTUs(data);
+                setGateways(data);
             } else {
-                console.error('Failed to fetch rtus:', data.message);
+                console.error('Failed to fetch gateway:', data.message);
             }
         } catch (error) {
-            console.error('Error fetching rtus:', error);
+            console.error('Error fetching gateway:', error);
         } finally {
             setIsLoading(false);
         }
@@ -100,7 +100,7 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
     const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
 
     const handleSubmit = (e: React.FormEvent) => {
-        console.log('Form submitted:', { analyzerName, slaveId, model, poll, timeout, ctRadio, vtRadio, connection, gateway, unit });
+        console.log('Form submitted:', { analyzerName, slaveId, model, poll, timeout, ctRadio, vtRadio, connection, selectedGateway, unit });
         e.preventDefault();
 
         // Form validation
@@ -110,7 +110,7 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
             errors.name = "Analyzer name is required";
         }
         
-        if (!gateway) {
+        if (!selectedGateway) {
             errors.gateway = "Gateway selection is required";
         }
 
@@ -131,7 +131,7 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
             ctRadio: ctRadio,
             vtRadio: vtRadio,
             connection: connection,
-            gateway: gateway,
+            gateway: selectedGateway,
             unit: unit
         });
     };
@@ -144,10 +144,10 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
     // const [tcpConnectionOptions, setTcpConnectionOptions] = useState<{value:string, label:string}[]>([]);
 
     useEffect(() => {
-        if (rtus.length === 0) return;
+        if (gateways.length === 0) return;
         if (!connection) return;
-        const serialOptions = rtus.filter((rtu: any) => rtu.connectionType === "serial").map((rtu: any) => ({ value: rtu._id, label: rtu.name }));
-        const tcpOptions = rtus.filter((rtu: any) => rtu.connectionType === "tcp").map((rtu: any) => ({ value: rtu._id, label: rtu.name }));
+        const serialOptions = gateways.filter((gateway: any) => gateway.connectionType === "serial").map((gateway: any) => ({ value: gateway._id, label: gateway.name }));
+        const tcpOptions = gateways.filter((gateway: any) => gateway.connectionType === "tcp").map((gateway: any) => ({ value: gateway._id, label: gateway.name }));
         
         // setSerialConnectionOptions(serialOptions);
         // setTcpConnectionOptions(tcpOptions);
@@ -156,30 +156,30 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
         const currentOptions = connection === "serial" ? serialOptions : tcpOptions;
         
         // Reset gateway value when connection type changes
-        const isValidGateway = currentOptions.some((option: any) => option.value === gateway);
+        const isValidGateway = currentOptions.some((option: any) => option.value === selectedGateway);
         if (!isValidGateway) {
             // If current gateway is not valid for the new connection type, reset it
-            setGateway(currentOptions.length > 0 ? currentOptions[0].value : "");
+            setSelectedGateway(currentOptions.length > 0 ? currentOptions[0].value : "");
         }
-    }, [rtus, connection, gateway]);
+    }, [gateways, connection, selectedGateway]);
 
     // Reset gateway when connection type changes
     useEffect(() => {
-        if (rtus.length === 0) return;
+        if (gateways.length === 0) return;
         
         // When editing an analyzer and connection type changes, reset the gateway
         if (analyzer && connection !== analyzer.connection) {
             const options = connection === "serial"
-                ? rtus.filter((rtu: any) => rtu.connectionType === "serial").map((rtu: any) => ({ value: rtu._id, label: rtu.name }))
-                : rtus.filter((rtu: any) => rtu.connectionType === "tcp").map((rtu: any) => ({ value: rtu._id, label: rtu.name }));
+                ? gateways.filter((gateway: any) => gateway.connectionType === "serial").map((gateway: any) => ({ value: gateway._id, label: gateway.name }))
+                : gateways.filter((gateway: any) => gateway.connectionType === "tcp").map((gateway: any) => ({ value: gateway._id, label: gateway.name }));
             
-            setGateway(options.length > 0 ? options[0].value : "");
+            setSelectedGateway(options.length > 0 ? options[0].value : "");
         }
-    }, [connection, rtus, analyzer]);
+    }, [connection, gateways, analyzer]);
 
     useEffect(() => {
         fetchBuildings();
-        fetchRTUs();
+        fetchGateways();
 
     }, []);
     const handleNavigationItemClick = (unit: string) => {
@@ -419,10 +419,10 @@ const AnalyzerForm: React.FC<AnalyzerFormProps> = ({ analyzer, onSubmit, onCance
                         </div>
                         <Select
                             options={connection === "serial"
-                                ? rtus.filter((rtu: any) => rtu.connectionType === "serial").map((rtu: any) => ({ value: rtu._id, label: rtu.name }))
-                                : rtus.filter((rtu: any) => rtu.connectionType === "tcp").map((rtu: any) => ({ value: rtu._id, label: rtu.name }))}
-                            onChange={(value) => setGateway(value)}
-                            defaultValue={gateway}
+                                ? gateways.filter((gateway: any) => gateway.connectionType === "serial").map((gateway: any) => ({ value: gateway._id, label: gateway.name }))
+                                : gateways.filter((gateway: any) => gateway.connectionType === "tcp").map((gateway: any) => ({ value: gateway._id, label: gateway.name }))}
+                            onChange={(value) => setSelectedGateway(value)}
+                            defaultValue={selectedGateway}
                             key={`gateway-select-${connection}`} // Add key to force re-render when connection changes
                         />
                         {formErrors.gateway && (

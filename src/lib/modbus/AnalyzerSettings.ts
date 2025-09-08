@@ -69,7 +69,7 @@ export class AnalyzerSettings {
             this.stopBits = config.stopBits;
 
             if (!this.portName || !this.baudRate) {
-                backendLogger.warning(`Invalid RTU configuration for analyzer ${this.id}: Port=${this.portName}, BaudRate=${this.baudRate}`, "AnalyzerSettings");
+                backendLogger.warning(`Invalid gateway configuration for analyzer ${this.id}: Port=${this.portName}, BaudRate=${this.baudRate}`, "AnalyzerSettings");
             }
             
             backendLogger.debug(`Serial config for analyzer ${this.id}: Port=${this.portName}, BaudRate=${this.baudRate}, Parity=${this.parity}, StopBits=${this.stopBits}`, "AnalyzerSettings");

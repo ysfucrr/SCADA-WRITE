@@ -113,7 +113,7 @@ const AppSidebar: React.FC = () => {
         {
           icon: <Microchip />,
           name: "Gateway Settings",
-          path: "/rtu-settings",
+          path: "/gateway-settings",
         },
         {
           icon: <Gauge />,

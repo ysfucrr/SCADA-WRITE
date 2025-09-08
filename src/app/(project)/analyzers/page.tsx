@@ -60,7 +60,7 @@ export default function AnalyzersPage() {
     const [selectedAnalyzer, setSelectedAnalyzer] = useState<AnalyzerType | undefined>(undefined);
     const [buildings, setBuildings] = useState<Building[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const [rtus, setRTUs] = useState<any[]>([]);
+    const [gateways, setGateways] = useState<any[]>([]);
     const { license, setLicense } = useSidebar();
     const router = useRouter();
     // Auth hook'u da koşulsuz olarak tanımlanmalı
@@ -86,22 +86,22 @@ export default function AnalyzersPage() {
             setIsLoading(false);
         }
     };
-    const fetchRTUs = async () => {
+    const fetchGateways = async () => {
         try {
             setIsLoading(true);
-            const response = await fetch("/api/RTUs");
+            const response = await fetch("/api/gateway");
 
             if (!response.ok) {
-                throw new Error("Error fetching rtus");
+                throw new Error("Error fetching gateway");
             }
 
             const data = await response.json();
-            //console.log("rtus",data)
+            //console.log("gateway",data)
             await fetchAnalyzers();
-            setRTUs(data);
+            setGateways(data);
         } catch (error) {
-            console.error("Error fetching  rtus:", error);
-            showToast("Error fetching rtus", "error");
+            console.error("Error fetching  gateway:", error);
+            showToast("Error fetching gateway", "error");
         } finally {
             setIsLoading(false);
         }
@@ -113,12 +113,12 @@ export default function AnalyzersPage() {
         fetchBuildings();
     }, []);
     
-    // Buildings verisi geldiğinde RTU'ları yükle
+    // Buildings verisi geldiğinde gateway'ları yükle
     useEffect(() => {
         if (isAuthLoading) return;
         
         if (isAdmin) {
-            fetchRTUs();
+            fetchGateways();
         } else {
             setIsLoading(false);
         }
@@ -402,7 +402,7 @@ export default function AnalyzersPage() {
                                                         </div>
                                                         <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Gateway: </SmallText>
-                                                            <SmallText className="text-gray-700 dark:text-gray-300">{rtus.find(rtu => rtu._id === analyzer.gateway)?.name || "Unknown Gateway"}</SmallText>
+                                                            <SmallText className="text-gray-700 dark:text-gray-300">{gateways.find(gateway => gateway._id === analyzer.gateway)?.name || "Unknown Gateway"}</SmallText>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -422,7 +422,7 @@ export default function AnalyzersPage() {
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell">
                                                     <span className={`inline-block px-2 py-1 rounded-full text-gray-500 dark:text-gray-400`}>
-                                                        {rtus.find(rtu => rtu._id === analyzer.gateway)?.name || "Unknown Gateway"}
+                                                        {gateways.find(gateway => gateway._id === analyzer.gateway)?.name || "Unknown Gateway"}
                                                     </span>
                                                 </td>
                                                 {/* <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell">

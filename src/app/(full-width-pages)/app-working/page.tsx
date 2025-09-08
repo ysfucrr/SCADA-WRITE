@@ -22,7 +22,7 @@ export default function AppWorkingPage() {
     <div className="flex flex-col items-center justify-center h-screen bg-gray-100 text-center">
       <div className="p-10 bg-white rounded-lg shadow-lg">
         <h1 className="text-4xl font-bold text-gray-800 mb-4">
-          SCADA Dashboard is Running
+          SCADA Multicore is Running
         </h1>
         <p className="text-lg text-gray-600 mb-6">
           You can now access the interface using your browser.

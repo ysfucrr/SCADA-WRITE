@@ -41,7 +41,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
     const { isLoading: isAuthLoading, isAdmin, user } = useAuth();
     const [selectedRegister, setSelectedRegister] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [, setRTUs] = useState<any[]>([]);
+    const [, setGateways] = useState<any[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [saving, setSaving] = useState(false);
@@ -56,7 +56,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             setIsKWHCounter(trendLog.isKWHCounter);
         }
     }, [trendLog]);
-    const fetchBuildings = async (rtus: any[]) => {
+    const fetchBuildings = async (gateways: any[]) => {
         if (!usedRegisters) return
         console.warn("fetch buildings")
         try {
@@ -75,11 +75,11 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                             if (usedRegisters.find((register) => register == node.id)) continue;
                             const analyzer = analyzers.find((analyzer) => analyzer._id == node.data.analyzerId);
                             if (!analyzer) continue;
-                            const rtu = rtus.find((rtu) => rtu._id == analyzer.gateway);
+                            const gateway = gateways.find((gateway) => gateway._id == analyzer.gateway);
                             allRegisters.push({
                                 registerInfo: { id: node.id, ...node.data },
                                 analyzerInfo: analyzer,
-                                rtuInfo: rtu,
+                                gatewayInfo: gateway,
                                 unit: <div className="flex items-center gap-1">
                                     {building.icon ? <div className="relative h-4 w-4">
                                         <img src={building.icon} alt={building.name} className="h-full w-full object-contain" />
@@ -98,11 +98,11 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                                 if ((node as Node).type == "registerNode") {
                                     if (usedRegisters.find((register) => register == node.id)) continue;
                                     const analyzer = analyzers.find((analyzer) => analyzer._id == node.data.analyzerId);
-                                    const rtu = rtus.find((rtu) => rtu._id == analyzer.gateway);
+                                    const gateway = gateways.find((gateway) => gateway._id == analyzer.gateway);
                                     allRegisters.push({
                                         registerInfo: { id: node.id, ...node.data },
                                         analyzerInfo: analyzer,
-                                        rtuInfo: rtu,
+                                        gatewayInfo: gateway,
                                         unit: <div className="flex items-center gap-1">
                                             {building.icon ? <div className="relative h-4 w-4">
                                                 <img src={building.icon} alt={building.name} className="h-full w-full object-contain" />
@@ -125,11 +125,11 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                                         if ((node as Node).type == "registerNode") {
                                             if (usedRegisters.find((register) => register == node.id)) continue;
                                             const analyzer = analyzers.find((analyzer) => analyzer._id == node.data.analyzerId);
-                                            const rtu = rtus.find((rtu) => rtu._id == analyzer.gateway);
+                                            const gateway = gateways.find((gateway) => gateway._id == analyzer.gateway);
                                             allRegisters.push({
                                                 registerInfo: { id: node.id, ...node.data },
                                                 analyzerInfo: analyzer,
-                                                rtuInfo: rtu,
+                                                gatewayInfo: gateway,
                                                 unit: <div className="flex items-center gap-1">
                                                     {building.icon ? <div className="relative h-4 w-4">
                                                         <img src={building.icon} alt={building.name} className="h-full w-full object-contain" />
@@ -177,15 +177,15 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
         }
     };
 
-    const fetchRTUs = async () => {
+    const fetchGateways = async () => {
         try {
-            const response = await fetch('/api/RTUs');
+            const response = await fetch('/api/gateway');
             const data = await response.json();
             console.log("data", data);
-            setRTUs(data);
+            setGateways(data);
             return data
         } catch (error) {
-            console.error('Error fetching rtus:', error);
+            console.error('Error fetching gateway:', error);
         }
     };
 
@@ -195,9 +195,9 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
         console.warn("isAdmin", isAdmin);
         if (!isAuthLoading && (isAdmin || user?.permissions?.trendLog)) {
             setIsLoading(true);
-            fetchRTUs().then((rtus) => {
-                console.log("fetched rtus", rtus);
-                fetchBuildings(rtus).then(() => {
+            fetchGateways().then((gateways) => {
+                console.log("fetched gateways", gateways);
+                fetchBuildings(gateways).then(() => {
                     setIsLoading(false);
                 });
             });
@@ -249,8 +249,8 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                     <div className="font-normal">{selectedRegister.unit}</div>
                     <div className="font-bold"> Analyzer </div>
                     <div className="font-normal">{selectedRegister.analyzerInfo.name} (Slave: {selectedRegister.analyzerInfo.slaveId})</div>
-                    <div className="font-bold"> RTU </div>
-                    <div className="font-normal">{selectedRegister.rtuInfo.name} ({selectedRegister.rtuInfo.connectionType === "tcp" ? selectedRegister.rtuInfo.ipAddress + ":" + selectedRegister.rtuInfo.port : selectedRegister.rtuInfo.port})</div>
+                    <div className="font-bold"> gateway </div>
+                    <div className="font-normal">{selectedRegister.gatewayInfo.name} ({selectedRegister.gatewayInfo.connectionType === "tcp" ? selectedRegister.gatewayInfo.ipAddress + ":" + selectedRegister.gatewayInfo.port : selectedRegister.gatewayInfo.port})</div>
                     <div className="font-bold"> Address </div>
                     <div className="font-normal">{selectedRegister.registerInfo.address}</div>
                 </div>
@@ -272,8 +272,8 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                 <div className="font-normal">{register.unit}</div>
                 <div className="font-bold"> Analyzer </div>
                 <div className="font-normal">{register.analyzerInfo.name} (Slave: {register.analyzerInfo.slaveId})</div>
-                <div className="font-bold"> RTU </div>
-                <div className="font-normal">{register.rtuInfo.name} ({register.rtuInfo.connectionType === "tcp" ? register.rtuInfo.ipAddress + ":" + register.rtuInfo.port : register.rtuInfo.port})</div>
+                <div className="font-bold"> gateway </div>
+                <div className="font-normal">{register.gatewayInfo.name} ({register.gatewayInfo.connectionType === "tcp" ? register.gatewayInfo.ipAddress + ":" + register.gatewayInfo.port : register.gatewayInfo.port})</div>
                 <div className="font-bold"> Address </div>
                 <div className="font-normal">{register.registerInfo.address}</div>
             </div>

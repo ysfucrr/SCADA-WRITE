@@ -41,14 +41,14 @@ const BillingForm: React.FC<billingFormProps> = ({ billing, onSubmit, onCancel }
             return []
         }
     };
-    const fetchRTUs = async () => {
+    const fetchGateways = async () => {
         try {
-            const response = await fetch(`/api/RTUs`);
+            const response = await fetch(`/api/gateway`);
             const data = await response.json();
-            console.log("rtus: ", data)
+            console.log("gateway: ", data)
             return data
         } catch (error) {
-            console.error("Error fetching rtus:", error);
+            console.error("Error fetching gateway:", error);
             return []
         }
     };
@@ -63,7 +63,7 @@ const BillingForm: React.FC<billingFormProps> = ({ billing, onSubmit, onCancel }
             return []
         }
     };
-    const fetchKwhCounters = async (analyzers: any, rtus: any, buildings: any) => {
+    const fetchKwhCounters = async (analyzers: any, gateways: any, buildings: any) => {
         try {
             const allRegisterNodes: any = []
             for (let i = 0; i < buildings.length; i++) {
@@ -134,9 +134,9 @@ const BillingForm: React.FC<billingFormProps> = ({ billing, onSubmit, onCancel }
             //console.log("allRegisterNodes", allRegisterNodes)
             for (let i = 0; i < data.length; i++) {
                 const analyzer = analyzers.find((analyzer: any) => analyzer._id === data[i].analyzerId);
-                const rtu = rtus.find((rtu: any) => rtu._id === analyzer.gateway);
+                const gateway = gateways.find((gateway: any) => gateway._id === analyzer.gateway);
                 data[i].analyzer = analyzer
-                data[i].rtu = rtu;
+                data[i].gateway = gateway;
                 data[i].register = allRegisterNodes.find((register: any) => register.id === data[i].registerId);
                 data[i].building = allRegisterNodes.find((register: any) => register.id === data[i].registerId).building;
                 data[i].floor = allRegisterNodes.find((register: any) => register.id === data[i].registerId).floor;
@@ -154,9 +154,9 @@ const BillingForm: React.FC<billingFormProps> = ({ billing, onSubmit, onCancel }
     };
     useEffect(() => {
         fetchBuildings().then((buildings) => {
-            fetchRTUs().then((rtus) => {
+            fetchGateways().then((gateways) => {
                 fetchAnalyzers().then((analyzers) => {
-                    fetchKwhCounters(analyzers, rtus, buildings);
+                    fetchKwhCounters(analyzers, gateways, buildings);
                 });
             });
         });

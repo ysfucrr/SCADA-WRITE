@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { RTUType } from "@/app/(project)/rtu-settings/page";
+import { GatewayType } from "@/app/(project)/gateway-settings/page";
 import { SmallText } from "@/components/ui/typography";
 import Label from "@/components/form/Label";
 import InputField from "@/components/form/input/InputField";
 import Select from "@/components/form/Select";
 
-interface RTUFormProps {
-    rtu?: RTUType;
-    onSubmit: (rtuData: {
+interface GatewayFormProps {
+    gateway?: GatewayType;
+    onSubmit: (gatewayData: {
         name: string;
         connectionType: string;
         ipAddress: string;
@@ -19,14 +19,14 @@ interface RTUFormProps {
     onCancel: () => void;
 }
 
-const RTUForm: React.FC<RTUFormProps> = ({ rtu, onSubmit, onCancel }) => {
-    const [rtuName, setRTUName] = useState(rtu?.name || "");
-    const [connectionType, setConnectionType] = useState(rtu?.connectionType || "tcp");
-    const [ipAddress, setIPAddress] = useState(rtu?.ipAddress || "");
-    const [port, setPort] = useState(rtu?.port || "");
-    const [baudRate, setBaudRate] = useState(rtu?.baudRate || "9600");
-    const [parity, setParity] = useState(rtu?.parity || "None");
-    const [stopBits, setStopBits] = useState(rtu?.stopBits || "1");
+const GatewayForm: React.FC<GatewayFormProps> = ({ gateway, onSubmit, onCancel }) => {
+    const [gatewayName, setGatewayName] = useState(gateway?.name || "");
+    const [connectionType, setConnectionType] = useState(gateway?.connectionType || "tcp");
+    const [ipAddress, setIPAddress] = useState(gateway?.ipAddress || "");
+    const [port, setPort] = useState(gateway?.port || "");
+    const [baudRate, setBaudRate] = useState(gateway?.baudRate || "9600");
+    const [parity, setParity] = useState(gateway?.parity || "None");
+    const [stopBits, setStopBits] = useState(gateway?.stopBits || "1");
     const [ipAddressError, setIpAddressError] = useState("");
 
     // Validate IP address format
@@ -53,7 +53,7 @@ const RTUForm: React.FC<RTUFormProps> = ({ rtu, onSubmit, onCancel }) => {
         e.preventDefault();
 
         // Form validation
-        if (!rtuName) {
+        if (!gatewayName) {
             return; // Name is required
         }
 
@@ -63,7 +63,7 @@ const RTUForm: React.FC<RTUFormProps> = ({ rtu, onSubmit, onCancel }) => {
         }
 
         onSubmit({
-            name: rtuName,
+            name: gatewayName,
             connectionType: connectionType,
             ipAddress: connectionType === "tcp" ? ipAddress : "",
             port: port,
@@ -76,18 +76,18 @@ const RTUForm: React.FC<RTUFormProps> = ({ rtu, onSubmit, onCancel }) => {
     return (
         <div className="p-6">
             <h2 className="text-xl font-bold mb-6 text-blue-600 dark:text-blue-400">
-                {rtu ? "Edit GATEWAY" : "Add New GATEWAY"}
+                {gateway ? "Edit GATEWAY" : "Add New GATEWAY"}
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                {/* RTU Name */}
+                {/* gateway Name */}
                 <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
                     <InputField
                         id="name"
-                        placeholder="RTU Name"
-                        value={rtuName}
-                        onChange={(e) => setRTUName(e.target.value)}
+                        placeholder="gateway Name"
+                        value={gatewayName}
+                        onChange={(e) => setGatewayName(e.target.value)}
                     />
                 </div>
 
@@ -96,7 +96,7 @@ const RTUForm: React.FC<RTUFormProps> = ({ rtu, onSubmit, onCancel }) => {
                     <Label htmlFor="connectionType">Connection Type</Label>
                     <Select 
                         options={[
-                            { value: "serial", label: "Serial (RTU)" },
+                            { value: "serial", label: "Serial (gateway)" },
                             { value: "tcp", label: "IP Gateway" }
                         ]}
                         onChange={(value) => setConnectionType(value)}
@@ -189,7 +189,7 @@ const RTUForm: React.FC<RTUFormProps> = ({ rtu, onSubmit, onCancel }) => {
                         type="submit"
                         className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                     >
-                        {rtu ? "Save Changes" : "Add RTU"}
+                        {gateway ? "Save Changes" : "Add gateway"}
                     </button>
                 </div>
             </form>
@@ -197,4 +197,4 @@ const RTUForm: React.FC<RTUFormProps> = ({ rtu, onSubmit, onCancel }) => {
     );
 };
 
-export default RTUForm;
+export default GatewayForm;

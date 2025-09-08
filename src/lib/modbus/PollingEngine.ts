@@ -71,12 +71,12 @@ export class PollingEngine extends EventEmitter {
             
             // Sadece index:0 bağlantısından alert event'i yayınla (çift event önleme)
             if (connectionIndex === 0) {
-                // Gateway ID'yi RTU ObjectId olarak bul
+                // Gateway ID'yi gateway ObjectId olarak bul
                 const analyzer = Array.from(this.analyzers.values()).find(a => a.getConnectionId() === gatewayId);
-                const rtuGatewayId = analyzer?.gatewayId || gatewayId;
+                const gatewayIdWithAnalyzer = analyzer?.gatewayId || gatewayId;
                 
-                backendLogger.info(`[ALERT-EVENT] Gateway ${rtuGatewayId} disconnected (from ${connectionId})`, "PollingEngine");
-                this.emit('connectionStatusChanged', { gatewayId: rtuGatewayId, status: 'disconnected', connectionId });
+                backendLogger.info(`[ALERT-EVENT] Gateway ${gatewayIdWithAnalyzer} disconnected (from ${connectionId})`, "PollingEngine");
+                this.emit('connectionStatusChanged', { gatewayId: gatewayIdWithAnalyzer, status: 'disconnected', connectionId });
             }
     
             // Connection mismatch cache'ini temizle
@@ -134,12 +134,12 @@ export class PollingEngine extends EventEmitter {
             
             // Sadece index:0 bağlantısından alert event'i yayınla (çift event önleme)
             if (connectionIndex === 0) {
-                // Gateway ID'yi RTU ObjectId olarak bul
+                // Gateway ID'yi gateway ObjectId olarak bul
                 const analyzer = Array.from(this.analyzers.values()).find(a => a.getConnectionId() === gatewayId);
-                const rtuGatewayId = analyzer?.gatewayId || gatewayId;
+                const gatewayIdWithAnalyzer = analyzer?.gatewayId || gatewayId;
                 
-                backendLogger.info(`[ALERT-EVENT] Gateway ${rtuGatewayId} connected (from ${connectionId})`, "PollingEngine");
-                this.emit('connectionStatusChanged', { gatewayId: rtuGatewayId, status: 'connected', connectionId });
+                backendLogger.info(`[ALERT-EVENT] Gateway ${gatewayIdWithAnalyzer} connected (from ${connectionId})`, "PollingEngine");
+                this.emit('connectionStatusChanged', { gatewayId: gatewayIdWithAnalyzer, status: 'connected', connectionId });
             }
     
             // Bağlantı kurulduğunda, yeniden bağlanma sürecinde olmadığını belirt

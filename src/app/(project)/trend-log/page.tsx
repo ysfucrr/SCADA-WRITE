@@ -21,7 +21,7 @@ const ShowLogsModal = dynamic(() => import("@/components/TrendLogs/ShowLogsModal
 import { Node } from "reactflow";
 // Kullanıcı tipi
 export interface TrendLogType {
-    rtu: any;
+    gateway: any;
     _id: string;
     analyzerId: string;
     registerId: string;
@@ -43,7 +43,7 @@ export default function TrendLogPage() {
     const [isEditTrendLogModalOpen, setIsEditTrendLogModalOpen] = useState(false);
     const [selectedTrendLog, setSelectedTrendLog] = useState<TrendLogType | undefined>(undefined);
     const [analyzers, setAnalyzers] = useState<any[]>([]);
-    const [rtus, setRTUs] = useState<any[]>([]);
+    const [gateways, setGateways] = useState<any[]>([]);
     const { user, isAdmin, isLoading: isAuthLoading } = useAuth();
     const [registers, setRegisters] = useState<any[]>([]);
     const [buildings, setBuildings] = useState<any[]>([]);
@@ -53,7 +53,7 @@ export default function TrendLogPage() {
     //console.log("isAuthLoading: ", isAuthLoading)
 
 
-    const fetchBuildings = async (analyzers: any[], rtus: any[]) => {
+    const fetchBuildings = async (analyzers: any[], gateways: any[]) => {
         console.warn("fetch buildings")
         try {
             const response = await fetch('/api/units');
@@ -68,11 +68,11 @@ export default function TrendLogPage() {
                     for (const node of flowData.nodes) {
                         if ((node as Node).type == "registerNode") {
                             const analyzer = analyzers.find((analyzer) => analyzer._id == node.data.analyzerId);
-                            const rtu = rtus.find((rtu) => rtu._id == analyzer.gateway);
+                            const gateway = gateways.find((gateway) => gateway._id == analyzer.gateway);
                             allRegisters.push({
                                 registerInfo: { id: node.id, ...node.data },
                                 analyzerInfo: analyzer,
-                                rtuInfo: rtu,
+                                gatewayInfo: gateway,
                                 unit: <div className="flex items-center gap-1">
                                     {building.icon ? <div className="relative h-4 w-4">
                                         <img src={building.icon} alt={building.name} className="h-full w-full object-contain" />
@@ -90,11 +90,11 @@ export default function TrendLogPage() {
                             for (const node of flowData.nodes) {
                                 if ((node as Node).type == "registerNode") {
                                     const analyzer = analyzers.find((analyzer) => analyzer._id == node.data.analyzerId);
-                                    const rtu = rtus.find((rtu) => rtu._id == analyzer.gateway);
+                                    const gateway = gateways.find((gateway) => gateway._id == analyzer.gateway);
                                     allRegisters.push({
                                         registerInfo: { id: node.id, ...node.data },
                                         analyzerInfo: analyzer,
-                                        rtuInfo: rtu,
+                                        gatewayInfo: gateway,
                                         unit: <div className="flex items-center gap-1">
                                             {building.icon ? <div className="relative h-4 w-4">
                                                 <img src={building.icon} alt={building.name} className="h-full w-full object-contain" />
@@ -116,11 +116,11 @@ export default function TrendLogPage() {
                                     for (const node of flowData.nodes) {
                                         if ((node as Node).type == "registerNode") {
                                             const analyzer = analyzers.find((analyzer) => analyzer._id == node.data.analyzerId);
-                                            const rtu = rtus.find((rtu) => rtu._id == analyzer.gateway);
+                                            const gateway = gateways.find((gateway) => gateway._id == analyzer.gateway);
                                             allRegisters.push({
                                                 registerInfo: { id: node.id, ...node.data },
                                                 analyzerInfo: analyzer,
-                                                rtuInfo: rtu,
+                                                gatewayInfo: gateway,
                                                 unit: <div className="flex items-center gap-1">
                                                     {building.icon ? <div className="relative h-4 w-4">
                                                         <img src={building.icon} alt={building.name} className="h-full w-full object-contain" />
@@ -167,23 +167,23 @@ export default function TrendLogPage() {
         }
     };
 
-    const fetchRTUs = async () => {
+    const fetchGateways = async () => {
         try {
-            const response = await fetch('/api/RTUs');
+            const response = await fetch('/api/gateway');
             const data = await response.json();
             //console.log("data", data);
-            setRTUs(data);
+            setGateways(data);
             return data
         } catch (error) {
-            console.error('Error fetching rtus:', error);
+            console.error('Error fetching gateway:', error);
         }
     };
 
     const fetchData = async () => {
         const _analyzers = await fetchAnalyzers()
-        const _rtus = await fetchRTUs()
-        const _registers = await fetchBuildings(_analyzers, _rtus)
-        const _trendLogs = await fetchTrendLogs(_analyzers, _rtus, _registers)
+        const _gateways = await fetchGateways()
+        const _registers = await fetchBuildings(_analyzers, _gateways)
+        const _trendLogs = await fetchTrendLogs(_analyzers, _gateways, _registers)
     }
     useEffect(() => {
         if (!isAuthLoading && (isAdmin || user?.permissions?.trendLog)) {
@@ -191,7 +191,7 @@ export default function TrendLogPage() {
         }
     }, [isAuthLoading]);
     // Kullanıcıları getir
-    const fetchTrendLogs = async (analyzers: any[], rtus: any[], registers: any[]) => {
+    const fetchTrendLogs = async (analyzers: any[], gateways: any[], registers: any[]) => {
         try {
             setIsLoading(true);
             const response = await fetch("/api/trend-logs");
@@ -206,7 +206,7 @@ export default function TrendLogPage() {
                 const analyzer = registers.find((register: any) => register.analyzerInfo._id === data[i].analyzerId).analyzerInfo;
                 data[i].analyzer = analyzer;
                 data[i].register = registers.find((register: any) => register.registerInfo.id === data[i].registerId).registerInfo;
-                data[i].rtu = registers.find((register: any) => register.rtuInfo._id === analyzer.gateway).rtuInfo
+                data[i].gateway = registers.find((register: any) => register.gatewayInfo._id === analyzer.gateway).gatewayInfo
                 data[i].unit = registers.find((register: any) => register.registerInfo.id === data[i].registerId).unit
             }
             //console.log("trendlogs data: ", data)
@@ -494,8 +494,8 @@ export default function TrendLogPage() {
                                                             <div className="font-normal">{TrendLog.unit}</div>
                                                             <div className="font-bold"> Analyzer </div>
                                                             <div className="font-normal">{TrendLog.analyzer.name} (Slave: {TrendLog.analyzer.slaveId})</div>
-                                                            <div className="font-bold"> RTU </div>
-                                                            <div className="font-normal">{TrendLog.rtu.name} </div>
+                                                            <div className="font-bold"> gateway </div>
+                                                            <div className="font-normal">{TrendLog.gateway.name} </div>
                                                             <div className="font-bold"> Address </div>
                                                             <div className="font-normal">{TrendLog.register.address}</div>
                                                             <div className="font-bold"> Interval </div>
@@ -510,7 +510,7 @@ export default function TrendLogPage() {
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
                                                     <span className={`inline-block px-2 py-1 rounded-full text-blue-600 dark:text-blue-400`}>
-                                                        {TrendLog.rtu.name}
+                                                        {TrendLog.gateway.name}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">

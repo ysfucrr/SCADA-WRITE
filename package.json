@@ -1,5 +1,5 @@
 {
-  "name": "scada-dashboard",
+  "name": "scada-multicore",
   "version": "2.0.2",
   "description": "SCADA Dashboard Application",
   "private": true,

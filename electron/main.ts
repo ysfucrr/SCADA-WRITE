@@ -98,7 +98,7 @@ async function createWindow() {
       },
     },
   ]);
-  tray.setToolTip("SCADA-DASHBOARD");
+  tray.setToolTip("SCADA Multicore");
   tray.setContextMenu(contextMenu);
   tray.on("double-click", () => {
     mainWindow?.show();

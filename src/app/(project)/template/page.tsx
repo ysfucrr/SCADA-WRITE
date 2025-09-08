@@ -63,9 +63,9 @@ export default function Home() {
   return (
     <div className="space-y-8">
       <section className="space-y-4">
-        <Heading1>RTU Dashboard</Heading1>
+        <Heading1>gateway Dashboard</Heading1>
         <Paragraph>
-          Welcome to the RTU Dashboard. This is a modern admin panel built with Next.js and Tailwind CSS.
+          Welcome to the gateway Dashboard. This is a modern admin panel built with Next.js and Tailwind CSS.
           It features a responsive design and dark mode support.
         </Paragraph>
       </section>
