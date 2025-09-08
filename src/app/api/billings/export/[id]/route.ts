@@ -15,21 +15,21 @@ export async function GET(request: Request,
 
     const { id } = await params;
     const { db } = await connectToDatabase();
-    const widget = await db.collection('widgets').findOne({ _id: new ObjectId(id) });
+    const billing = await db.collection('billings').findOne({ _id: new ObjectId(id) });
 
-    if (!widget) {
-      return NextResponse.json({ error: 'Widget not found' }, { status: 404 });
+    if (!billing) {
+      return NextResponse.json({ error: 'billing not found' }, { status: 404 });
     }
 
-    const { currency, price, trendLogs: trendLogsInWidget } = widget;
+    const { currency, price, trendLogs: trendLogsInbilling } = billing;
     const reportDate = new Date();
 
     const tableData = [];
     let usedTotal = 0;
-    const updatedTrendLogsForWidget = [];
+    const updatedTrendLogsForbilling = [];
 
     // 1. & 2. Process each trend log, calculate consumption, and prepare data
-    for (const trendLog of trendLogsInWidget) {
+    for (const trendLog of trendLogsInbilling) {
       // Get CURRENT value from the service
       const valueResponse = await fetch(`http://localhost:${process.env.SERVICE_PORT}/express-api/get-register-value?id=${trendLog.registerId}`);
       if (!valueResponse.ok) {
@@ -56,7 +56,7 @@ export async function GET(request: Request,
         `${(difference * price).toLocaleString('tr-TR')} ${currency}`
       ]);
 
-      updatedTrendLogsForWidget.push({
+      updatedTrendLogsForbilling.push({
         ...trendLog,
         firstValue: currentValue
       });
@@ -81,10 +81,10 @@ export async function GET(request: Request,
 
     const finalY = (doc as any).lastAutoTable.finalY + 10;
     const totalCost = (usedTotal * price).toLocaleString('tr-TR');
-    const daysDifference = differenceInDays(reportDate, new Date(widget.startTime));
+    const daysDifference = differenceInDays(reportDate, new Date(billing.startTime));
 
     doc.setFontSize(10);
-    doc.text(`Start Date: ${format(new Date(widget.startTime), 'dd.MM.yyyy')}`, 14, finalY);
+    doc.text(`Start Date: ${format(new Date(billing.startTime), 'dd.MM.yyyy')}`, 14, finalY);
     doc.text(`Report Date: ${format(reportDate, 'dd.MM.yyyy')}`, 100, finalY);
     doc.text(`Days: ${daysDifference}`, 14, finalY + 5);
 
@@ -108,7 +108,7 @@ export async function GET(request: Request,
     }
 
     // 4. Update Database and Reset Cycle
-    for (const updatedLog of updatedTrendLogsForWidget) {
+    for (const updatedLog of updatedTrendLogsForbilling) {
       // Mark all previous entries for this log as exported
       await db.collection('trend_log_entries').updateMany(
         { trendLogId: new ObjectId(updatedLog.id), exported: { $ne: true } },
@@ -127,13 +127,13 @@ export async function GET(request: Request,
       });
     }
 
-    // Finally, update the widget itself to reflect the new state
-    await db.collection('widgets').updateOne(
+    // Finally, update the billing itself to reflect the new state
+    await db.collection('billings').updateOne(
       { _id: new ObjectId(id) },
       {
         $set: {
           startTime: reportDate, // Reset the billing start date
-          trendLogs: updatedTrendLogsForWidget, // a an array where `firstValue` is now the reset value
+          trendLogs: updatedTrendLogsForbilling, // a an array where `firstValue` is now the reset value
         },
       }
     );
@@ -149,7 +149,7 @@ export async function GET(request: Request,
       headers
     });
   } catch (error) {
-    console.error('Widgets could not be fetched:', error);
-    return NextResponse.json({ error: 'Widgets could not be fetched' }, { status: 500 });
+    console.error('billings could not be fetched:', error);
+    return NextResponse.json({ error: 'billings could not be fetched' }, { status: 500 });
   }
 }

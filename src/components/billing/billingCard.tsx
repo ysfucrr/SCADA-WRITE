@@ -6,10 +6,10 @@ import { useWebSocket } from '@/context/WebSocketContext';
 import { useAuth } from "@/hooks/use-auth";
 import * as XLSX from 'xlsx';
 import { utils, CellObject } from 'xlsx'; // Cell style türlerini tanımla
-import { WidgetType } from "@/app/(project)/dashboard/page";
+import { billingType } from "@/app/(project)/dashboard/page";
 import { showConfirmAlert } from "../ui/alert";
 
-export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { widget: WidgetType; onEdit: (widget: WidgetType) => void; onDelete: (widget: WidgetType) => void; buildings: any[]; }) {
+export default function BillingCard({ billing, onEdit, onDelete, buildings }: { billing: billingType; onEdit: (billing: billingType) => void; onDelete: (billing: billingType) => void; buildings: any[]; }) {
     const [isExpanded, setIsExpanded] = useState(false);
     const { watchRegister, unwatchRegister, isConnected } = useWebSocket();
     const [trendlogValues, setTrendlogValues] = useState<{ [key: string]: any }>({});
@@ -34,12 +34,12 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
 
     // Bileşen yüklendiğinde WebSocket izlemeyi başlat
     useEffect(() => {
-        if (!widget.trendLogs || widget.trendLogs.length === 0 || !isConnected) return;
+        if (!billing.trendLogs || billing.trendLogs.length === 0 || !isConnected) return;
 
         const watches: { registerId: string, register: any }[] = [];
 
         // Tüm kayıtlar için WebSocket bağlantısı kur
-        widget.trendLogs.forEach(trendLog => {
+        billing.trendLogs.forEach(trendLog => {
             const registerConfig = findRegisterConfigFromRegisterId(trendLog.registerId);
             if (!registerConfig) {
                 console.error(`Register config not found for ${trendLog.registerId}`);
@@ -71,12 +71,12 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                 unwatchRegister(register, (value) => updateRegisterValue(registerId, value));
             });
         };
-    }, [isConnected, widget.trendLogs, watchRegister, unwatchRegister]);
-    // Widget verilerini PDF formatında dışa aktarma fonksiyonu
-    const exportToPdf = async (widget: WidgetType) => {
+    }, [isConnected, billing.trendLogs, watchRegister, unwatchRegister]);
+    // billing verilerini PDF formatında dışa aktarma fonksiyonu
+    const exportToPdf = async (billing: billingType) => {
         try {
             // PDF dosyasını al
-            const response = await fetch(`/api/widgets/export/${widget._id}`);
+            const response = await fetch(`/api/billings/export/${billing._id}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
@@ -100,8 +100,8 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
 
-            widget.startTime = new Date().toISOString();
-            widget.trendLogs.forEach((trendLog: any) => {
+            billing.startTime = new Date().toISOString();
+            billing.trendLogs.forEach((trendLog: any) => {
                 trendLog.firstValue = trendlogValues[getRegisterKey(trendLog.registerId)];
             });
         } catch (error) {
@@ -220,12 +220,12 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                     <ChevronDown className="text-gray-500 dark:text-gray-400 ml-2" size={20} />
                 }
                 <div className="ml-8 flex items-center justify-between flex-grow pr-8">
-                    <h2 className="text-lg font-semibold text-gray-800 dark:text-white w-1/3 truncate">{widget.name}</h2>
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-white w-1/3 truncate">{billing.name}</h2>
                     <span className="font-medium text-gray-600 dark:text-gray-300 w-1/3 text-center">
-                        <span className="text-emerald-600 dark:text-emerald-400">{widget.price.toLocaleString(navigator.language || 'en-US', {
+                        <span className="text-emerald-600 dark:text-emerald-400">{billing.price.toLocaleString(navigator.language || 'en-US', {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2
-                        })} {widget.currency}/KWh</span>
+                        })} {billing.currency}/KWh</span>
                     </span>
 
                     <span className="text-gray-500 dark:text-gray-400">
@@ -236,7 +236,7 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                 <div className="flex items-center gap-2" onClick={(e: MouseEvent) => e.stopPropagation()}>
                     <IconButton
                         size="sm"
-                        onClick={() => exportToPdf(widget)}
+                        onClick={() => exportToPdf(billing)}
                         icon={<Download size={16} />}
                         variant="success"
                         className="p-2"
@@ -245,7 +245,7 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                     <IconButton
                         size="sm"
                         onClick={() => {
-                            onEdit(widget);
+                            onEdit(billing);
                         }}
                         icon={<Pencil size={16} />}
                         variant="warning"
@@ -257,13 +257,13 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                             onClick={async () => {
                                 const result = await showConfirmAlert(
                                     "Delete Billing",
-                                    `"${widget.name}" Billing will be deleted. Are you sure?`,
+                                    `"${billing.name}" Billing will be deleted. Are you sure?`,
                                     "Yes",
                                     "Cancel",
                                 );
                                 if (result.isConfirmed) {
-                                    await exportToPdf(widget);
-                                    onDelete(widget);
+                                    await exportToPdf(billing);
+                                    onDelete(billing);
                                 }
                             }}
                             icon={<Trash2 size={16} />}
@@ -299,15 +299,15 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {widget.trendLogs && widget.trendLogs.length === 0 ? (
+                            {billing.trendLogs && billing.trendLogs.length === 0 ? (
                                 <tr>
                                     <td colSpan={3} className="px-4 sm:px-6 py-4 text-center">
                                         <SmallText className="text-gray-500 dark:text-gray-400">No trend logs found</SmallText>
                                     </td>
                                 </tr>
                             ) : (
-                                widget.trendLogs && widget.trendLogs.map((trendLog, index) => (
-                                    <tr key={`${widget._id}-${index}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                billing.trendLogs && billing.trendLogs.map((trendLog, index) => (
+                                    <tr key={`${billing._id}-${index}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                                         <td className="px-4 sm:px-6 py-4 whitespace-normal">
                                             <div className="text-gray-700 dark:text-gray-300 hidden md:block mt-1 space-y-1">
                                                 {/* {findUnitPathFromRegisterId(trendLog.registerId)} */}
@@ -341,10 +341,10 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                                                 <div className="flex flex-row justify-between">
                                                     <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Cost: </SmallText>
                                                     <span className="text-gray-700 dark:text-gray-300">
-                                                        {((trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue) * widget.price).toLocaleString(navigator.language || 'en-US', {
+                                                        {((trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue) * billing.price).toLocaleString(navigator.language || 'en-US', {
                                                             minimumFractionDigits: 2,
                                                             maximumFractionDigits: 2
-                                                        }) + " " + widget.currency || '--'}
+                                                        }) + " " + billing.currency || '--'}
                                                     </span>
                                                 </div>
                                             </div>
@@ -359,10 +359,10 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                                             {convertToUnit(trendlogValues[getRegisterKey(trendLog.registerId)]- trendLog.firstValue)}
                                         </td>
                                         <td className="text-gray-700 dark:text-gray-300 px-4 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
-                                            {((trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue) * widget.price).toLocaleString(navigator.language || 'en-US', {
+                                            {((trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue) * billing.price).toLocaleString(navigator.language || 'en-US', {
                                                 minimumFractionDigits: 2,
                                                 maximumFractionDigits: 2
-                                            }) + " " + widget.currency || '--'}
+                                            }) + " " + billing.currency || '--'}
                                         </td>
                                     </tr>
                                 ))
@@ -374,28 +374,28 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                         <div>
                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium text-[16px]  ">Start Date: </SmallText>
                             <Code className="text-gray-700 dark:text-gray-300  font-medium text-[16px]">
-                                {new Date(widget.startTime).toLocaleDateString()}
+                                {new Date(billing.startTime).toLocaleDateString()}
                             </Code>
                         </div>
                         <div>
                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium text-[16px]  ">Days: </SmallText>
                             <Code className="text-gray-700 dark:text-gray-300  font-medium text-[16px]">
-                                {dayDifference(widget.startTime, new Date().toISOString())}
+                                {dayDifference(billing.startTime, new Date().toISOString())}
                             </Code>
                         </div>
                         <div>
                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium text-[16px]">Used Total: </SmallText>
                             <Code className="text-gray-700 dark:text-gray-300  font-medium text-[16px]">
-                                {convertToUnit(widget.trendLogs.reduce((total, trendLog) => total + (trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue), 0))}
+                                {convertToUnit(billing.trendLogs.reduce((total, trendLog) => total + (trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue), 0))}
                             </Code>
                         </div>
                         <div>
                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium text-[16px]">Total Cost: </SmallText>
                             <Code className="text-gray-700 dark:text-gray-300  font-medium text-[16px]">
-                                {widget.trendLogs.reduce((total, trendLog) => total + (trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue) * widget.price, 0).toLocaleString(navigator.language || 'en-US', {
+                                {billing.trendLogs.reduce((total, trendLog) => total + (trendlogValues[getRegisterKey(trendLog.registerId)] - trendLog.firstValue) * billing.price, 0).toLocaleString(navigator.language || 'en-US', {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 2
-                                }) + " " + widget.currency || '--'}
+                                }) + " " + billing.currency || '--'}
                             </Code>
                         </div>
                     </div>

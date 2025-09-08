@@ -117,12 +117,12 @@ export async function DELETE(
     // Trend log bilgisini veritabanından alalım
     const trendLogToDelete = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });
     console.log('Trend log to delete:', trendLogToDelete);
-    //check if any widget exist which has this trendlog in trendlogs array. this is sample widget record:
+    //check if any billing exist which has this trendlog in trendlogs array. this is sample billing record:
 
     // Trend log ID'sini trendLogs dizisindeki nesnelerin id alanında ara
-    const widget = await db.collection('widgets').findOne({ 'trendLogs.id': id });
-    if (widget) {
-      return NextResponse.json({ error: 'Cannot delete this trend log because it is used in a widget' }, { status: 400 });
+    const billing = await db.collection('billings').findOne({ 'trendLogs.id': id });
+    if (billing) {
+      return NextResponse.json({ error: 'Cannot delete this trend log because it is used in a billing' }, { status: 400 });
     }
     const result = await db.collection('trendLogs').deleteOne({ _id: new ObjectId(id) });
     

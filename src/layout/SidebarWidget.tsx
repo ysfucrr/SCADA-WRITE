@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function SidebarWidget() {
+export default function Sidebarbilling() {
   return (
     <div
       className={`

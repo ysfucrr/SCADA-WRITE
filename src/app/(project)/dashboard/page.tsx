@@ -5,15 +5,15 @@ import { showToast } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button/CustomButton";
 import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
-import WidgetCard from "@/components/widgets/WidgetCard";
-import WidgetForm from "@/components/widgets/WidgetForm";
+import BillingCard from "@/components/billing/billingCard";
+import BillingForm from "@/components/billing/billingForm";
 import { useAuth } from "@/hooks/use-auth";
 import { PlusCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TrendLogType } from "../trend-log/page";
 
 // Kullanıcı tipi
-export interface WidgetType {
+export interface billingType {
   _id: string;
   name: string;
   price: number;
@@ -25,20 +25,20 @@ export interface WidgetType {
 }
 
 export default function Dashboard() {
-  const [widgets, setWidgets] = useState<WidgetType[]>([]);
+  const [billings, setbillings] = useState<billingType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [buildings, setBuildings] = useState<any[]>([]);
   const [analyzers, setAnalyzers] = useState<any[]>([]);
   
   // Modal durumları
-  const [isAddWidgetModalOpen, setIsAddWidgetModalOpen] = useState(false);
-  const [isEditWidgetModalOpen, setIsEditWidgetModalOpen] = useState(false);
-  const [selectedWidget, setSelectedWidget] = useState<WidgetType | undefined>(undefined);
+  const [isAddbillingModalOpen, setIsAddbillingModalOpen] = useState(false);
+  const [isEditbillingModalOpen, setIsEditbillingModalOpen] = useState(false);
+  const [selectedbilling, setSelectedbilling] = useState<billingType | undefined>(undefined);
   const { user, isAdmin, isLoading: isAuthLoading } = useAuth();
   useEffect(() => {
     if (!isAuthLoading && (isAdmin || user?.permissions?.dashboard === true)) {
       fetchBuildings().then(() => {
-        fetchWidgets().then(() => {
+        fetchbillings().then(() => {
           setIsLoading(false);
         })
       });
@@ -66,11 +66,11 @@ export default function Dashboard() {
       setIsLoading(false);
     }
   };
-  const fetchWidgets = async () => {
+  const fetchbillings = async () => {
     const analyzers = await fetchAnalyzers();
     try {
       setIsLoading(true);
-      const response = await fetch("/api/widgets");
+      const response = await fetch("/api/billings");
 
       if (!response.ok) {
         throw new Error("Error fetching RTUs");
@@ -78,17 +78,17 @@ export default function Dashboard() {
 
       const data = await response.json();
       for (let i = 0; i < data.length; i++) {
-        const widget = data[i];
-        widget.trendLogs.forEach((trendLog: any) => {
+        const billing = data[i];
+        billing.trendLogs.forEach((trendLog: any) => {
           trendLog.analyzerName = analyzers.find((analyzer: any) => analyzer._id === trendLog.analyzerId)?.name;
         });
       }
       
-      //console.log("widgets: ", data)
-      setWidgets(data);
+      //console.log("billings: ", data)
+      setbillings(data);
     } catch (error) {
-      console.error("Error fetching  widgets:", error);
-      showToast("Error fetching widgets", "error");
+      console.error("Error fetching  billings:", error);
+      showToast("Error fetching billings", "error");
     } finally {
       setIsLoading(false);
     }
@@ -116,20 +116,20 @@ export default function Dashboard() {
 
 
   // Kullanıcı ekle modalını aç
-  const openAddWidgetModal = () => {
-    setSelectedWidget(undefined);
-    setIsAddWidgetModalOpen(true);
+  const openAddbillingModal = () => {
+    setSelectedbilling(undefined);
+    setIsAddbillingModalOpen(true);
   };
 
-  // Widget ekle
-  const handleAddWidget = async (widgetData: { name: string; price: number; currency: string; trendLogsData: TrendLogType[]; }) => {
+  // billing ekle
+  const handleAddbilling = async (billingData: { name: string; price: number; currency: string; trendLogsData: TrendLogType[]; }) => {
     try {
-      const response = await fetch("/api/widgets", {
+      const response = await fetch("/api/billings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(widgetData),
+        body: JSON.stringify(billingData),
       });
 
       if (!response.ok) {
@@ -138,33 +138,33 @@ export default function Dashboard() {
       }
 
       showToast("Billing added successfully");
-      setIsAddWidgetModalOpen(false);
-      fetchWidgets();
+      setIsAddbillingModalOpen(false);
+      fetchbillings();
     } catch (error: any) {
       showToast(error.message || "Billing could not be added", "error");
     }
   };
 
   // Kullanıcı düzenle modalını aç
-  const openEditWidgetModal = (widget: WidgetType) => {
-    setSelectedWidget(widget);
-    setIsEditWidgetModalOpen(true);
+  const openEditbillingModal = (billing: billingType) => {
+    setSelectedbilling(billing);
+    setIsEditbillingModalOpen(true);
   };
 
-  // Widget düzenle
-  const handleEditWidget = async (widgetData: { name: string; price: number; currency: string; trendLogsData: TrendLogType[]; }) => {
-    if (!selectedWidget) return;
+  // billing düzenle
+  const handleEditbilling = async (billingData: { name: string; price: number; currency: string; trendLogsData: TrendLogType[]; }) => {
+    if (!selectedbilling) return;
     
     try {
       // Eğer password boşsa, API'ye göndermiyoruz
       const dataToSend = {
-        name: widgetData.name,
-        price: widgetData.price,
-        currency: widgetData.currency,
-        trendLogsData: widgetData.trendLogsData
+        name: billingData.name,
+        price: billingData.price,
+        currency: billingData.currency,
+        trendLogsData: billingData.trendLogsData
       };
 
-      const response = await fetch(`/api/widgets/${selectedWidget._id}`, {
+      const response = await fetch(`/api/billings/${selectedbilling._id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -178,17 +178,17 @@ export default function Dashboard() {
       }
 
       showToast("Billing updated successfully");
-      setIsEditWidgetModalOpen(false);
-      fetchWidgets();
+      setIsEditbillingModalOpen(false);
+      fetchbillings();
     } catch (error: any) {
       showToast(error.message || "Billing could not be updated", "error");
     }
   };
 
-  // Widget sil
-  const handleDeleteWidget = async (widget: WidgetType) => {
+  // billing sil
+  const handleDeletebilling = async (billing: billingType) => {
     try {
-      const response = await fetch(`/api/widgets/${widget._id}`, {
+      const response = await fetch(`/api/billings/${billing._id}`, {
         method: "DELETE",
       });
 
@@ -198,7 +198,7 @@ export default function Dashboard() {
       }
 
       showToast("Billing deleted successfully");
-      fetchWidgets();
+      fetchbillings();
     } catch (error: any) {
       showToast(error.message || "Billing could not be deleted", "error");
     }
@@ -224,7 +224,7 @@ export default function Dashboard() {
         {/* <div>  </div> */}
         {isAdmin && (
           <Button
-            onClick={openAddWidgetModal}
+            onClick={openAddbillingModal}
             leftIcon={<PlusCircle size={16} />}
             variant="primary"
           >
@@ -240,19 +240,19 @@ export default function Dashboard() {
       ) : (
         <div className="overflow-x-auto">
           <div className="overflow-x-auto w-full">
-            {widgets.length === 0 ? (
+            {billings.length === 0 ? (
               <div className="flex justify-center py-8 text-gray-500 dark:text-gray-400">
                 No billings found
               </div>
             ) : (
               <div className="flex flex-col gap-8">
                 {JSON.stringify(analyzers)}
-                {widgets.map((widget) => (
-                  <WidgetCard
-                    key={widget._id}
-                    widget={widget}
-                    onEdit={openEditWidgetModal}
-                    onDelete={handleDeleteWidget}
+                {billings.map((billing) => (
+                  <BillingCard
+                    key={billing._id}
+                    billing={billing}
+                    onEdit={openEditbillingModal}
+                    onDelete={handleDeletebilling}
                     buildings={buildings}
                   />
                 ))}
@@ -262,29 +262,29 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Widget Ekle Modal */}
+      {/* billing Ekle Modal */}
       <Modal
-        isOpen={isAddWidgetModalOpen}
-        onClose={() => setIsAddWidgetModalOpen(false)}
+        isOpen={isAddbillingModalOpen}
+        onClose={() => setIsAddbillingModalOpen(false)}
         className="max-w-2xl"
       >
-        <WidgetForm
-          onSubmit={handleAddWidget}
-          onCancel={() => setIsAddWidgetModalOpen(false)}
+        <BillingForm
+          onSubmit={handleAddbilling}
+          onCancel={() => setIsAddbillingModalOpen(false)}
         />
       </Modal>
 
-      {/* Widget Düzenle Modal */}
+      {/* billing Düzenle Modal */}
       <Modal
-        isOpen={isEditWidgetModalOpen}
-        onClose={() => setIsEditWidgetModalOpen(false)}
+        isOpen={isEditbillingModalOpen}
+        onClose={() => setIsEditbillingModalOpen(false)}
         className="max-w-2xl"
       >
-        {selectedWidget && (
-          <WidgetForm
-            widget={selectedWidget}
-            onSubmit={handleEditWidget}
-            onCancel={() => setIsEditWidgetModalOpen(false)}
+        {selectedbilling && (
+          <BillingForm
+            billing={selectedbilling}
+            onSubmit={handleEditbilling}
+            onCancel={() => setIsEditbillingModalOpen(false)}
           />
         )}
       </Modal>

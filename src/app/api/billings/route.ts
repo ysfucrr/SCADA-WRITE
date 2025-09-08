@@ -16,7 +16,7 @@ export async function GET() {
     }
 
     const { db } = await connectToDatabase();
-    const widgets = await db.collection('widgets').find().toArray();
+    const billings = await db.collection('billings').find().toArray();
     const firstValues = await db.collection('trend_log_entries').find({
       $or: [
         { exported: false },
@@ -24,26 +24,26 @@ export async function GET() {
       ]
     }).toArray();
 
-    widgets.forEach((widget: any) => {
-      widget.trendLogs.forEach((trendLog: any) => {
-        // Correctly compare the ObjectId from the entry with the string ID from the widget
+    billings.forEach((billing: any) => {
+      billing.trendLogs.forEach((trendLog: any) => {
+        // Correctly compare the ObjectId from the entry with the string ID from the billing
         const matchingEntry = firstValues.find(firstValue => firstValue.trendLogId.toString() === trendLog.id);
         trendLog.firstValue = matchingEntry ? matchingEntry.value : 0;
       });
     });
     // ObjectId'leri string'e dönüştür
-    const formattedWidgets = widgets.map(widget => ({
-      ...widget,
-      _id: widget._id.toString(),
-      createdAt: widget.createdAt ? new Date(widget.createdAt).toISOString() : null
+    const formattedbillings = billings.map(billing => ({
+      ...billing,
+      _id: billing._id.toString(),
+      createdAt: billing.createdAt ? new Date(billing.createdAt).toISOString() : null
     }));
 
-    //read firstvalues from trend_log_entries where expored is not exist or false for each trendlogs of widgets
+    //read firstvalues from trend_log_entries where expored is not exist or false for each trendlogs of billings
 
-    return NextResponse.json(formattedWidgets);
+    return NextResponse.json(formattedbillings);
   } catch (error) {
-    console.error('Widgets could not be fetched:', error);
-    return NextResponse.json({ error: 'Widgets could not be fetched' }, { status: 500 });
+    console.error('billings could not be fetched:', error);
+    return NextResponse.json({ error: 'billings could not be fetched' }, { status: 500 });
   }
 }
 
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
 
     console.log("trendLogs", trendLogs)
 
-    const widgetRecord = {
+    const billingRecord = {
       name: name,
       price: price,
       currency: currency,
@@ -124,15 +124,15 @@ export async function POST(request: Request) {
       createdAt: new Date()
     };
 
-    const result = await db.collection('widgets').insertOne(widgetRecord);
+    const result = await db.collection('billings').insertOne(billingRecord);
 
     return NextResponse.json({
       _id: result.insertedId.toString(),
-      ...widgetRecord,
-      createdAt: widgetRecord.createdAt.toISOString()
+      ...billingRecord,
+      createdAt: billingRecord.createdAt.toISOString()
     }, { status: 201 });
   } catch (error) {
-    console.error('Widget could not be added:', error);
-    return NextResponse.json({ error: 'Widget could not be added' }, { status: 500 });
+    console.error('billing could not be added:', error);
+    return NextResponse.json({ error: 'billing could not be added' }, { status: 500 });
   }
 }

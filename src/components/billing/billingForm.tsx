@@ -1,4 +1,4 @@
-import { WidgetType } from "@/app/(project)/dashboard/page";
+import { billingType } from "@/app/(project)/dashboard/page";
 import { TrendLogType } from "@/app/(project)/trend-log/page";
 import InputField from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
@@ -11,9 +11,9 @@ import { DeleteButton } from "../ui/action-buttons";
 import { showToast } from "../ui/alert";
 import { TrendLogTreeDropdown } from "./TrendLogDropdown";
 
-interface WidgetFormProps {
-    widget?: WidgetType;
-    onSubmit: (widgetData: {
+interface billingFormProps {
+    billing?: billingType;
+    onSubmit: (billingData: {
         name: string;
         price: number;
         currency: string;
@@ -22,15 +22,15 @@ interface WidgetFormProps {
     onCancel: () => void;
 }
 
-const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) => {
-    console.log("widget: ", widget)
-    const [widgetName, setWidgetName] = useState(widget?.name || "");
-    const [price, setPrice] = useState(widget?.price || 0);
-    const [currency, setCurrency] = useState(widget?.currency || "TL");
+const BillingForm: React.FC<billingFormProps> = ({ billing, onSubmit, onCancel }) => {
+    console.log("billing: ", billing)
+    const [billingName, setbillingName] = useState(billing?.name || "");
+    const [price, setPrice] = useState(billing?.price || 0);
+    const [currency, setCurrency] = useState(billing?.currency || "TL");
     const [kwhCounters, setKwhCounters] = useState([]);
     const { isAdmin } = useAuth();
     const [trendLogs, setTrendLogs] = useState<TrendLogType[]>([]);
-    const editMode = widget !== undefined;
+    const editMode = billing !== undefined;
     const fetchAnalyzers = async () => {
         try {
             const response = await fetch(`/api/analyzers`);
@@ -145,8 +145,8 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
             }
             console.log("data", data)
             setKwhCounters(data);
-            if (widget) {
-                setTrendLogs(data.filter((kwhCounter: any) => widget.trendLogs.map((trendLog: any) => trendLog.registerId).includes(kwhCounter.registerId)));
+            if (billing) {
+                setTrendLogs(data.filter((kwhCounter: any) => billing.trendLogs.map((trendLog: any) => trendLog.registerId).includes(kwhCounter.registerId)));
             }
         } catch (error) {
             console.error("Error fetching kwh counters:", error);
@@ -170,12 +170,12 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
         }
         console.warn("form submit called")
         // Form validation
-        if (!widgetName) {
+        if (!billingName) {
             return; // Name is required
         }
 
         onSubmit({
-            name: widgetName,
+            name: billingName,
             price: price,
             currency: currency,
             trendLogsData: trendLogs.filter((trendLog: any) => trendLog.registerId),
@@ -191,7 +191,7 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
     return (
         <div className="p-6">
             <h2 className="text-xl font-bold mb-6 text-blue-600 dark:text-blue-400">
-                {widget ? "Edit Billing" : "Add New Billing"}
+                {billing ? "Edit Billing" : "Add New Billing"}
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -201,8 +201,8 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
                     <InputField
                         id="name"
                         placeholder="Billing Name"
-                        value={widgetName}
-                        onChange={(e) => setWidgetName(e.target.value)}
+                        value={billingName}
+                        onChange={(e) => setbillingName(e.target.value)}
                     />
                 </div>
 
@@ -252,7 +252,7 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
 
                                     <TrendLogTreeDropdown
                                         key={index}
-                                        kwhCounters={!widget ? kwhCounters.filter((kwhCounter: any) => !trendLogs.map((trendLog: any) => trendLog.registerId).includes(kwhCounter.registerId)) : kwhCounters.filter((kwhCounter: any) => !trendLogs.map((trendLog: any) => trendLog.registerId).includes(kwhCounter.registerId)).concat(kwhCounters.filter((kwhCounter: any) => trendLog.registerId == kwhCounter.registerId))}
+                                        kwhCounters={!billing ? kwhCounters.filter((kwhCounter: any) => !trendLogs.map((trendLog: any) => trendLog.registerId).includes(kwhCounter.registerId)) : kwhCounters.filter((kwhCounter: any) => !trendLogs.map((trendLog: any) => trendLog.registerId).includes(kwhCounter.registerId)).concat(kwhCounters.filter((kwhCounter: any) => trendLog.registerId == kwhCounter.registerId))}
                                         index={index}
                                         value={trendLog}
                                         // disabled={!isAdmin}
@@ -305,7 +305,7 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
                         type="submit"
                         className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                     >
-                        {widget ? "Save Changes" : "Add Billing"}
+                        {billing ? "Save Changes" : "Add Billing"}
                     </button>
                 </div>
             </form>
@@ -313,4 +313,4 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
     );
 };
 
-export default WidgetForm;
+export default BillingForm;

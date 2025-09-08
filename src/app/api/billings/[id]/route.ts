@@ -83,24 +83,24 @@ export async function PUT(
     };
     console.log("updateData", updateData)
     //return response during development to see logs only
-    // return NextResponse.json({ success: true, message: 'Widget updated successfully' });
-    const result = await db.collection('widgets').updateOne(
+    // return NextResponse.json({ success: true, message: 'billing updated successfully' });
+    const result = await db.collection('billings').updateOne(
       { _id: new ObjectId(id) },
       { $set: updateData }
     );
     
     if (result.matchedCount === 0) {
-      return NextResponse.json({ error: 'Widget not found' }, { status: 404 });
+      return NextResponse.json({ error: 'billing not found' }, { status: 404 });
     }
     
-    return NextResponse.json({ success: true, message: 'Widget updated successfully' });
+    return NextResponse.json({ success: true, message: 'billing updated successfully' });
   } catch (error) {
-    console.error('Widget update failed:', error);
+    console.error('billing update failed:', error);
     return NextResponse.json({ error: 'RTU update failed' }, { status: 500 });
   }
 }
 
-// Widget silme
+// billing silme
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -125,20 +125,20 @@ export async function DELETE(
     console.log('Session user ID:', session?.user?.id, 'Type:', typeof session?.user?.id);
     console.log('Request ID to delete:', id, 'Type:', typeof id);
     
-    // Widget'yu silmesini engelle
-    // Widget bilgisini veritabanından alalım
-    const widgetToDelete = await db.collection('widgets').findOne({ _id: new ObjectId(id) });
-    console.log('Widget to delete:', widgetToDelete);
+    // billing'yu silmesini engelle
+    // billing bilgisini veritabanından alalım
+    const billingToDelete = await db.collection('billings').findOne({ _id: new ObjectId(id) });
+    console.log('billing to delete:', billingToDelete);
     
-    const result = await db.collection('widgets').deleteOne({ _id: new ObjectId(id) });
+    const result = await db.collection('billings').deleteOne({ _id: new ObjectId(id) });
     
     if (result.deletedCount === 0) {
-      return NextResponse.json({ error: 'Widget not found' }, { status: 404 });
+      return NextResponse.json({ error: 'billing not found' }, { status: 404 });
     }
      
-    return NextResponse.json({ success: true, message: 'Widget deleted successfully' });
+    return NextResponse.json({ success: true, message: 'billing deleted successfully' });
   } catch (error) {
-    console.error('Widget deletion failed:', error);
-    return NextResponse.json({ error: 'Widget deletion failed' }, { status: 500 });
+    console.error('billing deletion failed:', error);
+    return NextResponse.json({ error: 'billing deletion failed' }, { status: 500 });
   }
 }
