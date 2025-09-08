@@ -134,14 +134,14 @@ export default function Dashboard() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Widget could not be added");
+        throw new Error(errorData.error || "Billing could not be added");
       }
 
-      showToast("Widget added successfully");
+      showToast("Billing added successfully");
       setIsAddWidgetModalOpen(false);
       fetchWidgets();
     } catch (error: any) {
-      showToast(error.message || "Widget could not be added", "error");
+      showToast(error.message || "Billing could not be added", "error");
     }
   };
 
@@ -174,14 +174,14 @@ export default function Dashboard() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Widget could not be updated");
+        throw new Error(errorData.error || "Billing could not be updated");
       }
 
-      showToast("Widget updated successfully");
+      showToast("Billing updated successfully");
       setIsEditWidgetModalOpen(false);
       fetchWidgets();
     } catch (error: any) {
-      showToast(error.message || "Widget could not be updated", "error");
+      showToast(error.message || "Billing could not be updated", "error");
     }
   };
 
@@ -194,13 +194,13 @@ export default function Dashboard() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Widget could not be deleted");
+        throw new Error(errorData.error || "Billing could not be deleted");
       }
 
-      showToast("Widget deleted successfully");
+      showToast("Billing deleted successfully");
       fetchWidgets();
     } catch (error: any) {
-      showToast(error.message || "Widget could not be deleted", "error");
+      showToast(error.message || "Billing could not be deleted", "error");
     }
   };
 
@@ -218,7 +218,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageBreadcrumb pageTitle="Dashboard" />
+      <PageBreadcrumb pageTitle="Billing" />
 
       <div className="flex justify-between items-center mb-6">
         {/* <div>  </div> */}
@@ -228,7 +228,7 @@ export default function Dashboard() {
             leftIcon={<PlusCircle size={16} />}
             variant="primary"
           >
-            Add Widget
+            Add Billing
           </Button>
         )}
       </div>
@@ -242,7 +242,7 @@ export default function Dashboard() {
           <div className="overflow-x-auto w-full">
             {widgets.length === 0 ? (
               <div className="flex justify-center py-8 text-gray-500 dark:text-gray-400">
-                No widgets found
+                No billings found
               </div>
             ) : (
               <div className="flex flex-col gap-8">

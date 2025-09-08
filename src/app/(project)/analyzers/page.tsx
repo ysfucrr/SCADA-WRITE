@@ -345,15 +345,21 @@ export default function AnalyzersPage() {
                                         <th className="px-4 sm:px-6 py-3 text-left">
                                             <SmallText className="font-bold uppercase tracking-wider">Name</SmallText>
                                         </th>
+                                        <th className="px-4 sm:px-6 py-3 text-center hidden sm:table-cell">
+                                            <SmallText className="font-bold uppercase tracking-wider">Slave ID</SmallText>
+                                        </th>
+                                        <th className="px-4 sm:px-6 py-3 text-center hidden sm:table-cell">
+                                            <SmallText className="font-bold uppercase tracking-wider">Poll (ms)</SmallText>
+                                        </th>
+                                        <th className="px-4 sm:px-6 py-3 text-center hidden sm:table-cell">
+                                            <SmallText className="font-bold uppercase tracking-wider">Timeout (ms)</SmallText>
+                                        </th>
                                         <th className="px-4 sm:px-6 py-3 text-left hidden sm:table-cell">
                                             <SmallText className="font-bold uppercase tracking-wider">Type</SmallText>
                                         </th>
                                         <th className="px-4 sm:px-6 py-3 text-left hidden sm:table-cell">
                                             <SmallText className="font-bold uppercase tracking-wider">Gateway</SmallText>
                                         </th>
-                                        {/* <th className="px-4 sm:px-6 py-3 text-left hidden sm:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">Unit</SmallText>
-                                        </th> */}
                                         <th className="px-4 sm:px-6 py-3 text-right">
                                             <SmallText className="font-bold uppercase tracking-wider">Actions</SmallText>
                                         </th>
@@ -362,7 +368,7 @@ export default function AnalyzersPage() {
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                     {analyzers.length === 0 ? (
                                         <tr>
-                                            <td colSpan={4} className="px-4 sm:px-6 py-4 text-center">
+                                            <td colSpan={7} className="px-4 sm:px-6 py-4 text-center">
                                                 <SmallText className="text-gray-500 dark:text-gray-400">No Analyzers found</SmallText>
                                             </td>
                                         </tr>
@@ -377,6 +383,18 @@ export default function AnalyzersPage() {
                                                             <SmallText className="text-gray-700 dark:text-gray-300">{analyzer.name}</SmallText>
                                                         </div>
                                                         <div>
+                                                            <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Slave ID: </SmallText>
+                                                            <SmallText className="text-gray-700 dark:text-gray-300">{analyzer.slaveId}</SmallText>
+                                                        </div>
+                                                        <div>
+                                                            <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Poll (ms): </SmallText>
+                                                            <SmallText className="text-gray-700 dark:text-gray-300">{analyzer.poll}</SmallText>
+                                                        </div>
+                                                        <div>
+                                                            <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Timeout (ms): </SmallText>
+                                                            <SmallText className="text-gray-700 dark:text-gray-300">{analyzer.timeout}</SmallText>
+                                                        </div>
+                                                        <div>
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Type: </SmallText>
                                                             <SmallText className="text-gray-700 dark:text-gray-300">
                                                                 {analyzer.connection === "serial" ? "Serial (Analyzer)" : "TCP / Ethernet"}
@@ -386,11 +404,16 @@ export default function AnalyzersPage() {
                                                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Gateway: </SmallText>
                                                             <SmallText className="text-gray-700 dark:text-gray-300">{rtus.find(rtu => rtu._id === analyzer.gateway)?.name || "Unknown Gateway"}</SmallText>
                                                         </div>
-                                                        {/* <div>
-                                                            <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Unit: </SmallText>
-                                                            <SmallText className="text-gray-700 dark:text-gray-300">{getUnitNameFromPath(analyzer.unit)}</SmallText>
-                                                        </div> */}
                                                     </div>
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell text-center">
+                                                    <Paragraph className="font-medium text-gray-500 dark:text-gray-400">{analyzer.slaveId}</Paragraph>
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell text-center">
+                                                    <Paragraph className="font-medium text-gray-500 dark:text-gray-400">{analyzer.poll}</Paragraph>
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell text-center">
+                                                    <Paragraph className="font-medium text-gray-500 dark:text-gray-400">{analyzer.timeout}</Paragraph>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
                                                     <Paragraph className="font-medium text-gray-500 dark:text-gray-400">

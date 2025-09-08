@@ -3,10 +3,10 @@ import EditableTitle from "@/components/ui/EditableTitle";
 import { Spinner } from "@/components/ui/spinner";
 import { Typography } from "@/components/ui/typography";
 import { useAuth } from "@/hooks/use-auth";
-import { Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users } from "lucide-react";
+import { Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users, Info, Receipt } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSidebar } from "../context/SidebarContext";
 import { eventEmitter, EVENTS } from "@/lib/events";
 import {
@@ -40,9 +40,11 @@ type Building = {
 };
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleSidebar, toggleMobileSidebar, license } = useSidebar();
+  const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleSidebar, toggleMobileSidebar, license, sidebarWidth, setSidebarWidth } = useSidebar();
   const [openSubmenus, setOpenSubmenus] = useState<string[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [longestText, setLongestText] = useState("");
+  const textMeasurementRef = useRef<HTMLSpanElement>(null);
   const pathname = usePathname() || '';
   const { user, isAdmin, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
@@ -94,8 +96,8 @@ const AppSidebar: React.FC = () => {
 
       return [
         {
-          icon: <Home />,
-          name: "Dashboard",
+          icon: <Receipt />,
+          name: "Billing",
           path: "/dashboard",
         },
         {
@@ -147,8 +149,8 @@ const AppSidebar: React.FC = () => {
     }
     if (user.permissions.dashboard) {
       items.push({
-        icon: <Home />,
-        name: "Dashboard",
+        icon: <Receipt />,
+        name: "Billing",
         path: "/dashboard",
       });
     }
@@ -187,6 +189,48 @@ const AppSidebar: React.FC = () => {
     ...getMainMenuItems(user, isAdmin),
     ...getBuildingMenuItems(user, buildings, isAdmin),
   ], [user, buildings, isAdmin, getBuildingMenuItems]);
+
+  useEffect(() => {
+    const getAllNames = (items: NavItem[]): string[] => {
+      let names: string[] = [];
+      items.forEach(item => {
+        names.push(item.name);
+        if (item.subItems) {
+          names = names.concat(getAllNames(item.subItems));
+        }
+      });
+      return names;
+    };
+
+    const allItemNames = getAllNames(navItems);
+    const title = "Admin"; // Assuming this is the default or can be fetched
+    allItemNames.push(title);
+
+    if (allItemNames.length > 0) {
+      const longest = allItemNames.reduce((a, b) => (a.length > b.length ? a : b));
+      setLongestText(longest);
+    }
+
+  }, [navItems]);
+
+  useEffect(() => {
+    if (textMeasurementRef.current && isExpanded) {
+      const textWidth = textMeasurementRef.current.offsetWidth;
+      // Define a base padding for icons, margins, etc.
+      const padding = 100; // Reduced padding
+      const minWidth = 220; // Set a minimum width for the sidebar
+      
+      let newWidth = textWidth + padding;
+      
+      // Ensure the sidebar doesn't become too narrow
+      if (newWidth < minWidth) {
+        newWidth = minWidth;
+      }
+      
+      // Update the width directly, allowing it to grow or shrink
+      setSidebarWidth(newWidth);
+    }
+  }, [longestText, isExpanded, setSidebarWidth]);
 
 
   // Binaları getiren fonksiyon
@@ -438,14 +482,13 @@ const AppSidebar: React.FC = () => {
 
 
   return (
+    <>
+    <span ref={textMeasurementRef} className="absolute invisible whitespace-nowrap text-sm">{longestText}</span>
     <aside
-      className={`fixed flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-99999 border-r border-gray-200 
-        ${isExpanded || isMobileOpen
-          ? "w-[390px]"
-          : isHovered
-            ? "w-[390px]"
-            : "w-[90px]"
-        }
+      style={{
+        width: isExpanded || isMobileOpen || isHovered ? `${sidebarWidth}px` : "90px",
+      }}
+      className={`fixed flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-99999 border-r border-gray-200
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0`}
       onMouseEnter={() => !isExpanded && setIsHovered(false)}
@@ -557,22 +600,24 @@ const AppSidebar: React.FC = () => {
             </div> */}
           </div>
         </nav>
-        {license && (
-          <div className="mt-6 mb-6 flex flex-col">
-            <Typography variant="h5" className="text-gray-500">License Info:</Typography>
-            <Typography variant="small" className="text-gray-500">License max devices: {license.maxDevices}</Typography>
-            <Typography variant="small" className="text-gray-500">Used devices: {license.usedAnalyzers}</Typography>
-            <GhostButton
-              onClick={() => router.push('/update-license')}
-              className="mt-2"
+        <div className="mt-auto mb-6">
+          <Link
+              href="/about"
+              className={`flex items-center px-4 py-3 text-sm rounded-lg transition-colors w-full ${isActive("/about")
+                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                  : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                }`}
             >
-              Update License
-            </GhostButton>
-          </div>
-        )}
+              <div className="flex items-center gap-3">
+                <Info className="w-5 h-5 flex-shrink-0" />
+                {(isExpanded || isHovered || isMobileOpen) && <span className="truncate">About</span>}
+              </div>
+          </Link>
+        </div>
         {/* {isExpanded || isHovered || isMobileOpen ? null : null} */}
       </div>
     </aside>
+    </>
   );
 };
 

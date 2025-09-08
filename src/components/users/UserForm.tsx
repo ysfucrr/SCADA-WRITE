@@ -190,7 +190,7 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
                                             dashboard: value,
                                         })
                                     }
-                                    label="Dashboard"
+                                    label="Billing"
                                     defaultChecked={permissions.dashboard}
                                 />
                             </div>

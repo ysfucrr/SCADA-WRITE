@@ -256,8 +256,8 @@ export default function WidgetCard({ widget, onEdit, onDelete, buildings }: { wi
                             size="sm"
                             onClick={async () => {
                                 const result = await showConfirmAlert(
-                                    "Delete Widget",
-                                    `"${widget.name}" Widget will be deleted. Are you sure?`,
+                                    "Delete Billing",
+                                    `"${widget.name}" Billing will be deleted. Are you sure?`,
                                     "Yes",
                                     "Cancel",
                                 );

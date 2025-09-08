@@ -297,7 +297,7 @@ export async function DELETE(
           }
         }
         if (node.type == "registerNode") {
-          await db.collection("registers").insertOne({ nodeId: node.id, deleted: true });
+          // await db.collection("registers").insertOne({ nodeId: node.id, deleted: true }); // Soft delete mekanizması kaldırıldı.
         }
       }
     }

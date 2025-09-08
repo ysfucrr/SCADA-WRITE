@@ -460,7 +460,7 @@ export default function TrendLogPage() {
                                             <SmallText className="font-bold uppercase tracking-wider">Analyzer</SmallText>
                                         </th>
                                         <th className="px-4 sm:px-6 py-3 text-left hidden lg:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">RTU</SmallText>
+                                            <SmallText className="font-bold uppercase tracking-wider">Gateway</SmallText>
                                         </th>
                                         <th className="px-4 sm:px-6 py-3 text-left hidden lg:table-cell">
                                             <SmallText className="font-bold uppercase tracking-wider">Address</SmallText>

@@ -10,6 +10,8 @@ type SidebarContextType = {
   activeItem: string | null;
   openSubmenu: string | null;
   license: {valid:boolean,usedAnalyzers:number,maxDevices:number} | null;
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
   toggleMobileSidebar: () => void;
   setIsHovered: (isHovered: boolean) => void;
@@ -38,6 +40,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
   const [license, setLicense] = useState<{valid:boolean,usedAnalyzers:number,maxDevices:number} | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(390);
   const router = useRouter();
 
   useEffect(() => {
@@ -91,6 +94,8 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
         activeItem,
         openSubmenu,
         license,
+        sidebarWidth,
+        setSidebarWidth,
         toggleSidebar,
         toggleMobileSidebar,
         setIsHovered,

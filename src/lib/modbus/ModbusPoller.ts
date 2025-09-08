@@ -510,10 +510,10 @@ export class ModbusPoller extends EventEmitter {
                 // 2d. TCP analizör için Worker'a bu tam listeyi gönder
                 const workerIndex = this.analyzerToWorker.get(analyzerId);
                 if (workerIndex !== undefined) {
-                    backendLogger.info(`Rebuilding complete state for TCP analyzer ${analyzerId} and sending to worker ${workerIndex}.`, "ModbusPoller", {
-                        analyzerId,
-                        registerCount: completeRegisterList.length
-                    });
+                    // backendLogger.info(`Rebuilding complete state for TCP analyzer ${analyzerId} and sending to worker ${workerIndex}.`, "ModbusPoller", {
+                    //     analyzerId,
+                    //     registerCount: completeRegisterList.length
+                    // });
                     
                     const worker = this.workers[workerIndex];
                     worker.postMessage({

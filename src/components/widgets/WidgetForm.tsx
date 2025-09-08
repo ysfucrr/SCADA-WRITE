@@ -191,16 +191,16 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
     return (
         <div className="p-6">
             <h2 className="text-xl font-bold mb-6 text-blue-600 dark:text-blue-400">
-                {widget ? "Edit Widget" : "Add New Widget"}
+                {widget ? "Edit Billing" : "Add New Billing"}
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Widget Name */}
+                {/* Billing Name */}
                 <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
                     <InputField
                         id="name"
-                        placeholder="Widget Name"
+                        placeholder="Billing Name"
                         value={widgetName}
                         onChange={(e) => setWidgetName(e.target.value)}
                     />
@@ -305,7 +305,7 @@ const WidgetForm: React.FC<WidgetFormProps> = ({ widget, onSubmit, onCancel }) =
                         type="submit"
                         className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                     >
-                        {widget ? "Save Changes" : "Add Widget"}
+                        {widget ? "Save Changes" : "Add Billing"}
                     </button>
                 </div>
             </form>
