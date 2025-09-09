@@ -118,7 +118,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                         setTimeout(() => {
                             const nodes = reactFlowInstance.current!.getNodes();
                             if (nodes.length > 0) {
-                                reactFlowInstance.current!.fitView();
+                                reactFlowInstance.current!.fitView({ padding: 0.5 });
                             } else {
                                 reactFlowInstance.current!.fitBounds({
                                     x: xMin,
@@ -366,7 +366,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                     setTimeout(() => {
                         const nodes = reactFlowInstance.current!.getNodes();
                         if (nodes.length > 0) {
-                            reactFlowInstance.current!.fitView();
+                            reactFlowInstance.current!.fitView({ padding: 0.5 });
                         } else {
                             reactFlowInstance.current!.fitBounds({
                                 x: xMin,
@@ -411,7 +411,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                     setTimeout(() => {
                         const nodes = reactFlowInstance.current!.getNodes();
                         if (nodes.length > 0) {
-                            reactFlowInstance.current!.fitView();
+                            reactFlowInstance.current!.fitView({ padding: 0.5 });
                         } else {
                             reactFlowInstance.current!.fitBounds({
                                 x: xMin,
@@ -445,7 +445,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 setTimeout(() => {
                     const nodes = reactFlowInstance.current!.getNodes();
                     if (nodes.length > 0) {
-                        reactFlowInstance.current!.fitView();
+                        reactFlowInstance.current!.fitView({ padding: 0.5 });
                     } else {
                         reactFlowInstance.current!.fitBounds({
                             x: xMin,
@@ -1181,17 +1181,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
             // Görünümü ayarla
             setTimeout(() => {
                 if (reactFlowInstance.current) {
-                    const nodes = reactFlowInstance.current!.getNodes();
-                    if (nodes.length > 0) {
-                        reactFlowInstance.current!.fitView();
-                    } else {
-                        reactFlowInstance.current!.fitBounds({
-                            x: xMin,
-                            y: yMin,
-                            width: xMax - xMin,
-                            height: yMax - yMin,
-                        });
-                    }
+                    reactFlowInstance.current!.fitBounds({
+                        x: xMin,
+                        y: yMin,
+                        width: xMax - xMin,
+                        height: yMax - yMin,
+                    });
                 }
                 // Uygun gecikme ile içeriği göster
                 setTimeout(() => {
@@ -1203,17 +1198,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
             // Tam ekran değilse normal şekilde göster
             setTimeout(() => {
                 if (reactFlowInstance.current) {
-                    const nodes = reactFlowInstance.current!.getNodes();
-                    if (nodes.length > 0) {
-                        reactFlowInstance.current!.fitView();
-                    } else {
-                        reactFlowInstance.current!.fitBounds({
-                            x: xMin,
-                            y: yMin,
-                            width: xMax - xMin,
-                            height: yMax - yMin,
-                        });
-                    }
+                    reactFlowInstance.current!.fitBounds({
+                        x: xMin,
+                        y: yMin,
+                        width: xMax - xMin,
+                        height: yMax - yMin,
+                    });
                 }
                 setIsPageVisible(true);
                 setIsNavigating(false);
