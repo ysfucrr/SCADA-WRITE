@@ -10,8 +10,8 @@ import { IconButton } from "@/components/ui/icon-button";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import { Modal } from "@/components/ui/modal";
 import UserForm from "@/components/users/UserForm";
+import UserCard from "@/components/users/UserCard";
 import { showAlert, showConfirmAlert, showToast } from "@/components/ui/alert";
-
 // Kullanıcı tipi
 export interface UserType {
     _id: string;
@@ -24,6 +24,7 @@ export interface UserType {
         units: boolean;
         trendLog: boolean;
         periodicReports: boolean;
+        billing: boolean;
     };
     buildingPermissions?: {
         [buildingId: string]: boolean;
@@ -200,92 +201,22 @@ export default function UsersPage() {
                     <Spinner variant="bars" fullPage />
                 </div>
             ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <div className="overflow-x-auto w-full">
-                            <table className="w-full">
-                                <thead className="bg-gray-100 dark:bg-black/50">
-                                    <tr>
-                                        <th className="px-4 sm:px-6 py-3 text-left">
-                                            <SmallText className="font-bold uppercase tracking-wider">User</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-left hidden sm:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">Role</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-left hidden md:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">Created At</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-right">
-                                            <SmallText className="font-bold uppercase tracking-wider">Actions</SmallText>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {users.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={4} className="px-4 sm:px-6 py-4 text-center">
-                                                <SmallText className="text-gray-500 dark:text-gray-400">No users found</SmallText>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        users.map((user) => (
-                                            <tr key={user._id} className="hover:bg-gray-50 dark:bg-gray-800/30">
-                                                <td className="px-4 sm:px-6 py-4 whitespace-normal">
-                                                    <Paragraph className="hidden sm:block font-medium text-gray-800 dark:text-gray-300">{user.username}</Paragraph>
-                                                    <div className="sm:hidden mt-1 space-y-1">
-                                                        <div>
-                                                            <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Username: </SmallText>
-                                                            <SmallText className="text-gray-700 dark:text-gray-300">{user.username}</SmallText>
-                                                        </div>
-                                                        <div>
-                                                            <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Role: </SmallText>
-                                                            <SmallText className="text-blue-600 dark:text-blue-400">{user.role}</SmallText>
-                                                        </div>
-                                                        <div>
-                                                            <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Created at: </SmallText>
-                                                            <SmallText className="text-gray-700 dark:text-gray-300">
-                                                                {user.createdAt ? new Date(user.createdAt).toLocaleDateString("tr-TR") : "-"}
-                                                            </SmallText>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden sm:table-cell">
-                                                    <span className={`inline-block px-2 py-1 rounded-full text-blue-600 dark:text-blue-400`}>
-                                                        {user.role}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
-                                                    <Paragraph className="font-medium text-gray-500 dark:text-gray-400">
-                                                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString("tr-TR") : "-"}
-                                                    </Paragraph>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right">
-                                                    <div className="flex justify-end space-x-1 sm:space-x-2">
-                                                        <IconButton
-                                                            size="sm"
-                                                            disabled={user._id == loginedUser?.id}
-                                                            onClick={() => openEditUserModal(user)}
-                                                            icon={<Pencil size={14} />}
-                                                            variant="warning"
-                                                            className="p-2 sm:p-3"
-                                                        />
-                                                        <IconButton
-                                                            disabled={user._id == loginedUser?.id}
-                                                            size="sm"
-                                                            onClick={() => handleDeleteUser(user)}
-                                                            icon={<Trash2 size={14} />}
-                                                            variant="error"
-                                                            className="px-2 sm:px-3"
-                                                        />
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+                    {users.length === 0 ? (
+                        <div className="col-span-full text-center py-8">
+                            <SmallText className="text-gray-500 dark:text-gray-400">No users found</SmallText>
                         </div>
-                    </div>
+                    ) : (
+                        users.map((user) => (
+                            <UserCard
+                                key={user._id}
+                                user={user}
+                                onEdit={() => openEditUserModal(user)}
+                                onDelete={() => handleDeleteUser(user)}
+                                loginedUser={loginedUser}
+                            />
+                        ))
+                    )}
                 </div>
             )}
 

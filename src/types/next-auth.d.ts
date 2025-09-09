@@ -9,6 +9,8 @@ declare module "next-auth" {
       users?: boolean;
       units?: boolean;
       trendLog?: boolean;
+      periodicReports?: boolean;
+      billing?: boolean;
     };
     buildingPermissions?: any
   }
@@ -26,6 +28,8 @@ declare module "next-auth" {
         users?: boolean;
         units?: boolean;
         trendLog?: boolean;
+        periodicReports?: boolean;
+        billing?: boolean;
       };
       buildingPermissions?: any
     }
@@ -39,6 +43,8 @@ declare module "next-auth" {
         users?: boolean;
         units?: boolean;
         trendLog?: boolean;
+        periodicReports?: boolean;
+        billing?: boolean;
       };
       buildingPermissions?: any
     }

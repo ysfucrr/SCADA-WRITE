@@ -10,6 +10,7 @@ import { showToast } from '../ui/alert';
 import { Button } from '../ui/button/CustomButton';
 import { Input } from '../ui/input';
 import { backendLogger } from '@/lib/logger/BackendLogger';
+import { useAuth } from '@/hooks/use-auth';
 
 interface WriteRegisterNodeData {
   style?: React.CSSProperties;
@@ -84,6 +85,7 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
   const [isWriting, setIsWriting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const textRef = useRef<HTMLDivElement | null>(null);
+  const { isAdmin } = useAuth()
 
   // Increment/Decrement functions for numeric control
   const incrementValue = () => {
@@ -309,40 +311,42 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
 
   return (
     <div className="write-register-node relative group w-full h-full" style={{ ...(node as any).style }}>
-      <NodeToolbar isVisible={node.selected} position={Position.Top}>
-        <div className="h-6 flex flex-row items-center gap-2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              node.data.onEdit?.();
-            }}
-            className="z-50 p-1 bg-warning-500 hover:bg-warning-600 text-white rounded-md items-center justify-center"
-            style={{ height: '100%', aspectRatio: '1/1' }}
-          >
-            <Edit size={"100%"} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              node.data.onDelete?.();
-            }}
-            className="flex z-50 mr-2 p-1 bg-error-500 hover:bg-error-600 text-white rounded-md items-center justify-center"
-            style={{ height: '100%', aspectRatio: '1/1' }}
-          >
-            <Trash2 size={"100%"} />
-          </button>
-        </div>
-      </NodeToolbar>
+      {isAdmin && (
+        <NodeToolbar isVisible={node.selected} position={Position.Top}>
+          <div className="h-6 flex flex-row items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                node.data.onEdit?.();
+              }}
+              className="z-50 p-1 bg-warning-500 hover:bg-warning-600 text-white rounded-md items-center justify-center"
+              style={{ height: '100%', aspectRatio: '1/1' }}
+            >
+              <Edit size={"100%"} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                node.data.onDelete?.();
+              }}
+              className="flex z-50 mr-2 p-1 bg-error-500 hover:bg-error-600 text-white rounded-md items-center justify-center"
+              style={{ height: '100%', aspectRatio: '1/1' }}
+            >
+              <Trash2 size={"100%"} />
+            </button>
+          </div>
+        </NodeToolbar>
+      )}
 
       <div
         className="w-full h-full flex flex-col justify-center p-3 rounded-md"
         style={{
           backgroundColor: hexToRgba(backgroundColor, opacity! / 100),
-          border: node.selected ? '6px solid #f00' : 'none',
+          border: node.selected && isAdmin ? '6px solid #f00' : 'none',
           borderRadius: '5px',
         }}
       >

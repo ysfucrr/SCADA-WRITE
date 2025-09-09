@@ -27,7 +27,7 @@ const ImageNode = memo((node: NodeProps<ImageNodeData>) => {
     backgroundColor: createBacgroundColorWithOpacity(node.data.backgroundColor || 'transparent', node.data.opacity || 100),
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    border: node.selected ? '6px solid #f00' : 'none',
+    border: node.selected && isAdmin ? '6px solid #f00' : 'none',
     borderRadius: '5px',
     padding: '0',
     position: 'relative',
@@ -63,34 +63,36 @@ const ImageNode = memo((node: NodeProps<ImageNodeData>) => {
   };
   return (
     <>
-      <NodeToolbar isVisible={node.selected} position={Position.Top}>
-        <div className="h-6 flex flex-row items-center gap-2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              node.data.onEdit?.();
-            }}
-            className=" z-50 p-1 bg-warning-500 hover:bg-warning-600 text-white rounded-md items-center justify-center"
-            style={{ height: '100%', aspectRatio: '1/1' }}
-          >
-            <Edit size={"100%"} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              node.data.onDelete?.();
-            }}
-            className="flex z-50 mr-2 p-1 bg-error-500 hover:bg-error-600 text-white rounded-md items-center justify-center"
-            style={{ height: '100%', aspectRatio: '1/1' }}
-          >
-            <Trash2 size={"100%"} />
-          </button>
-        </div>
-      </NodeToolbar>
+      {isAdmin && (
+        <NodeToolbar isVisible={node.selected} position={Position.Top}>
+          <div className="h-6 flex flex-row items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                node.data.onEdit?.();
+              }}
+              className=" z-50 p-1 bg-warning-500 hover:bg-warning-600 text-white rounded-md items-center justify-center"
+              style={{ height: '100%', aspectRatio: '1/1' }}
+            >
+              <Edit size={"100%"} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                node.data.onDelete?.();
+              }}
+              className="flex z-50 mr-2 p-1 bg-error-500 hover:bg-error-600 text-white rounded-md items-center justify-center"
+              style={{ height: '100%', aspectRatio: '1/1' }}
+            >
+              <Trash2 size={"100%"} />
+            </button>
+          </div>
+        </NodeToolbar>
+      )}
       {/* <NodeResizer
         minWidth={64}
         minHeight={64}

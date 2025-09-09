@@ -46,6 +46,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
     // Sürükleme işleminin durumunu takip etmek için ref
     const isDraggingRef = useRef(false);
     const { user, isAdmin, isLoading: isAuthLoading } = useAuth();
+    const [isPanning, setIsPanning] = useState(false);
 
     // Güncel node'ları takip etmek için bir ref kullanıyoruz
     const nodesRef = useRef<Node[]>([]);
@@ -87,16 +88,17 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
         //console.log("containerRef", containerRef)
         //console.log("reactFlowInstance", reactFlowInstance)
         // setIsFullScreen(isFullScreen);
-        if (isFullScreen && containerRef.current && reactFlowInstance.current) {
-            containerRef.current.requestFullscreen();
-            if (reactFlowInstance.current) {
-                console.log("requesting fullscreen")
-                setTimeout(() => {
-                    reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
-                }, 100);
-            }
-        }
-    }, [containerRef.current, isFullScreen, reactFlowInstance.current]);
+        // if (isFullScreen && containerRef.current && reactFlowInstance.current) {
+        //     containerRef.current.requestFullscreen();
+        //     if (reactFlowInstance.current) {
+        //         console.log("requesting fullscreen")
+        //         setTimeout(() => {
+        //             reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
+        //         }, 100);
+        //     }
+        // }
+        setIsPanning(isAdmin);
+    }, [containerRef.current, isFullScreen, reactFlowInstance.current, isAdmin]);
     const saveFlowData = async (newBackgroundImage?: string | null, newOpacity?: number, newBackgroundColor?: string, clearBackground: boolean = false) => {
         if (!user || user.role != "admin") return;
         if (isDraging) return;
@@ -438,12 +440,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                         },
                         data: {
                             ...updatedNode.data,
-                            onEdit: () => {
+                            onEdit: isAdmin ? () => {
                                 handleEditText(updatedNode);
-                            },
-                            onDelete: () => {
+                            } : undefined,
+                            onDelete: isAdmin ? () => {
                                 handleDeleteText(updatedNode);
-                            }
+                            } : undefined
                         }
                     };
                 }
@@ -481,12 +483,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 },
                 data: {
                     ...updatedNode.data,
-                    onEdit: () => {
+                    onEdit: isAdmin ? () => {
                         handleEditText(newNode);
-                    },
-                    onDelete: () => {
+                    } : undefined,
+                    onDelete: isAdmin ? () => {
                         handleDeleteText(newNode);
-                    }
+                    } : undefined
                 }
             };
 
@@ -567,12 +569,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                             opacity: updatedNode.data.opacity,
                             backgroundColor: updatedNode.data.backgroundColor,
                             backgroundImage: updatedNode.data.backgroundImage,
-                            onEdit: () => {
+                            onEdit: isAdmin ? () => {
                                 handleEditImage(updatedNode);
-                            },
-                            onDelete: () => {
+                            } : undefined,
+                            onDelete: isAdmin ? () => {
                                 handleDeleteImage(updatedNode);
-                            }
+                            } : undefined
                         }
                     };
                 }
@@ -614,12 +616,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                     opacity: updatedNode.data.opacity,
                     backgroundColor: updatedNode.data.backgroundColor,
                     backgroundImage: updatedNode.data.backgroundImage,
-                    onEdit: () => {
+                    onEdit: isAdmin ? () => {
                         handleEditImage(newImageNode);
-                    },
-                    onDelete: () => {
+                    } : undefined,
+                    onDelete: isAdmin ? () => {
                         handleDeleteImage(newImageNode);
-                    }
+                    } : undefined
                 }
             };
 
@@ -746,12 +748,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                         },
                         data: {
                             ...updatedNode.data,
-                            onEdit: () => {
+                            onEdit: isAdmin ? () => {
                                 handleEditRegister(updatedNode);
-                            },
-                            onDelete: () => {
+                            } : undefined,
+                            onDelete: isAdmin ? () => {
                                 handleDeleteRegister(updatedNode);
-                            }
+                            } : undefined
                         }
                     };
                 }
@@ -791,12 +793,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 },
                 data: {
                     ...updatedNode.data,
-                    onEdit: () => {
+                    onEdit: isAdmin ? () => {
                         handleEditRegister(newNode);
-                    },
-                    onDelete: () => {
+                    } : undefined,
+                    onDelete: isAdmin ? () => {
                         handleDeleteRegister(newNode);
-                    }
+                    } : undefined
                 }
             };
 
@@ -858,23 +860,23 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                         case 'textNode':
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditText(node),
-                                onDelete: () => handleDeleteText(node)
+                                onEdit: isAdmin ? () => handleEditText(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteText(node) : undefined
                             };
                             break;
                         case 'imageNode':
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditImage(node),
-                                onDelete: () => handleDeleteImage(node)
+                                onEdit: isAdmin ? () => handleEditImage(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteImage(node) : undefined
                             };
                             break;
                         case 'registerNode':
                             //console.log("Register node found: ", node);
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditRegister(node),
-                                onDelete: () => handleDeleteRegister(node)
+                                onEdit: isAdmin ? () => handleEditRegister(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteRegister(node) : undefined
                             };
                             break;
                         default:
@@ -917,23 +919,23 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                         case 'textNode':
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditText(node),
-                                onDelete: () => handleDeleteText(node)
+                                onEdit: isAdmin ? () => handleEditText(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteText(node) : undefined
                             };
                             break;
                         case 'imageNode':
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditImage(node),
-                                onDelete: () => handleDeleteImage(node)
+                                onEdit: isAdmin ? () => handleEditImage(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteImage(node) : undefined
                             };
                             break;
                         case 'registerNode':
                             //console.log("Register node found: ", node);
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditRegister(node),
-                                onDelete: () => handleDeleteRegister(node)
+                                onEdit: isAdmin ? () => handleEditRegister(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteRegister(node) : undefined
                             };
                             break;
                         default:
@@ -968,23 +970,23 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                         case 'textNode':
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditText(node),
-                                onDelete: () => handleDeleteText(node)
+                                onEdit: isAdmin ? () => handleEditText(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteText(node) : undefined
                             };
                             break;
                         case 'imageNode':
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditImage(node),
-                                onDelete: () => handleDeleteImage(node)
+                                onEdit: isAdmin ? () => handleEditImage(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteImage(node) : undefined
                             };
                             break;
                         case 'registerNode':
                             //console.log("Register node found: ", node);
                             newNode.data = {
                                 ...node.data,
-                                onEdit: () => handleEditRegister(node),
-                                onDelete: () => handleDeleteRegister(node)
+                                onEdit: isAdmin ? () => handleEditRegister(node) : undefined,
+                                onDelete: isAdmin ? () => handleDeleteRegister(node) : undefined
                             };
                             break;
                         default:
@@ -1258,12 +1260,12 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                         deleteKeyCode={null}
                         snapGrid={[5, 5]}
                         snapToGrid={true}
-                        minZoom={isAdmin ? 0.01 : 0.2}
-                        maxZoom={isAdmin ? (isFullScreen ? 1 : 0.6) : (isFullScreen ? 0.5 : 0.4)}
+                        minZoom={0.2}
+                        maxZoom={isFullScreen ? 1 : 0.8}
                         // fitView={true}
                         translateExtent={[[-1920, -1080], [1920, 1080]]}
                         nodeExtent={[[-1920, -1080], [1920, 1080]]}
-                        // fitViewOptions={{ 
+                        // fitViewOptions={{
                         //   padding: 0.1,
                         //   includeHiddenNodes: true
                         // }}
@@ -1278,7 +1280,7 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                                 router.push(`/buildings/${navigationUrl}`);
                             }
                         }}
-                        panOnDrag={true}
+                        panOnDrag={isAdmin}
                         panOnScroll={false}
                         zoomOnScroll={true}
                         zoomOnPinch={isAdmin}
@@ -1296,7 +1298,14 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                         onDragStart={() => {
                             setEditingNode(undefined)
                         }}
+                        className={isPanning ? "panning" : ""}
                         onDrop={onDrop}
+                        onWheel={(event) => {
+                            if (!reactFlowInstance.current) return;
+                            const zoom = reactFlowInstance.current.getZoom();
+                            const newZoom = zoom + event.deltaY * -0.0025;
+                            reactFlowInstance.current.zoomTo(newZoom);
+                        }}
                     >
                         {/* Sağ üstte sabit fullscreen butonu */}
                         <div className="absolute top-4 right-4 z-1000">

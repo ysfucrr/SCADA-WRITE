@@ -7,6 +7,7 @@ import '@/styles/seven-segment.css';
 import { useWebSocket } from '@/context/WebSocketContext';
 import RegisterGraphComponent from './RegisterGraphComponent_new';
 import Image from 'next/image';
+import { useAuth } from '@/hooks/use-auth';
 
 interface RegisterNodeData {
   style?: React.CSSProperties;
@@ -36,6 +37,7 @@ interface RegisterNodeData {
   const [isLoading, setIsLoading] = useState(true);
   const textRef = useRef<HTMLDivElement | null>(null);
   const booleanTextRef = useRef<HTMLDivElement | null>(null);
+  const { isAdmin } = useAuth()
 
   // WebSocket hook'unu kullan
   const { watchRegister, unwatchRegister, isConnected } = useWebSocket();
@@ -156,34 +158,36 @@ interface RegisterNodeData {
 
   return (
     <div className="register-node relative group w-full h-full" style={{ ...(node as any).style }}>
-      <NodeToolbar isVisible={node.selected} position={Position.Top}>
-        <div className="h-6 flex flex-row items-center gap-2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              node.data.onEdit?.();
-            }}
-            className=" z-50 p-1 bg-warning-500 hover:bg-warning-600 text-white rounded-md items-center justify-center"
-            style={{ height: '100%', aspectRatio: '1/1' }}
-          >
-            <Edit size={"100%"} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              node.data.onDelete?.();
-            }}
-            className="flex z-50 mr-2 p-1 bg-error-500 hover:bg-error-600 text-white rounded-md items-center justify-center"
-            style={{ height: '100%', aspectRatio: '1/1' }}
-          >
-            <Trash2 size={"100%"} />
-          </button>
-        </div>
-      </NodeToolbar>
+      {isAdmin && (
+        <NodeToolbar isVisible={node.selected} position={Position.Top}>
+          <div className="h-6 flex flex-row items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                node.data.onEdit?.();
+              }}
+              className=" z-50 p-1 bg-warning-500 hover:bg-warning-600 text-white rounded-md items-center justify-center"
+              style={{ height: '100%', aspectRatio: '1/1' }}
+            >
+              <Edit size={"100%"} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                node.data.onDelete?.();
+              }}
+              className="flex z-50 mr-2 p-1 bg-error-500 hover:bg-error-600 text-white rounded-md items-center justify-center"
+              style={{ height: '100%', aspectRatio: '1/1' }}
+            >
+              <Trash2 size={"100%"} />
+            </button>
+          </div>
+        </NodeToolbar>
+      )}
       {/* Resize için NodeResizer */}
       {/* <NodeResizer
        color="#ff0071"
@@ -205,7 +209,7 @@ interface RegisterNodeData {
       <div className=" w-full h-full flex items-center justify-center relative text-center"
         style={{
           ...(displayMode === 'digit' && { backgroundColor: hexToRgba(backgroundColor, opacity! / 100) }),
-          border: node.selected ? '6px solid #f00' : 'none',
+          border: node.selected && isAdmin ? '6px solid #f00' : 'none',
           borderRadius: '5px',
         }}
       >

@@ -174,13 +174,14 @@ const AppSidebar: React.FC = () => {
         name: "Trend Log",
         path: "/trend-log",
       });
-      
-      // Also add access to periodic reports for users with trendLog permission
-      items.push({
-        icon: <FileText />,
-        name: "Periodic Reports",
-        path: "/periodic-reports",
-      });
+    }
+
+    if (user.permissions.periodicReports) {
+        items.push({
+            icon: <FileText />,
+            name: "Periodic Reports",
+            path: "/periodic-reports",
+        });
     }
     return items;
   }, []);

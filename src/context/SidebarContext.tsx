@@ -10,6 +10,7 @@ type SidebarContextType = {
   activeItem: string | null;
   openSubmenu: string | null;
   license: {valid:boolean,usedAnalyzers:number,maxDevices:number} | null;
+  permissions: any | null;
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
@@ -18,6 +19,7 @@ type SidebarContextType = {
   setActiveItem: (item: string | null) => void;
   toggleSubmenu: (item: string) => void;
   setLicense: (license: {valid:boolean,usedAnalyzers:number,maxDevices:number} | null) => void;
+  refetchPermissions: () => void;
 };
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -40,8 +42,22 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
   const [license, setLicense] = useState<{valid:boolean,usedAnalyzers:number,maxDevices:number} | null>(null);
+  const [permissions, setPermissions] = useState<any | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(390);
   const router = useRouter();
+
+
+ const fetchPermissions = () => {
+   fetch('/api/users')
+     .then(res => res.json())
+     .then(data => {
+       setPermissions(data.permissions);
+     });
+ };
+
+ useEffect(() => {
+   fetchPermissions();
+ }, []);
 
   useEffect(() => {
     fetch('/api/license/validate')
@@ -94,6 +110,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
         activeItem,
         openSubmenu,
         license,
+        permissions,
         sidebarWidth,
         setSidebarWidth,
         toggleSidebar,
@@ -101,7 +118,8 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsHovered,
         setActiveItem,
         toggleSubmenu,
-        setLicense
+        setLicense,
+       refetchPermissions: fetchPermissions,
       }}
     >
       {children}

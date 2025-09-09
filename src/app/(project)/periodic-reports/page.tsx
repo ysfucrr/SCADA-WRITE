@@ -10,8 +10,8 @@ import { Heading3, Paragraph, SmallText } from "@/components/ui/typography";
 import { useAuth } from "@/hooks/use-auth";
 import { Calendar, ChartLine, Download, Eye, FileText, Pencil, PlusCircle, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import PeriodicReportForm from "@/components/PeriodicReports/PeriodicReportForm";
-
 // Types
 interface PeriodicReportType {
   _id: string;
@@ -134,7 +134,7 @@ export default function PeriodicReportsPage() {
     // Admin her zaman erişebilir, normal kullanıcılar sadece periodicReports izni varsa
     if (!isAuthLoading && isAdmin) {
       fetchData();
-    } else if (!isAuthLoading && user?.permissions && 'periodicReports' in user.permissions && user.permissions.periodicReports) {
+    } else if (!isAuthLoading && user?.permissions?.periodicReports) {
       fetchData();
     }
   }, [isAuthLoading, isAdmin, user]);
@@ -294,6 +294,14 @@ export default function PeriodicReportsPage() {
 
   // Loading state
   if (isAuthLoading) {
+    return <Spinner variant="bars" fullPage />;
+  }
+
+  const router = useRouter();
+
+
+  if (!isAuthLoading && !isAdmin && !user?.permissions?.periodicReports) {
+    router.replace("/dashboard");
     return <Spinner variant="bars" fullPage />;
   }
 
