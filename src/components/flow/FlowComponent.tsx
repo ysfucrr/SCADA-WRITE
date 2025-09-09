@@ -1518,7 +1518,7 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                         }}
                         panOnDrag={isAdmin}
                         panOnScroll={false}
-                        zoomOnScroll={true}
+                        zoomOnScroll={false}
                         zoomOnPinch={isAdmin}
                         zoomOnDoubleClick={isAdmin}
                         nodesDraggable={isAdmin}
@@ -1539,7 +1539,10 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                         onWheel={(event) => {
                             if (!reactFlowInstance.current) return;
                             const zoom = reactFlowInstance.current.getZoom();
-                            const newZoom = zoom + event.deltaY * -0.0025;
+                            // Normalize the deltaY value and apply a very small multiplier for fine-grained control
+                            const zoomIncrement = event.deltaY * -0.00001;
+                            const newZoom = zoom + zoomIncrement;
+                            
                             reactFlowInstance.current.zoomTo(newZoom);
                         }}
                     >
