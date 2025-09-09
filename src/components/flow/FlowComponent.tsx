@@ -36,10 +36,15 @@ const nodeTypes = {
 
 
 let alertDialogOpen = false
+// Global değişken: Uygulama genelinde tam ekran durumunu takip etmek için
+let lastFullscreenState = false;
+
 export function UnitFlow({ building, floor, room }: { building: string, floor?: string, room?: string }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isPageVisible, setIsPageVisible] = useState(false);
+    const [isNavigating, setIsNavigating] = useState(false);
+    const [forceFullscreen, setForceFullscreen] = useState(false); // Tam ekranı zorlamak için
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const currentNodes = useNodes();
@@ -90,14 +95,55 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
         //console.log("reactFlowInstance", reactFlowInstance)
         // setIsFullScreen(isFullScreen);
         if (isFullScreen && containerRef.current && reactFlowInstance.current) {
-            containerRef.current.requestFullscreen().catch((err) => {
-                console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-            });
-            if (reactFlowInstance.current) {
-                console.log("requesting fullscreen")
-                setTimeout(() => {
-                    reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
-                }, 100);
+            // Tam ekran geçişleri için try-catch kullan
+            try {
+                // Önce tam ekrana geçmeyi dene
+                const requestFullscreen = async () => {
+                    try {
+                        // Kullanıcının etkinleştirdiği tam ekran durumunda, tarayıcı izin verecektir
+                        await containerRef.current!.requestFullscreen();
+                        console.log("Fullscreen enabled successfully");
+                    } catch (error) {
+                        // Eğer tam ekrana geçiş başarısız olursa, hata mesajını göster ama uygulamayı çalıştırmaya devam et
+                        console.warn("Fullscreen request failed, continuing without fullscreen:", error);
+                        // Tam ekran durumunu false olarak ayarla ki kullanıcı diğer sayfaları kullanabilsin
+                        setIsFullScreen(false);
+                        sessionStorage.setItem('isFullScreen', 'false');
+                    }
+                    
+                    // Tam ekran başarılı veya başarısız olsa da, görünümü ayarla
+                    if (reactFlowInstance.current) {
+                        console.log("Adjusting view bounds");
+                        setTimeout(() => {
+                            reactFlowInstance.current!.fitBounds({
+                                x: xMin * 0.8,
+                                y: yMin * 0.8,
+                                width: (xMax - xMin) * 0.8,
+                                height: (yMax - yMin) * 0.8
+                            }, { padding: 0 });
+                        }, 100);
+                    }
+                };
+                
+                // Tam ekran fonksiyonunu çağır
+                requestFullscreen();
+            } catch (outerError) {
+                // Genel bir hata durumunda
+                console.error("General error in fullscreen handling:", outerError);
+                setIsFullScreen(false);
+                sessionStorage.setItem('isFullScreen', 'false');
+                
+                // Yine de görünümü ayarla
+                if (reactFlowInstance.current) {
+                    setTimeout(() => {
+                        reactFlowInstance.current!.fitBounds({
+                            x: xMin * 0.8,
+                            y: yMin * 0.8,
+                            width: (xMax - xMin) * 0.8,
+                            height: (yMax - yMin) * 0.8
+                        }, { padding: 0 });
+                    }, 100);
+                }
             }
         }
         setIsPanning(isAdmin);
@@ -283,22 +329,89 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
             alertDialogOpen = false;
         });
     };
+    // Basitleştirilmiş tam ekran yönetimi - gerçek tam ekran + görüntü stilini birlikte kullanır
     const handleToggleFullscreen = () => {
-        if (containerRef.current) {
-            if (document.fullscreenElement) {
-                document.exitFullscreen();
-                sessionStorage.setItem('isFullScreen', 'false');
-                setIsFullScreen(false);
-            } else {
-                if (reactFlowInstance.current) {
-                    containerRef.current.requestFullscreen();
-                    sessionStorage.setItem('isFullScreen', 'true');
-
-                    setIsFullScreen(true);
-                    setTimeout(() => {
-                        reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
-                    }, 100);
+        // Önce içeriği gizle
+        setIsPageVisible(false);
+        
+        if (document.fullscreenElement || forceFullscreen) {
+            // Tam ekrandan çıkma
+            try {
+                // Gerçek tam ekrandan çıkmayı dene
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
                 }
+                
+                // Global değişkeni ve depolamayı güncelle
+                lastFullscreenState = false;
+                sessionStorage.setItem('isFullScreen', 'false');
+                
+                // State'leri güncelle
+                setForceFullscreen(false);
+                setIsFullScreen(false);
+                
+                // Görünümü yeniden ayarla
+                if (reactFlowInstance.current) {
+                    setTimeout(() => {
+                        reactFlowInstance.current!.fitBounds({
+                            x: xMin * 0.8,
+                            y: yMin * 0.8,
+                            width: (xMax - xMin) * 0.8,
+                            height: (yMax - yMin) * 0.8
+                        }, { padding: 0 });
+                        
+                        // İçeriği yeniden göster
+                        setTimeout(() => {
+                            setIsPageVisible(true);
+                        }, 100);
+                    }, 100);
+                } else {
+                    setIsPageVisible(true);
+                }
+            } catch (error) {
+                console.warn("Error toggling fullscreen:", error);
+                setIsPageVisible(true);
+            }
+        } else {
+            // Tam ekrana geçme
+            try {
+                // Gerçek tam ekrana geçmeyi dene
+                if (containerRef.current) {
+                    containerRef.current.requestFullscreen().catch(err => {
+                        console.warn("Fullscreen API failed:", err);
+                        // Gerçek tam ekran başarısız olsa bile UI'yı tam ekran gibi göster
+                    });
+                }
+                
+                // Global değişkeni ve depolamayı güncelle
+                lastFullscreenState = true;
+                sessionStorage.setItem('isFullScreen', 'true');
+                
+                // State'leri güncelle
+                setForceFullscreen(true);
+                setIsFullScreen(true);
+                
+                // Görünümü ayarla
+                if (reactFlowInstance.current) {
+                    setTimeout(() => {
+                        reactFlowInstance.current!.fitBounds({
+                            x: xMin * 0.8,
+                            y: yMin * 0.8,
+                            width: (xMax - xMin) * 0.8,
+                            height: (yMax - yMin) * 0.8
+                        }, { padding: 0 });
+                        
+                        // İçeriği göster
+                        setTimeout(() => {
+                            setIsPageVisible(true);
+                        }, 100);
+                    }, 100);
+                } else {
+                    setIsPageVisible(true);
+                }
+            } catch (error) {
+                console.error("Error toggling fullscreen:", error);
+                setIsPageVisible(true);
             }
         }
     }
@@ -1018,16 +1131,48 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
         }
     }
 
+    // Optimum sayfa yükleme stratejisi
     useEffect(() => {
+        // API'den verileri yükle
         loadFlowData();
+
+        // Sayfayı başlangıçta gizli tut
+        setIsPageVisible(false);
+        
+        // Global değişkeni ve localStorage'ı kontrol et
         const storedIsFullScreen = sessionStorage.getItem('isFullScreen');
-        if (storedIsFullScreen === 'true') {
+        
+        // Daha önceki tam ekran durumunu yeni sayfada kullan
+        if (storedIsFullScreen === 'true' || lastFullscreenState) {
+            // Hem global state'i hem de context state'i güncelle
+            lastFullscreenState = true;
             setIsFullScreen(true);
+            setForceFullscreen(true);
+            
+            // Görünümü ayarla
+            setTimeout(() => {
+                if (reactFlowInstance.current) {
+                    reactFlowInstance.current.fitBounds({
+                        x: xMin * 0.8,
+                        y: yMin * 0.8,
+                        width: (xMax - xMin) * 0.8,
+                        height: (yMax - yMin) * 0.8
+                    }, { padding: 0 });
+                }
+                
+                // Uygun gecikme ile içeriği göster
+                setTimeout(() => {
+                    setIsPageVisible(true);
+                    setIsNavigating(false);
+                }, 200); // Önceki süreye geri dönüldü (200ms)
+            }, 300); // Önceki süreye geri dönüldü (300ms)
+        } else {
+            // Tam ekran değilse normal şekilde göster
+            setTimeout(() => {
+                setIsPageVisible(true);
+                setIsNavigating(false);
+            }, 150); // Önceki süreye geri dönüldü (150ms)
         }
-        // Sayfa yüklendikten ve potansiyel tam ekran geçişinden sonra içeriği göster
-        setTimeout(() => {
-            setIsPageVisible(true);
-        }, 150); // Kısa bir gecikme
     }, [building, floor, room]);
 
 
@@ -1261,9 +1406,20 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
     return (
         <div
             ref={containerRef}
-            className="w-full h-[calc(100vh-168px)] bg-white dark:bg-gray-800 transition-opacity duration-300"
-            style={{ opacity: isPageVisible ? 1 : 0 }}
+            className="w-full h-[calc(100vh-168px)] bg-white dark:bg-gray-800 transition-opacity duration-500"
+            style={{
+                opacity: isPageVisible ? 1 : 0,
+                visibility: isPageVisible ? 'visible' : 'hidden'
+            }}
         >
+            {/* Navigasyon sırasında gösterilecek siyah arka plan */}
+            <div
+                className="fixed inset-0 bg-black z-[99999] transition-opacity duration-500"
+                style={{
+                    opacity: isPageVisible ? 0 : 1,
+                    visibility: isPageVisible ? 'hidden' : 'visible'
+                }}
+            />
             {loading && <div className="flex items-center justify-center h-full">Loading...</div>}
             {error && <div className="flex items-center justify-center h-full text-red-500">{error}</div>}
             {!loading && !error && (
@@ -1298,7 +1454,20 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                             }
                             const navigationUrl = node.data.navigationUrl;
                             if (navigationUrl) {
-                                router.push(`/buildings/${navigationUrl}`);
+                                // Navigasyon işlemine hazırlan
+                                setIsNavigating(true);
+                                
+                                // Önce içeriği gizle
+                                setIsPageVisible(false);
+                                
+                                // Tam ekran durumunu sakla - diğer sayfada kullanılacak
+                                sessionStorage.setItem('isFullScreen', isFullScreen ? 'true' : 'false');
+                                
+                                // Siyah ekran gösterimi sonrası sayfayı değiştir
+                                setTimeout(() => {
+                                    // Navigasyon işlemini gerçekleştir
+                                    router.push(`/buildings/${navigationUrl}`);
+                                }, 400); // Uzun bir süre siyah ekranı göster ama çok uzun değil
                             }
                         }}
                         panOnDrag={isAdmin}
