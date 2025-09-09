@@ -110,17 +110,23 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                         setIsFullScreen(false);
                         sessionStorage.setItem('isFullScreen', 'false');
                     }
-                    
+
+
                     // Tam ekran başarılı veya başarısız olsa da, görünümü ayarla
                     if (reactFlowInstance.current) {
                         console.log("Adjusting view bounds");
                         setTimeout(() => {
-                            reactFlowInstance.current!.fitBounds({
-                                x: xMin * 0.8,
-                                y: yMin * 0.8,
-                                width: (xMax - xMin) * 0.8,
-                                height: (yMax - yMin) * 0.8
-                            }, { padding: 0 });
+                            const nodes = reactFlowInstance.current!.getNodes();
+                            if (nodes.length > 0) {
+                                reactFlowInstance.current!.fitView();
+                            } else {
+                                reactFlowInstance.current!.fitBounds({
+                                    x: xMin,
+                                    y: yMin,
+                                    width: xMax - xMin,
+                                    height: yMax - yMin,
+                                });
+                            }
                         }, 100);
                     }
                 };
@@ -136,12 +142,17 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 // Yine de görünümü ayarla
                 if (reactFlowInstance.current) {
                     setTimeout(() => {
-                        reactFlowInstance.current!.fitBounds({
-                            x: xMin * 0.8,
-                            y: yMin * 0.8,
-                            width: (xMax - xMin) * 0.8,
-                            height: (yMax - yMin) * 0.8
-                        }, { padding: 0 });
+                        const nodes = reactFlowInstance.current!.getNodes();
+                        if (nodes.length > 0) {
+                            reactFlowInstance.current!.fitView();
+                        } else {
+                            reactFlowInstance.current!.fitBounds({
+                                x: xMin,
+                                y: yMin,
+                                width: xMax - xMin,
+                                height: yMax - yMin,
+                            });
+                        }
                     }, 100);
                 }
             }
@@ -353,13 +364,17 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 // Görünümü yeniden ayarla
                 if (reactFlowInstance.current) {
                     setTimeout(() => {
-                        reactFlowInstance.current!.fitBounds({
-                            x: xMin * 0.8,
-                            y: yMin * 0.8,
-                            width: (xMax - xMin) * 0.8,
-                            height: (yMax - yMin) * 0.8
-                        }, { padding: 0 });
-                        
+                        const nodes = reactFlowInstance.current!.getNodes();
+                        if (nodes.length > 0) {
+                            reactFlowInstance.current!.fitView();
+                        } else {
+                            reactFlowInstance.current!.fitBounds({
+                                x: xMin,
+                                y: yMin,
+                                width: xMax - xMin,
+                                height: yMax - yMin,
+                            });
+                        }
                         // İçeriği yeniden göster
                         setTimeout(() => {
                             setIsPageVisible(true);
@@ -394,13 +409,17 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 // Görünümü ayarla
                 if (reactFlowInstance.current) {
                     setTimeout(() => {
-                        reactFlowInstance.current!.fitBounds({
-                            x: xMin * 0.8,
-                            y: yMin * 0.8,
-                            width: (xMax - xMin) * 0.8,
-                            height: (yMax - yMin) * 0.8
-                        }, { padding: 0 });
-                        
+                        const nodes = reactFlowInstance.current!.getNodes();
+                        if (nodes.length > 0) {
+                            reactFlowInstance.current!.fitView();
+                        } else {
+                            reactFlowInstance.current!.fitBounds({
+                                x: xMin,
+                                y: yMin,
+                                width: xMax - xMin,
+                                height: yMax - yMin,
+                            });
+                        }
                         // İçeriği göster
                         setTimeout(() => {
                             setIsPageVisible(true);
@@ -424,7 +443,17 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 sessionStorage.setItem('isFullScreen', 'false');
                 setIsFullScreen(false);
                 setTimeout(() => {
-                    reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
+                    const nodes = reactFlowInstance.current!.getNodes();
+                    if (nodes.length > 0) {
+                        reactFlowInstance.current!.fitView();
+                    } else {
+                        reactFlowInstance.current!.fitBounds({
+                            x: xMin,
+                            y: yMin,
+                            width: xMax - xMin,
+                            height: yMax - yMin,
+                        });
+                    }
                 }, 100);
             }
         };
@@ -1152,14 +1181,18 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
             // Görünümü ayarla
             setTimeout(() => {
                 if (reactFlowInstance.current) {
-                    reactFlowInstance.current.fitBounds({
-                        x: xMin * 0.8,
-                        y: yMin * 0.8,
-                        width: (xMax - xMin) * 0.8,
-                        height: (yMax - yMin) * 0.8
-                    }, { padding: 0 });
+                    const nodes = reactFlowInstance.current!.getNodes();
+                    if (nodes.length > 0) {
+                        reactFlowInstance.current!.fitView();
+                    } else {
+                        reactFlowInstance.current!.fitBounds({
+                            x: xMin,
+                            y: yMin,
+                            width: xMax - xMin,
+                            height: yMax - yMin,
+                        });
+                    }
                 }
-                
                 // Uygun gecikme ile içeriği göster
                 setTimeout(() => {
                     setIsPageVisible(true);
@@ -1169,6 +1202,19 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
         } else {
             // Tam ekran değilse normal şekilde göster
             setTimeout(() => {
+                if (reactFlowInstance.current) {
+                    const nodes = reactFlowInstance.current!.getNodes();
+                    if (nodes.length > 0) {
+                        reactFlowInstance.current!.fitView();
+                    } else {
+                        reactFlowInstance.current!.fitBounds({
+                            x: xMin,
+                            y: yMin,
+                            width: xMax - xMin,
+                            height: yMax - yMin,
+                        });
+                    }
+                }
                 setIsPageVisible(true);
                 setIsNavigating(false);
             }, 150); // Önceki süreye geri dönüldü (150ms)
