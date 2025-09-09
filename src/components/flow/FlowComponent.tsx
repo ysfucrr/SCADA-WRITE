@@ -39,6 +39,7 @@ let alertDialogOpen = false
 export function UnitFlow({ building, floor, room }: { building: string, floor?: string, room?: string }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [isPageVisible, setIsPageVisible] = useState(false);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const currentNodes = useNodes();
@@ -88,15 +89,17 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
         //console.log("containerRef", containerRef)
         //console.log("reactFlowInstance", reactFlowInstance)
         // setIsFullScreen(isFullScreen);
-        // if (isFullScreen && containerRef.current && reactFlowInstance.current) {
-        //     containerRef.current.requestFullscreen();
-        //     if (reactFlowInstance.current) {
-        //         console.log("requesting fullscreen")
-        //         setTimeout(() => {
-        //             reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
-        //         }, 100);
-        //     }
-        // }
+        if (isFullScreen && containerRef.current && reactFlowInstance.current) {
+            containerRef.current.requestFullscreen().catch((err) => {
+                console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+            });
+            if (reactFlowInstance.current) {
+                console.log("requesting fullscreen")
+                setTimeout(() => {
+                    reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
+                }, 100);
+            }
+        }
         setIsPanning(isAdmin);
     }, [containerRef.current, isFullScreen, reactFlowInstance.current, isAdmin]);
     const saveFlowData = async (newBackgroundImage?: string | null, newOpacity?: number, newBackgroundColor?: string, clearBackground: boolean = false) => {
@@ -284,10 +287,13 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
         if (containerRef.current) {
             if (document.fullscreenElement) {
                 document.exitFullscreen();
+                sessionStorage.setItem('isFullScreen', 'false');
                 setIsFullScreen(false);
             } else {
                 if (reactFlowInstance.current) {
                     containerRef.current.requestFullscreen();
+                    sessionStorage.setItem('isFullScreen', 'true');
+
                     setIsFullScreen(true);
                     setTimeout(() => {
                         reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
@@ -302,6 +308,8 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
         const handleFullscreenChange = () => {
             if (!document.fullscreenElement && reactFlowInstance.current) {
                 // Tam ekrandan çıkıldığında fitBounds çağır
+                sessionStorage.setItem('isFullScreen', 'false');
+                setIsFullScreen(false);
                 setTimeout(() => {
                     reactFlowInstance.current!.fitBounds({ x: xMin * 0.8, y: yMin * 0.8, width: (xMax - xMin) * 0.8, height: (yMax - yMin) * 0.8 }, { padding: 0 })
                 }, 100);
@@ -1012,7 +1020,16 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
 
     useEffect(() => {
         loadFlowData();
+        const storedIsFullScreen = sessionStorage.getItem('isFullScreen');
+        if (storedIsFullScreen === 'true') {
+            setIsFullScreen(true);
+        }
+        // Sayfa yüklendikten ve potansiyel tam ekran geçişinden sonra içeriği göster
+        setTimeout(() => {
+            setIsPageVisible(true);
+        }, 150); // Kısa bir gecikme
     }, [building, floor, room]);
+
 
     // Debounce fonksiyonu - belirli bir süre içinde tekrar çağrılırsa önceki çağrıyı iptal eder
     const debounce = (func: Function, delay: number) => {
@@ -1242,7 +1259,11 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
         )
     }
     return (
-        <div ref={containerRef} className="w-full h-[calc(100vh-168px)] bg-white dark:bg-gray-800">
+        <div
+            ref={containerRef}
+            className="w-full h-[calc(100vh-168px)] bg-white dark:bg-gray-800 transition-opacity duration-300"
+            style={{ opacity: isPageVisible ? 1 : 0 }}
+        >
             {loading && <div className="flex items-center justify-center h-full">Loading...</div>}
             {error && <div className="flex items-center justify-center h-full text-red-500">{error}</div>}
             {!loading && !error && (
