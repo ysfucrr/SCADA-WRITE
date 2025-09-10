@@ -333,7 +333,7 @@ export default function BillingCard({ billing, onEdit, onDelete, buildings }: { 
                                                     </span>
                                                 </div>
                                                 <div className="flex flex-row justify-between">
-                                                    <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Current Value: </SmallText>
+                                                    <SmallText className="text-gray-500 dark:text-gray-400 font-medium">Used: </SmallText>
                                                     <span className="text-gray-700 dark:text-gray-300">
                                                         {convertToUnit(trendlogValues[getRegisterKey(trendLog.registerId)]- trendLog.firstValue)}
                                                     </span>
@@ -370,7 +370,7 @@ export default function BillingCard({ billing, onEdit, onDelete, buildings }: { 
                         </tbody>
                     </table>
                     <hr />
-                    <div className="flex flex-row gap-4 justify-end mt-2">
+                    <div className="flex flex-col sm:flex-row gap-4 justify-end mt-2">
                         <div>
                             <SmallText className="text-gray-500 dark:text-gray-400 font-medium text-[16px]  ">Start Date: </SmallText>
                             <Code className="text-gray-700 dark:text-gray-300  font-medium text-[16px]">
