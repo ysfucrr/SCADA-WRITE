@@ -11,11 +11,11 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isExpanded, isHovered, isMobileOpen, sidebarWidth } = useSidebar();
+  const { isExpanded, isHovered, isMobileOpen, isMobile, sidebarWidth } = useSidebar();
 
   const mainContentStyle = {
     transition: 'margin-left 300ms ease-in-out',
-    marginLeft: isMobileOpen ? '0px' : isExpanded || isHovered ? `${sidebarWidth}px` : '90px'
+    marginLeft: (isMobile && !isMobileOpen) ? '0px' : isMobileOpen ? '0px' : isExpanded || isHovered ? `${sidebarWidth}px` : '90px'
   };
 
   return (
