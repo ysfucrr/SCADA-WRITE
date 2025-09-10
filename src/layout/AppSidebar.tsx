@@ -96,6 +96,11 @@ const AppSidebar: React.FC = () => {
 
       return [
         {
+          icon: <Home />,
+          name: "Home",
+          path: "/home",
+        },
+        {
           icon: <Receipt />,
           name: "Billing",
           path: "/dashboard",
@@ -147,6 +152,13 @@ const AppSidebar: React.FC = () => {
         }
       ];
     }
+    // Add Home menu item for all users
+    items.push({
+      icon: <Home />,
+      name: "Home",
+      path: "/home",
+    });
+    
     if (user.permissions.dashboard) {
       items.push({
         icon: <Receipt />,
