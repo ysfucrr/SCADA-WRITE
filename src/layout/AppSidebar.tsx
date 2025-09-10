@@ -40,7 +40,7 @@ type Building = {
 };
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleSidebar, toggleMobileSidebar, license, sidebarWidth, setSidebarWidth } = useSidebar();
+  const { isExpanded, isMobileOpen, isMobile, isHovered, setIsHovered, toggleSidebar, toggleMobileSidebar, license, sidebarWidth, setSidebarWidth } = useSidebar();
   const [openSubmenus, setOpenSubmenus] = useState<string[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [longestText, setLongestText] = useState("");
@@ -368,6 +368,7 @@ const AppSidebar: React.FC = () => {
             {item.path ? (
               <Link
                 href={item.path}
+                onClick={() => isMobile && isMobileOpen && toggleMobileSidebar()}
                 className={`flex-1 flex items-center px-4 py-3 text-sm rounded-lg transition-colors w-full ${isActiveItem
                   ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
                   : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
@@ -604,15 +605,16 @@ const AppSidebar: React.FC = () => {
         <div className="mt-auto mb-6">
           <Link
               href="/about"
+              onClick={() => isMobile && isMobileOpen && toggleMobileSidebar()}
               className={`flex items-center px-4 py-3 text-sm rounded-lg transition-colors w-full ${isActive("/about")
                   ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
                   : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
                 }`}
-            >
-              <div className="flex items-center gap-3">
-                <Info className="w-5 h-5 flex-shrink-0" />
-                {(isExpanded || isHovered || isMobileOpen) && <span className="truncate">About</span>}
-              </div>
+          >
+            <div className="flex items-center gap-3">
+              <Info className="w-5 h-5 flex-shrink-0" />
+              {(isExpanded || isHovered || isMobileOpen) && <span className="truncate">About</span>}
+            </div>
           </Link>
         </div>
         {/* {isExpanded || isHovered || isMobileOpen ? null : null} */}
