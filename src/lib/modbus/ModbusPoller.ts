@@ -462,59 +462,43 @@ export class ModbusPoller extends EventEmitter {
         try {
             const { db } = await connectToDatabase();
             
-            // 1. Değişen binayı ve eski durumunu kullanarak etkilenen analizörleri bul
+            // 1. Get old and new register states for the specific building
+            const oldRegistersInBuilding = Array.from(this.allKnownRegisters.values()).filter(r => r.buildingId === buildingId.toString());
             const changedBuildingDoc = await db.collection('buildings').findOne({ _id: buildingId });
-            const newRegistersFromChangedBuilding = changedBuildingDoc ? this.loadRegistersFromBuildings([changedBuildingDoc]) : [];
-            const oldRegistersFromChangedBuilding = Array.from(this.allKnownRegisters.values()).filter(r => r.buildingId === buildingId.toString());
+            const newRegistersInBuilding = changedBuildingDoc ? this.loadRegistersFromBuildings([changedBuildingDoc]) : [];
     
-            const involvedAnalyzerIds = new Set<string>([
-                ...newRegistersFromChangedBuilding.map(r => r.analyzerId),
-                ...oldRegistersFromChangedBuilding.map(r => r.analyzerId)
-            ].filter(id => id)); // Undefined/null ID'leri filtrele
+            // 2. Determine all involved analyzer IDs from both old and new states
+            const involvedAnalyzerIds = new Set<string>();
+            oldRegistersInBuilding.forEach(r => r.analyzerId && involvedAnalyzerIds.add(r.analyzerId));
+            newRegistersInBuilding.forEach(r => r.analyzerId && involvedAnalyzerIds.add(r.analyzerId));
     
-            // 2. Her etkilenen analizör için tam ve doğru durumu yeniden oluştur
+            // 3. Immediately update the orchestrator's master register list (`allKnownRegisters`)
+            // This ensures internal state is consistent before notifying workers.
+            oldRegistersInBuilding.forEach(r => this.allKnownRegisters.delete(r.id));
+            newRegistersInBuilding.forEach(r => this.allKnownRegisters.set(r.id, r));
+            backendLogger.debug(`Updated internal cache: ${oldRegistersInBuilding.length} registers removed, ${newRegistersInBuilding.length} added.`, "ModbusPoller");
+    
+            // 4. For each affected analyzer, send the new *complete* state to the worker
             for (const analyzerId of involvedAnalyzerIds) {
-                // 2a. Analizörün hala var olup olmadığını ve connection type'ını kontrol et
+                if (!analyzerId) continue;
+    
+                // Check if the analyzer is serial; if so, delegate to SerialPoller
                 const analyzerDoc = await db.collection('analyzers').findOne({ _id: new ObjectId(analyzerId) });
-                
-                // Analizör silinmişse skip et (building change gecikmesi nedeniyle)
-                if (!analyzerDoc) {
-                    backendLogger.debug(`Analyzer ${analyzerId} no longer exists (deleted). Skipping building update.`, "ModbusPoller");
-                    continue;
-                }
-                
-                const connectionType = analyzerDoc.connection || 'tcp';
-                
-                // Serial analizörler SerialPoller tarafından yönetiliyor
-                if (connectionType === 'serial') {
-                    backendLogger.debug(`Analyzer ${analyzerId} is serial type, managed by SerialPoller. Notifying SerialPoller for register update.`, "ModbusPoller");
-                    
-                    // SerialPoller'a register güncellemesi bildir
+                if (analyzerDoc?.connection === 'serial') {
                     if (this.serialPoller) {
                         this.serialPoller.updateAnalyzerRegisters(analyzerId).catch(err => {
-                            backendLogger.error(`Failed to update serial analyzer registers for ${analyzerId}`, "ModbusPoller", { error: (err as Error).message });
+                            backendLogger.error(`Failed to send update to SerialPoller for ${analyzerId}`, "ModbusPoller", { error: (err as Error).message });
                         });
                     }
-                    continue;
+                    continue; // Skip to the next analyzer
                 }
-                
-                // 2b. Bu analizöre ait register içeren TÜM binaları bul (sadece TCP için)
-                const buildingsWithAnalyzer = await db.collection('buildings').find({
-                    "flowData.nodes.data.analyzerId": analyzerId
-                }).toArray();
     
-                // 2c. Bu binalardan analizör için tam register listesini oluştur
-                const completeRegisterList = this.loadRegistersFromBuildings(buildingsWithAnalyzer)
-                                                 .filter(r => r.analyzerId === analyzerId);
+                // For TCP analyzers, build the complete list from the updated internal cache
+                const completeRegisterList = Array.from(this.allKnownRegisters.values())
+                                                  .filter(r => r.analyzerId === analyzerId);
     
-                // 2d. TCP analizör için Worker'a bu tam listeyi gönder
                 const workerIndex = this.analyzerToWorker.get(analyzerId);
                 if (workerIndex !== undefined) {
-                    // backendLogger.info(`Rebuilding complete state for TCP analyzer ${analyzerId} and sending to worker ${workerIndex}.`, "ModbusPoller", {
-                    //     analyzerId,
-                    //     registerCount: completeRegisterList.length
-                    // });
-                    
                     const worker = this.workers[workerIndex];
                     worker.postMessage({
                         type: 'UPDATE_ANALYZER_REGISTERS',
@@ -523,43 +507,17 @@ export class ModbusPoller extends EventEmitter {
                             registers: completeRegisterList
                         }
                     });
+                    backendLogger.info(`Sent updated state for analyzer ${analyzerId} to worker ${workerIndex}. New register count: ${completeRegisterList.length}`, "ModbusPoller");
                 } else {
-                    backendLogger.warning(`TCP Analyzer ${analyzerId} from updated building is not assigned to any worker.`, "ModbusPoller");
+                    backendLogger.warning(`Surgical update ignored: TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
                 }
             }
-    
-            // 3. Orkestratör'ün kendi dahili register listesini güncelle
-            // Önce bu analizörlere ait tüm eski kayıtları temizle
-            involvedAnalyzerIds.forEach(analyzerId => {
-                Array.from(this.allKnownRegisters.keys()).forEach(registerId => {
-                    if (this.allKnownRegisters.get(registerId)?.analyzerId === analyzerId) {
-                        this.allKnownRegisters.delete(registerId);
-                    }
-                });
-            });
-    
-            // Sonra veritabanından okunan en güncel hali tekrar ekle (hem TCP hem Serial için)
-            for (const analyzerId of involvedAnalyzerIds) {
-                 const buildingsWithAnalyzer = await db.collection('buildings').find({
-                    "flowData.nodes.data.analyzerId": analyzerId
-                }).toArray();
-                const completeRegisterList = this.loadRegistersFromBuildings(buildingsWithAnalyzer)
-                                                 .filter(r => r.analyzerId === analyzerId);
-                completeRegisterList.forEach(r => this.allKnownRegisters.set(r.id, r));
-                
-                // Connection type'ına göre log
-                const analyzerDoc = await db.collection('analyzers').findOne({ _id: new ObjectId(analyzerId) });
-                const connectionType = analyzerDoc?.connection || 'tcp';
-                //backendLogger.debug(`Updated internal register cache for ${connectionType} analyzer ${analyzerId}: ${completeRegisterList.length} registers`, "ModbusPoller");
-            }
-    
         } catch (err) {
-            backendLogger.error(`Failed to process building change for ${buildingId}. Falling back to bulk update.`, "ModbusPoller", { error: (err as Error).message });
+            backendLogger.error(`Failed to process surgical building change for ${buildingId}. Falling back to bulk update.`, "ModbusPoller", { error: (err as Error).message });
             await this.handleBulkUpdate();
         } finally {
             this.isReloading = false;
         }
-    
     }
 
     /**

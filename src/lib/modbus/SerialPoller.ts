@@ -512,7 +512,11 @@ export class SerialPoller extends EventEmitter {
             const { db } = await connectToDatabase();
             
             const buildingsWithAnalyzer = await db.collection('buildings').find({
-                "flowData.nodes.data.analyzerId": analyzerId
+                $or: [
+                    { "flowData.nodes.data.analyzerId": analyzerId },
+                    { "floors.flowData.nodes.data.analyzerId": analyzerId },
+                    { "floors.rooms.flowData.nodes.data.analyzerId": analyzerId }
+                ]
             }).toArray();
 
             const completeRegisterList = this.loadRegistersFromBuildings(buildingsWithAnalyzer)
