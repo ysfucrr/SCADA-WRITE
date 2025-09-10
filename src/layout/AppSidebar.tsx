@@ -218,8 +218,8 @@ const AppSidebar: React.FC = () => {
     if (textMeasurementRef.current && isExpanded) {
       const textWidth = textMeasurementRef.current.offsetWidth;
       // Define a base padding for icons, margins, etc.
-      const padding = 100; // Reduced padding
-      const minWidth = 220; // Set a minimum width for the sidebar
+      const padding = 140; // Increased to account for indentation in sub-levels
+      const minWidth = 240; // Increased minimum width for better text accommodation
       
       let newWidth = textWidth + padding;
       
