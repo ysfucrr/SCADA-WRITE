@@ -5,7 +5,9 @@ import { ApexOptions } from "apexcharts";
 
 // Import Typography components
 import { Heading3, Paragraph, SmallText } from "@/components/ui/typography";
-
+import Button from "@/components/ui/button/Button";
+import { AddWidgetModal } from "@/components/widgets/AddWidgetModal";
+import { RegisterWidget } from "@/components/widgets/RegisterWidget";
 // Dynamically import ReactApexChart to avoid SSR issues
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
@@ -50,6 +52,8 @@ interface SystemInfo {
 export default function HomePage() {
   // Tab state
   const [activeTab, setActiveTab] = useState<'overview' | 'system-health'>('overview');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [widgets, setWidgets] = useState<any[]>([]);
   
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -365,7 +369,25 @@ export default function HomePage() {
     ? [parseFloat(systemInfo.system.memoryUsagePercent)]
     : [0];
 
+  const handleAddWidget = (widgetTitle: string, selectedRegisters: any[]) => {
+    const newWidget = {
+      id: `widget-${widgets.length + 1}`,
+      title: widgetTitle,
+      registers: selectedRegisters.map(r => ({
+        id: r.selectedRegister.value,
+        label: r.customLabel || r.selectedRegister.label.split('(')[0].trim(),
+        analyzerId: r.selectedRegister.analyzerId,
+        address: r.selectedRegister.address,
+        dataType: r.selectedRegister.dataType,
+        bit: r.selectedRegister.bit,
+      })),
+    };
+    setWidgets([...widgets, newWidget]);
+  };
+
   return (
+    <>
+    <AddWidgetModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onConfirm={handleAddWidget} />
     <div className="w-full p-6">
       {/* Tab navigation - More prominent buttons */}
       <div className="mb-8 flex justify-between items-center">
@@ -409,12 +431,26 @@ export default function HomePage() {
       
       {/* Content based on active tab */}
       {activeTab === 'overview' ? (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 mb-6">
-          <div className="flex items-center justify-center h-48">
-            <Paragraph className="text-gray-400 text-center">
-              This section is under development. Content will be added soon.
-            </Paragraph>
+        <div>
+          <div className="flex justify-end mb-4">
+            <Button onClick={() => setIsModalOpen(true)}>
+              Add Widget
+            </Button>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {widgets.map((widget) => (
+              <RegisterWidget key={widget.id} title={widget.title} registers={widget.registers} />
+            ))}
+          </div>
+          {widgets.length === 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 mb-6">
+              <div className="flex items-center justify-center h-48">
+                <Paragraph className="text-gray-400 text-center">
+                  No widgets added yet. Click "Add Widget" to get started.
+                </Paragraph>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <>
@@ -662,5 +698,6 @@ export default function HomePage() {
         </>
       )}
     </div>
+    </>
   );
 }
