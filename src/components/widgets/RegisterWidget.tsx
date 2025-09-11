@@ -53,6 +53,7 @@ const DraggableLabel: React.FC<{
   const [currentPosition, setCurrentPosition] = useState(position);
   const [currentSize, setCurrentSize] = useState(size);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const positionRef = useRef(currentPosition);
 
   useEffect(() => {
     if (size) {
@@ -62,6 +63,7 @@ const DraggableLabel: React.FC<{
   
   useEffect(() => {
     setCurrentPosition(position);
+    positionRef.current = position;
   }, [position]);
   const [helperLines, setHelperLines] = useState<HelperLineState>({ vertical: undefined, horizontal: undefined });
 
@@ -245,6 +247,7 @@ const DraggableLabel: React.FC<{
     
     setHelperLines(newHelperLines);
     setCurrentPosition(snappedPosition);
+    positionRef.current = snappedPosition;
     e.preventDefault();
   };
   
@@ -253,7 +256,7 @@ const DraggableLabel: React.FC<{
     if (!isDragging) return;
     
     setIsDragging(false);
-    onPositionChange(id, currentPosition, true);
+    onPositionChange(id, positionRef.current, true);
     
     // Clear helper lines when dragging stops
     setTimeout(() => {
@@ -291,7 +294,7 @@ const DraggableLabel: React.FC<{
     if (!isDragging) return;
     
     setIsDragging(false);
-    onPositionChange(id, currentPosition, true);
+    onPositionChange(id, positionRef.current, true);
   };
   
   useEffect(() => {
@@ -380,6 +383,7 @@ const RegisterValue: React.FC<{
   const [position, setPosition] = useState<{ x: number, y: number }>(register.valuePosition || { x: 0, y: 0 });
   const [size, setSize] = useState<{ width: number, height: number }>(register.valueSize || { width: 120, height: 80 });
   const elementRef = useRef<HTMLDivElement>(null);
+  const positionRef = useRef(position);
 
   useEffect(() => {
     if (register.valueSize) {
@@ -390,6 +394,7 @@ const RegisterValue: React.FC<{
   useEffect(() => {
     if (register.valuePosition) {
       setPosition(register.valuePosition);
+      positionRef.current = register.valuePosition;
     }
   }, [register.valuePosition]);
   const { watchRegister, unwatchRegister } = useWebSocket();
@@ -529,6 +534,7 @@ const RegisterValue: React.FC<{
     
     setHelperLines(newHelperLines);
     setPosition(snappedPosition);
+    positionRef.current = snappedPosition;
     e.preventDefault();
   };
   
@@ -538,7 +544,7 @@ const RegisterValue: React.FC<{
     
     setIsDragging(false);
     if (onPositionChange) {
-      onPositionChange(register.id, position, false);
+      onPositionChange(register.id, positionRef.current, false);
     }
     
     // Clear helper lines when dragging stops
@@ -578,7 +584,7 @@ const RegisterValue: React.FC<{
     
     setIsDragging(false);
     if (onPositionChange) {
-      onPositionChange(register.id, position, false);
+      onPositionChange(register.id, positionRef.current, false);
     }
   };
   
