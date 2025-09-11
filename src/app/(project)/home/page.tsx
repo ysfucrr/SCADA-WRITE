@@ -55,6 +55,7 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'system-health'>('overview');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [widgets, setWidgets] = useState<any[]>([]);
+  const [widgetsLoading, setWidgetsLoading] = useState(true);
   const [widgetToEdit, setWidgetToEdit] = useState<any | null>(null);
   
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -66,6 +67,7 @@ export default function HomePage() {
   useEffect(() => {
     const fetchWidgets = async () => {
       try {
+        setWidgetsLoading(true);
         const response = await fetch("/api/widgets");
         if (!response.ok) {
           throw new Error("Failed to fetch widgets");
@@ -74,6 +76,8 @@ export default function HomePage() {
         setWidgets(data);
       } catch (error) {
         console.error(error);
+      } finally {
+        setWidgetsLoading(false);
       }
     };
     fetchWidgets();
@@ -412,7 +416,8 @@ export default function HomePage() {
           body: JSON.stringify(widgetData),
         });
         if (!response.ok) throw new Error("Failed to update widget");
-        setWidgets(widgets.map(w => w._id === widgetToEdit._id ? { ...w, ...widgetData } : w));
+        const updatedWidget = await response.json();
+        setWidgets(widgets.map(w => w._id === widgetToEdit._id ? updatedWidget : w));
         showToast("Widget updated successfully.", "success");
       } else {
         // Add new widget
@@ -518,7 +523,16 @@ export default function HomePage() {
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {widgets.map((widget) => (
+            {widgetsLoading ? (
+              <div className="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
+                <div className="flex items-center justify-center h-48">
+                  <Paragraph className="text-gray-400 text-center">
+                    Loading widgets...
+                  </Paragraph>
+                </div>
+              </div>
+            ) : widgets.length > 0 ? (
+              widgets.map((widget) => (
               <RegisterWidget
                 key={widget._id}
                 title={widget.title}
@@ -528,17 +542,17 @@ export default function HomePage() {
                 onEdit={() => setWidgetToEdit(widget)}
                 onDelete={() => handleDeleteWidget(widget)}
               />
-            ))}
-          </div>
-          {widgets.length === 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 mb-6">
+            ))
+            ) : (
+            <div className="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 mb-6">
               <div className="flex items-center justify-center h-48">
                 <Paragraph className="text-gray-400 text-center">
-                  No widgets added yet. Click "Add Widget" to get started.
+                  No widgets have been added yet. Click "Add Widget" to get started.
                 </Paragraph>
               </div>
             </div>
-          )}
+            )}
+          </div>
         </div>
       ) : (
         <>

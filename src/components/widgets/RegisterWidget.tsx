@@ -59,6 +59,10 @@ const DraggableLabel: React.FC<{
       setCurrentSize(size);
     }
   }, [size]);
+  
+  useEffect(() => {
+    setCurrentPosition(position);
+  }, [position]);
   const [helperLines, setHelperLines] = useState<HelperLineState>({ vertical: undefined, horizontal: undefined });
 
   // Mouse olayları için işleyiciler
@@ -382,6 +386,12 @@ const RegisterValue: React.FC<{
       setSize(register.valueSize);
     }
   }, [register.valueSize]);
+
+  useEffect(() => {
+    if (register.valuePosition) {
+      setPosition(register.valuePosition);
+    }
+  }, [register.valuePosition]);
   const { watchRegister, unwatchRegister } = useWebSocket();
   
   // For drag functionality
@@ -667,8 +677,15 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
   }, [size]);
 
   // For saving widget data to DB
+  const isInitialMount = useRef(true);
   useEffect(() => {
     if (!id) return;
+
+    // Do not save on the initial mount, wait for user interaction.
+    if (isInitialMount.current) {
+        isInitialMount.current = false;
+        return;
+    }
     
     const saveWidgetData = async () => {
       try {
@@ -704,70 +721,23 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
 
   
   useEffect(() => {
-    // Initialize positions and sizes in a grid layout if not already set
-    if (registers.length > 0 &&
-        Object.keys(valuePositions).length === 0 &&
-        Object.keys(labelPositions).length === 0) {
-      
-      const newValuePositions: Record<string, { x: number, y: number }> = {};
-      const newLabelPositions: Record<string, { x: number, y: number }> = {};
-      const newValueSizes: Record<string, { width: number, height: number }> = {};
-      const newLabelSizes: Record<string, { width: number, height: number }> = {};
-      
-      const containerWidth = containerRef.current?.clientWidth || 600;
-      const itemWidth = Math.min(250, containerWidth / 2 - 20);
-      const itemHeight = 80;
-      const labelHeight = 30;
-      const labelWidth = 80;
-      const columns = Math.floor(containerWidth / (itemWidth + 16));
-      
-      registers.forEach((reg, index) => {
-        const col = index % columns;
-        const row = Math.floor(index / columns);
-        
-        // Label positions - üstte
-        newLabelPositions[reg.id] = {
-          x: col * (itemWidth + 16) + itemWidth/2 - 40,
-          y: row * (itemHeight + labelHeight + 24)
-        };
-        
-        // Value positions - altta
-        newValuePositions[reg.id] = {
-          x: col * (itemWidth + 16),
-          y: row * (itemHeight + labelHeight + 24) + labelHeight + 8
-        };
-        
-        // Default sizes
-        newLabelSizes[reg.id] = { width: labelWidth, height: labelHeight };
-        newValueSizes[reg.id] = { width: itemWidth, height: itemHeight };
-      });
-      
-      setValuePositions(newValuePositions);
-      setLabelPositions(newLabelPositions);
-      setValueSizes(newValueSizes);
-      setLabelSizes(newLabelSizes);
-    }
-  }, [registers, valuePositions, labelPositions]);
-
-  useEffect(() => {
+    // This effect synchronizes the positions and sizes when the registers prop updates.
+    const newValuePositions: Record<string, { x: number, y: number }> = {};
+    const newLabelPositions: Record<string, { x: number, y: number }> = {};
     const newLabelSizes: Record<string, { width: number, height: number }> = {};
     const newValueSizes: Record<string, { width: number, height: number }> = {};
 
     registers.forEach(reg => {
-        if (reg.labelSize) {
-            newLabelSizes[reg.id] = reg.labelSize;
-        }
-        if (reg.valueSize) {
-            newValueSizes[reg.id] = reg.valueSize;
-        }
+      newValuePositions[reg.id] = reg.valuePosition || { x: 0, y: 0 };
+      newLabelPositions[reg.id] = reg.labelPosition || { x: 0, y: 0 };
+      newLabelSizes[reg.id] = reg.labelSize || { width: 80, height: 28 };
+      newValueSizes[reg.id] = reg.valueSize || { width: 120, height: 80 };
     });
 
-    if (Object.keys(newLabelSizes).length > 0) {
-        setLabelSizes(prev => ({ ...prev, ...newLabelSizes }));
-    }
-    if (Object.keys(newValueSizes).length > 0) {
-        setValueSizes(prev => ({ ...prev, ...newValueSizes }));
-    }
+    setValuePositions(newValuePositions);
+    setLabelPositions(newLabelPositions);
+    setLabelSizes(newLabelSizes);
+    setValueSizes(newValueSizes);
   }, [registers]);
 
   const handlePositionChange = (id: string, position: { x: number, y: number }, isLabel: boolean) => {
@@ -837,12 +807,17 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
             overflow: "hidden"
           }}
         >
-            {registers.map((reg) => (
+            {registers.map((reg) => {
+              // Do not render the draggable components until their positions are loaded.
+              if (!labelPositions[reg.id] || !valuePositions[reg.id]) {
+                return null;
+              }
+              return (
               <React.Fragment key={reg.id}>
                 <DraggableLabel
                   id={reg.id}
                   label={reg.label}
-                  position={labelPositions[reg.id] || { x: 0, y: 0 }}
+                  position={labelPositions[reg.id]}
                   size={labelSizes[reg.id]}
                   onPositionChange={handlePositionChange}
                   onSizeChange={handleSizeChange}
@@ -861,7 +836,7 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
                   containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
                 />
               </React.Fragment>
-            ))}
+            )})}
         </div>
         
         {/* Widget resize handle removed */}
