@@ -8,7 +8,7 @@ import { Heading3, Paragraph, SmallText } from "@/components/ui/typography";
 import Button from "@/components/ui/button/Button";
 import { AddWidgetModal } from "@/components/widgets/AddWidgetModal";
 import { RegisterWidget } from "@/components/widgets/RegisterWidget";
-import { showConfirmAlert } from "@/components/ui/alert";
+import { showConfirmAlert, showToast } from "@/components/ui/alert";
 // Dynamically import ReactApexChart to avoid SSR issues
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
@@ -62,6 +62,22 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState(10); // seconds
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const fetchWidgets = async () => {
+      try {
+        const response = await fetch("/api/widgets");
+        if (!response.ok) {
+          throw new Error("Failed to fetch widgets");
+        }
+        const data = await response.json();
+        setWidgets(data);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    fetchWidgets();
+  }, []);
 
   // Fetch system information with refresh interval
   useEffect(() => {
@@ -371,40 +387,49 @@ export default function HomePage() {
     ? [parseFloat(systemInfo.system.memoryUsagePercent)]
     : [0];
 
-  const handleAddWidget = (widgetTitle: string, selectedRegisters: any[]) => {
-    if (widgetToEdit) {
+  const handleAddWidget = async (widgetTitle: string, selectedRegisters: any[]) => {
+    const widgetData = {
+      title: widgetTitle,
+      registers: selectedRegisters.map((r) => ({
+        id: r.selectedRegister.value,
+        label: r.customLabel || r.selectedRegister.label.split("(")[0].trim(),
+        analyzerId: r.selectedRegister.analyzerId,
+        address: r.selectedRegister.address,
+        dataType: r.selectedRegister.dataType,
+        bit: r.selectedRegister.bit,
+      })),
+    };
+
+    try {
+      if (widgetToEdit) {
         // Update existing widget
-        const updatedWidgets = widgets.map(w =>
-            w.id === widgetToEdit.id
-            ? { ...w, title: widgetTitle, registers: selectedRegisters.map(r => ({
-                id: r.selectedRegister.value,
-                label: r.customLabel || r.selectedRegister.label.split('(')[0].trim(),
-                analyzerId: r.selectedRegister.analyzerId,
-                address: r.selectedRegister.address,
-                dataType: r.selectedRegister.dataType,
-                bit: r.selectedRegister.bit,
-              })) }
-            : w
-        );
-        setWidgets(updatedWidgets);
-        setWidgetToEdit(null);
-    } else {
+        const response = await fetch(`/api/widgets/${widgetToEdit._id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(widgetData),
+        });
+        if (!response.ok) throw new Error("Failed to update widget");
+        setWidgets(widgets.map(w => w._id === widgetToEdit._id ? { ...w, ...widgetData } : w));
+        showToast("Widget updated successfully.", "success");
+      } else {
         // Add new widget
-        const newWidget = {
-          id: `widget-${widgets.length + 1}`,
-          title: widgetTitle,
-          registers: selectedRegisters.map(r => ({
-            id: r.selectedRegister.value,
-            label: r.customLabel || r.selectedRegister.label.split('(')[0].trim(),
-            analyzerId: r.selectedRegister.analyzerId,
-            address: r.selectedRegister.address,
-            dataType: r.selectedRegister.dataType,
-            bit: r.selectedRegister.bit,
-          })),
-        };
+        const response = await fetch("/api/widgets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(widgetData),
+        });
+        if (!response.ok) throw new Error("Failed to create widget");
+        const newWidget = await response.json();
         setWidgets([...widgets, newWidget]);
-        }
-      };
+        showToast("Widget added successfully.", "success");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("An error occurred.", "error");
+    } finally {
+        setWidgetToEdit(null);
+    }
+  };
     
       const handleDeleteWidget = async (widget: any) => {
         const result = await showConfirmAlert(
@@ -415,7 +440,17 @@ export default function HomePage() {
         );
     
         if (result.isConfirmed) {
-          setWidgets(widgets.filter(w => w.id !== widget.id));
+            try {
+                const response = await fetch(`/api/widgets/${widget._id}`, {
+                  method: "DELETE",
+                });
+                if (!response.ok) throw new Error("Failed to delete widget");
+                setWidgets(widgets.filter(w => w._id !== widget._id));
+                showToast("Widget deleted successfully.", "success");
+            } catch (error) {
+                console.error(error);
+                showToast("An error occurred while deleting the widget.", "error");
+            }
         }
       };
     
@@ -482,7 +517,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {widgets.map((widget) => (
               <RegisterWidget
-                key={widget.id}
+                key={widget._id}
                 title={widget.title}
                 registers={widget.registers}
                 onEdit={() => setWidgetToEdit(widget)}
