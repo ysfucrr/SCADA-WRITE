@@ -8,6 +8,7 @@ import { Heading3, Paragraph, SmallText } from "@/components/ui/typography";
 import Button from "@/components/ui/button/Button";
 import { AddWidgetModal } from "@/components/widgets/AddWidgetModal";
 import { RegisterWidget } from "@/components/widgets/RegisterWidget";
+import { showConfirmAlert } from "@/components/ui/alert";
 // Dynamically import ReactApexChart to avoid SSR issues
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
@@ -54,6 +55,7 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'system-health'>('overview');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [widgets, setWidgets] = useState<any[]>([]);
+  const [widgetToEdit, setWidgetToEdit] = useState<any | null>(null);
   
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -370,24 +372,64 @@ export default function HomePage() {
     : [0];
 
   const handleAddWidget = (widgetTitle: string, selectedRegisters: any[]) => {
-    const newWidget = {
-      id: `widget-${widgets.length + 1}`,
-      title: widgetTitle,
-      registers: selectedRegisters.map(r => ({
-        id: r.selectedRegister.value,
-        label: r.customLabel || r.selectedRegister.label.split('(')[0].trim(),
-        analyzerId: r.selectedRegister.analyzerId,
-        address: r.selectedRegister.address,
-        dataType: r.selectedRegister.dataType,
-        bit: r.selectedRegister.bit,
-      })),
-    };
-    setWidgets([...widgets, newWidget]);
-  };
-
-  return (
-    <>
-    <AddWidgetModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onConfirm={handleAddWidget} />
+    if (widgetToEdit) {
+        // Update existing widget
+        const updatedWidgets = widgets.map(w =>
+            w.id === widgetToEdit.id
+            ? { ...w, title: widgetTitle, registers: selectedRegisters.map(r => ({
+                id: r.selectedRegister.value,
+                label: r.customLabel || r.selectedRegister.label.split('(')[0].trim(),
+                analyzerId: r.selectedRegister.analyzerId,
+                address: r.selectedRegister.address,
+                dataType: r.selectedRegister.dataType,
+                bit: r.selectedRegister.bit,
+              })) }
+            : w
+        );
+        setWidgets(updatedWidgets);
+        setWidgetToEdit(null);
+    } else {
+        // Add new widget
+        const newWidget = {
+          id: `widget-${widgets.length + 1}`,
+          title: widgetTitle,
+          registers: selectedRegisters.map(r => ({
+            id: r.selectedRegister.value,
+            label: r.customLabel || r.selectedRegister.label.split('(')[0].trim(),
+            analyzerId: r.selectedRegister.analyzerId,
+            address: r.selectedRegister.address,
+            dataType: r.selectedRegister.dataType,
+            bit: r.selectedRegister.bit,
+          })),
+        };
+        setWidgets([...widgets, newWidget]);
+        }
+      };
+    
+      const handleDeleteWidget = async (widget: any) => {
+        const result = await showConfirmAlert(
+          "Delete Widget",
+          `"${widget.title}" widget will be deleted. Are you sure?`,
+          "Delete",
+          "Cancel"
+        );
+    
+        if (result.isConfirmed) {
+          setWidgets(widgets.filter(w => w.id !== widget.id));
+        }
+      };
+    
+      return (
+        <>
+        <AddWidgetModal
+            isOpen={isModalOpen || !!widgetToEdit}
+            widgetToEdit={widgetToEdit}
+            onClose={() => {
+                setIsModalOpen(false)
+                setWidgetToEdit(null)
+            }}
+            onConfirm={handleAddWidget}
+        />
     <div className="w-full p-6">
       {/* Tab navigation - More prominent buttons */}
       <div className="mb-8 flex justify-between items-center">
@@ -439,7 +481,13 @@ export default function HomePage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {widgets.map((widget) => (
-              <RegisterWidget key={widget.id} title={widget.title} registers={widget.registers} />
+              <RegisterWidget
+                key={widget.id}
+                title={widget.title}
+                registers={widget.registers}
+                onEdit={() => setWidgetToEdit(widget)}
+                onDelete={() => handleDeleteWidget(widget)}
+              />
             ))}
           </div>
           {widgets.length === 0 && (

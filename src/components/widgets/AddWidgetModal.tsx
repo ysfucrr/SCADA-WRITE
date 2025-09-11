@@ -29,9 +29,10 @@ interface AddWidgetModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (widgetTitle: string, selectedRegisters: SelectedRegister[]) => void;
+  widgetToEdit?: any;
 }
 
-export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose, onConfirm }) => {
+export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose, onConfirm, widgetToEdit }) => {
   const [allRegisters, setAllRegisters] = useState<RegisterOption[]>([]);
   const [widgetTitle, setWidgetTitle] = useState("");
   const [selectedRows, setSelectedRows] = useState<SelectedRegister[]>([
@@ -74,6 +75,28 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (widgetToEdit && isOpen) {
+      setWidgetTitle(widgetToEdit.title);
+      setSelectedRows(widgetToEdit.registers.map((r: any) => {
+        const correspondingRegister = allRegisters.find(reg => reg.value === r.id);
+        return {
+          id: `row-${Math.random()}`,
+          selectedRegister: {
+            value: r.id,
+            label: correspondingRegister ? correspondingRegister.label : r.label,
+            analyzerId: r.analyzerId,
+            analyzerName: correspondingRegister ? correspondingRegister.analyzerName : 'Unknown',
+            address: r.address,
+            dataType: r.dataType,
+            bit: r.bit,
+          },
+          customLabel: r.label,
+        };
+      }));
+    }
+  }, [widgetToEdit, isOpen, allRegisters]);
+
   const handleAddRegisterRow = () => {
     setSelectedRows([...selectedRows, { id: `row-${Date.now()}`, customLabel: "" }]);
   };
@@ -112,10 +135,12 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
     onClose();
   };
 
+  const isEditMode = !!widgetToEdit;
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} showCloseButton={true} className="sm:max-w-2xl">
       <div className="p-8">
-        <h3 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">Add New Widget</h3>
+        <h3 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">{isEditMode ? "Edit Widget" : "Add New Widget"}</h3>
         
         <div className="space-y-6">
             <div>

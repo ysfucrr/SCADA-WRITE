@@ -2,6 +2,7 @@
 
 import { useWebSocket } from "@/context/WebSocketContext";
 import { useEffect, useState } from "react";
+import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 
 interface Register {
   id: string;
@@ -14,6 +15,8 @@ interface Register {
 interface RegisterWidgetProps {
   title: string;
   registers: Register[];
+  onEdit: () => void;
+  onDelete: () => void;
 }
 
 const RegisterValue: React.FC<{ register: Register }> = ({ register }) => {
@@ -55,10 +58,20 @@ const RegisterValue: React.FC<{ register: Register }> = ({ register }) => {
   );
 };
 
-export const RegisterWidget: React.FC<RegisterWidgetProps> = ({ title, registers }) => {
+export const RegisterWidget: React.FC<RegisterWidgetProps> = ({ title, registers, onEdit, onDelete }) => {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
-      <h4 className="text-md font-bold mb-2">{title}</h4>
+      <div className="flex justify-between items-start mb-2">
+        <h4 className="text-md font-bold">{title}</h4>
+        <div className="flex gap-2">
+          <button onClick={onEdit} className="text-gray-500 hover:text-gray-700 dark:hover:text-white">
+            <PencilSquareIcon className="h-5 w-5" />
+          </button>
+          <button onClick={onDelete} className="text-gray-500 hover:text-red-500 dark:hover:text-red-400">
+            <TrashIcon className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
       <div className="space-y-2">
         {registers.map((reg) => (
           <RegisterValue key={reg.id} register={reg} />
