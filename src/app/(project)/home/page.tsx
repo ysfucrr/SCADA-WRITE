@@ -387,9 +387,10 @@ export default function HomePage() {
     ? [parseFloat(systemInfo.system.memoryUsagePercent)]
     : [0];
 
-  const handleAddWidget = async (widgetTitle: string, selectedRegisters: any[]) => {
+  const handleAddWidget = async (widgetTitle: string, selectedRegisters: any[], widgetSize: { width: number, height: number }) => {
     const widgetData = {
       title: widgetTitle,
+      size: widgetSize,
       registers: selectedRegisters.map((r) => ({
         id: r.selectedRegister.value,
         label: r.customLabel || r.selectedRegister.label.split("(")[0].trim(),
@@ -397,6 +398,8 @@ export default function HomePage() {
         address: r.selectedRegister.address,
         dataType: r.selectedRegister.dataType,
         bit: r.selectedRegister.bit,
+        labelSize: { width: r.labelWidth, height: r.labelHeight },
+        valueSize: { width: r.valueWidth, height: r.valueHeight },
       })),
     };
 
@@ -520,6 +523,8 @@ export default function HomePage() {
                 key={widget._id}
                 title={widget.title}
                 registers={widget.registers}
+                size={widget.size}
+                id={widget._id}
                 onEdit={() => setWidgetToEdit(widget)}
                 onDelete={() => handleDeleteWidget(widget)}
               />

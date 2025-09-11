@@ -50,11 +50,15 @@ const DraggableLabel: React.FC<{
   containerSize: { width: number, height: number }; // For boundary check
 }> = ({ id, label, position, size = { width: 80, height: 28 }, onPositionChange, onSizeChange, siblingPositions, containerSize }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(position);
   const [currentSize, setCurrentSize] = useState(size);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [resizeStart, setResizeStart] = useState({ width: 0, height: 0, x: 0, y: 0 });
+
+  useEffect(() => {
+    if (size) {
+      setCurrentSize(size);
+    }
+  }, [size]);
   const [helperLines, setHelperLines] = useState<HelperLineState>({ vertical: undefined, horizontal: undefined });
 
   // Mouse olayları için işleyiciler
@@ -240,40 +244,6 @@ const DraggableLabel: React.FC<{
     e.preventDefault();
   };
   
-  // Resize handlers
-  const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setIsResizing(true);
-    setResizeStart({
-      width: currentSize.width,
-      height: currentSize.height,
-      x: e.clientX,
-      y: e.clientY
-    });
-  };
-  
-  const handleResizeMove = (e: MouseEvent) => {
-    if (!isResizing) return;
-    
-    const deltaWidth = e.clientX - resizeStart.x;
-    const deltaHeight = e.clientY - resizeStart.y;
-    
-    const newWidth = Math.max(40, resizeStart.width + deltaWidth);
-    const newHeight = Math.max(20, resizeStart.height + deltaHeight);
-    
-    setCurrentSize({ width: newWidth, height: newHeight });
-    e.preventDefault();
-  };
-  
-  const handleResizeEnd = () => {
-    if (!isResizing) return;
-    
-    setIsResizing(false);
-    if (onSizeChange) {
-      onSizeChange(id, currentSize, true);
-    }
-  };
   
   const handleMouseUp = () => {
     if (!isDragging) return;
@@ -350,20 +320,6 @@ const DraggableLabel: React.FC<{
     };
   }, [isDragging, dragStart]);
   
-  useEffect(() => {
-    if (isResizing) {
-      document.addEventListener('mousemove', handleResizeMove);
-      document.addEventListener('mouseup', handleResizeEnd);
-    } else {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    }
-    
-    return () => {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    };
-  }, [isResizing, resizeStart]);
 
   // Dynamic font size based on element size
   const fontSize = Math.max(0.8, Math.min(1.0, currentSize.width / 100)) + 'rem';
@@ -390,8 +346,8 @@ const DraggableLabel: React.FC<{
           width: `${currentSize.width}px`,
           height: `${currentSize.height}px`,
           transform: isDragging ? 'scale(1.02)' : 'scale(1)',
-          zIndex: isDragging || isResizing ? 10 : 1,
-          transition: (isDragging || isResizing) ? 'none' : 'transform 0.2s ease'
+          zIndex: isDragging ? 10 : 1,
+          transition: (isDragging) ? 'none' : 'transform 0.2s ease'
         }}
         className="bg-gray-100 dark:bg-gray-700 rounded-lg text-center cursor-move shadow-md border border-gray-200 dark:border-gray-600 flex items-center justify-center relative"
         onMouseDown={handleMouseDown}
@@ -401,11 +357,7 @@ const DraggableLabel: React.FC<{
           {label}
         </p>
         
-        {/* Resize handle */}
-        <div
-          className="absolute bottom-0 right-0 w-3 h-3 bg-blue-500 rounded-bl cursor-se-resize z-10"
-          onMouseDown={handleResizeStart}
-        />
+        {/* Resize handle removed */}
       </div>
     </>
   );
@@ -421,15 +373,19 @@ const RegisterValue: React.FC<{
 }> = ({ register, onPositionChange, onSizeChange, siblingPositions, containerSize }) => {
   const [value, setValue] = useState<any>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
   const [position, setPosition] = useState<{ x: number, y: number }>(register.valuePosition || { x: 0, y: 0 });
   const [size, setSize] = useState<{ width: number, height: number }>(register.valueSize || { width: 120, height: 80 });
   const elementRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (register.valueSize) {
+      setSize(register.valueSize);
+    }
+  }, [register.valueSize]);
   const { watchRegister, unwatchRegister } = useWebSocket();
   
-  // For drag and resize functionality
+  // For drag functionality
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [resizeStart, setResizeStart] = useState({ width: 0, height: 0, x: 0, y: 0 });
   const [helperLines, setHelperLines] = useState<HelperLineState>({ vertical: undefined, horizontal: undefined });
 
   useEffect(() => {
@@ -566,40 +522,6 @@ const RegisterValue: React.FC<{
     e.preventDefault();
   };
   
-  // Resize handlers
-  const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setIsResizing(true);
-    setResizeStart({
-      width: size.width,
-      height: size.height,
-      x: e.clientX,
-      y: e.clientY
-    });
-  };
-  
-  const handleResizeMove = (e: MouseEvent) => {
-    if (!isResizing) return;
-    
-    const deltaWidth = e.clientX - resizeStart.x;
-    const deltaHeight = e.clientY - resizeStart.y;
-    
-    const newWidth = Math.max(80, resizeStart.width + deltaWidth);
-    const newHeight = Math.max(40, resizeStart.height + deltaHeight);
-    
-    setSize({ width: newWidth, height: newHeight });
-    e.preventDefault();
-  };
-  
-  const handleResizeEnd = () => {
-    if (!isResizing) return;
-    
-    setIsResizing(false);
-    if (onSizeChange) {
-      onSizeChange(register.id, size, false);
-    }
-  };
   
   const handleMouseUp = () => {
     if (!isDragging) return;
@@ -680,20 +602,6 @@ const RegisterValue: React.FC<{
     };
   }, [isDragging, dragStart]);
   
-  useEffect(() => {
-    if (isResizing) {
-      document.addEventListener('mousemove', handleResizeMove);
-      document.addEventListener('mouseup', handleResizeEnd);
-    } else {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    }
-    
-    return () => {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    };
-  }, [isResizing, resizeStart]);
 
   // Dynamic font size based on element size
   const fontSize = Math.max(1.0, Math.min(2.0, size.width / 70)) + 'rem';
@@ -721,8 +629,8 @@ const RegisterValue: React.FC<{
           width: `${size.width}px`,
           height: `${size.height}px`,
           transform: isDragging ? 'scale(1.02)' : 'scale(1)',
-          zIndex: isDragging || isResizing ? 10 : 1,
-          transition: (isDragging || isResizing) ? 'none' : 'transform 0.2s ease'
+          zIndex: isDragging ? 10 : 1,
+          transition: isDragging ? 'none' : 'transform 0.2s ease'
         }}
         className="bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center cursor-move shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center relative"
         onMouseDown={handleMouseDown}
@@ -732,11 +640,7 @@ const RegisterValue: React.FC<{
           {value !== null ? value.toString() : <span className="text-xs text-gray-500">Loading...</span>}
         </p>
         
-        {/* Resize handle */}
-        <div
-          className="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 rounded-bl cursor-se-resize z-10"
-          onMouseDown={handleResizeStart}
-        />
+        {/* Resize handle removed */}
       </div>
     </>
   );
@@ -756,10 +660,12 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
   const [valueSizes, setValueSizes] = useState<Record<string, { width: number, height: number }>>({});
   const [labelSizes, setLabelSizes] = useState<Record<string, { width: number, height: number }>>({});
   const [widgetSize, setWidgetSize] = useState(size);
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeStart, setResizeStart] = useState({ width: 0, height: 0, x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   
+  useEffect(() => {
+    setWidgetSize(size);
+  }, [size]);
+
   // For saving widget data to DB
   useEffect(() => {
     if (!id) return;
@@ -796,53 +702,6 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
     return () => clearTimeout(timeoutId);
   }, [id, widgetSize, valuePositions, labelPositions, valueSizes, labelSizes]);
 
-  // Resize widget handlers
-  const handleWidgetResizeStart = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setIsResizing(true);
-    setResizeStart({
-      width: widgetSize.width,
-      height: widgetSize.height,
-      x: e.clientX,
-      y: e.clientY
-    });
-  };
-  
-  const handleWidgetResizeMove = (e: MouseEvent) => {
-    if (!isResizing) return;
-    
-    const deltaWidth = e.clientX - resizeStart.x;
-    const deltaHeight = e.clientY - resizeStart.y;
-    
-    const newWidth = Math.max(300, resizeStart.width + deltaWidth);
-    const newHeight = Math.max(200, resizeStart.height + deltaHeight);
-    
-    setWidgetSize({ width: newWidth, height: newHeight });
-    e.preventDefault();
-  };
-  
-  const handleWidgetResizeEnd = () => {
-    if (!isResizing) return;
-    
-    setIsResizing(false);
-  };
-  
-  // Add event listeners for widget resizing
-  useEffect(() => {
-    if (isResizing) {
-      document.addEventListener('mousemove', handleWidgetResizeMove);
-      document.addEventListener('mouseup', handleWidgetResizeEnd);
-    } else {
-      document.removeEventListener('mousemove', handleWidgetResizeMove);
-      document.removeEventListener('mouseup', handleWidgetResizeEnd);
-    }
-    
-    return () => {
-      document.removeEventListener('mousemove', handleWidgetResizeMove);
-      document.removeEventListener('mouseup', handleWidgetResizeEnd);
-    };
-  }, [isResizing, resizeStart]);
   
   useEffect(() => {
     // Initialize positions and sizes in a grid layout if not already set
@@ -889,6 +748,27 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
       setLabelSizes(newLabelSizes);
     }
   }, [registers, valuePositions, labelPositions]);
+
+  useEffect(() => {
+    const newLabelSizes: Record<string, { width: number, height: number }> = {};
+    const newValueSizes: Record<string, { width: number, height: number }> = {};
+
+    registers.forEach(reg => {
+        if (reg.labelSize) {
+            newLabelSizes[reg.id] = reg.labelSize;
+        }
+        if (reg.valueSize) {
+            newValueSizes[reg.id] = reg.valueSize;
+        }
+    });
+
+    if (Object.keys(newLabelSizes).length > 0) {
+        setLabelSizes(prev => ({ ...prev, ...newLabelSizes }));
+    }
+    if (Object.keys(newValueSizes).length > 0) {
+        setValueSizes(prev => ({ ...prev, ...newValueSizes }));
+    }
+  }, [registers]);
 
   const handlePositionChange = (id: string, position: { x: number, y: number }, isLabel: boolean) => {
     if (isLabel) {
@@ -984,11 +864,7 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
             ))}
         </div>
         
-        {/* Widget resize handle */}
-        <div
-          className="absolute bottom-0 right-0 w-6 h-6 bg-blue-500 rounded-tl cursor-se-resize z-10"
-          onMouseDown={handleWidgetResizeStart}
-        />
+        {/* Widget resize handle removed */}
     </div>
   );
 };

@@ -23,20 +23,32 @@ interface SelectedRegister {
   id: string; // Unique ID for the row
   selectedRegister?: RegisterOption;
   customLabel: string;
+  labelWidth?: number;
+  labelHeight?: number;
+  valueWidth?: number;
+  valueHeight?: number;
 }
 
 interface AddWidgetModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (widgetTitle: string, selectedRegisters: SelectedRegister[]) => void;
+  onConfirm: (widgetTitle: string, selectedRegisters: SelectedRegister[], widgetSize: { width: number, height: number }) => void;
   widgetToEdit?: any;
 }
 
 export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose, onConfirm, widgetToEdit }) => {
   const [allRegisters, setAllRegisters] = useState<RegisterOption[]>([]);
   const [widgetTitle, setWidgetTitle] = useState("");
+  const [widgetSize, setWidgetSize] = useState({ width: 600, height: 400 });
   const [selectedRows, setSelectedRows] = useState<SelectedRegister[]>([
-    { id: `row-${Date.now()}`, customLabel: "" },
+    {
+      id: `row-${Date.now()}`,
+      customLabel: "",
+      labelWidth: 80,
+      labelHeight: 28,
+      valueWidth: 120,
+      valueHeight: 80,
+    },
   ]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -71,13 +83,24 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
     } else {
         // Reset state on close
         setWidgetTitle("");
-        setSelectedRows([{ id: `row-${Date.now()}`, customLabel: "" }]);
+        setWidgetSize({ width: 600, height: 400 });
+        setSelectedRows([{
+          id: `row-${Date.now()}`,
+          customLabel: "",
+          labelWidth: 80,
+          labelHeight: 28,
+          valueWidth: 120,
+          valueHeight: 80,
+        }]);
     }
   }, [isOpen]);
 
   useEffect(() => {
     if (widgetToEdit && isOpen) {
       setWidgetTitle(widgetToEdit.title);
+      if(widgetToEdit.size) {
+        setWidgetSize(widgetToEdit.size);
+      }
       setSelectedRows(widgetToEdit.registers.map((r: any) => {
         const correspondingRegister = allRegisters.find(reg => reg.value === r.id);
         return {
@@ -92,13 +115,24 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
             bit: r.bit,
           },
           customLabel: r.label,
+          labelWidth: r.labelSize?.width || 80,
+          labelHeight: r.labelSize?.height || 28,
+          valueWidth: r.valueSize?.width || 120,
+          valueHeight: r.valueSize?.height || 80,
         };
       }));
     }
   }, [widgetToEdit, isOpen, allRegisters]);
 
   const handleAddRegisterRow = () => {
-    setSelectedRows([...selectedRows, { id: `row-${Date.now()}`, customLabel: "" }]);
+    setSelectedRows([...selectedRows, {
+      id: `row-${Date.now()}`,
+      customLabel: "",
+      labelWidth: 80,
+      labelHeight: 28,
+      valueWidth: 120,
+      valueHeight: 80,
+    }]);
   };
 
   const handleRemoveRegisterRow = (id: string) => {
@@ -121,6 +155,15 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
       );
   };
 
+  const handleSizeChange = (rowId: string, field: 'labelWidth' | 'labelHeight' | 'valueWidth' | 'valueHeight', value: string) => {
+    const numericValue = value === '' ? undefined : Number(value);
+    setSelectedRows(prevRows =>
+      prevRows.map(row =>
+        row.id === rowId ? { ...row, [field]: numericValue } : row
+      )
+    );
+  };
+
   const handleConfirm = () => {
     if (!widgetTitle) {
       showToast("Please enter a widget name.", "error");
@@ -131,7 +174,7 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
         showToast("Please select at least one register.", "error");
         return;
     }
-    onConfirm(widgetTitle, validRegisters);
+    onConfirm(widgetTitle, validRegisters, widgetSize);
     onClose();
   };
 
@@ -154,12 +197,36 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
                     className="mt-1"
                 />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                     <Label htmlFor="widgetWidth" className="text-sm font-medium text-gray-700 dark:text-gray-300">Widget Width (px)</Label>
+                     <Input
+                         id="widgetWidth"
+                         type="number"
+                         value={widgetSize.width}
+                         onChange={(e) => setWidgetSize(s => ({...s, width: Number(e.target.value)}))}
+                         placeholder="e.g., 600"
+                         className="mt-1"
+                     />
+                </div>
+                <div>
+                     <Label htmlFor="widgetHeight" className="text-sm font-medium text-gray-700 dark:text-gray-300">Widget Height (px)</Label>
+                     <Input
+                         id="widgetHeight"
+                         type="number"
+                         value={widgetSize.height}
+                         onChange={(e) => setWidgetSize(s => ({...s, height: Number(e.target.value)}))}
+                         placeholder="e.g., 400"
+                         className="mt-1"
+                     />
+                </div>
+            </div>
             
             <div>
                 <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Registers</Label>
                 <div className="mt-2 space-y-4">
                     {selectedRows.map((row) => (
-                         <div key={row.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                         <div key={row.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                                 <div>
                                     <Label className="text-xs text-gray-500">Register</Label>
@@ -186,6 +253,24 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
                                     <Button variant="outline" size="sm" onClick={() => handleRemoveRegisterRow(row.id)} className="h-10 w-10 p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
                                         <TrashIcon className="h-5 w-5"/>
                                     </Button>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div>
+                                    <Label className="text-xs text-gray-500">Label Width</Label>
+                                    <Input type="number" value={row.labelWidth} onChange={(e) => handleSizeChange(row.id, 'labelWidth', e.target.value)} className="mt-1" placeholder="80"/>
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-gray-500">Label Height</Label>
+                                    <Input type="number" value={row.labelHeight} onChange={(e) => handleSizeChange(row.id, 'labelHeight', e.target.value)} className="mt-1" placeholder="28"/>
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-gray-500">Value Width</Label>
+                                    <Input type="number" value={row.valueWidth} onChange={(e) => handleSizeChange(row.id, 'valueWidth', e.target.value)} className="mt-1" placeholder="120" />
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-gray-500">Value Height</Label>
+                                    <Input type="number" value={row.valueHeight} onChange={(e) => handleSizeChange(row.id, 'valueHeight', e.target.value)} className="mt-1" placeholder="80" />
                                 </div>
                             </div>
                         </div>
