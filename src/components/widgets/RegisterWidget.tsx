@@ -47,7 +47,8 @@ const DraggableLabel: React.FC<{
   onPositionChange: (id: string, position: { x: number, y: number }, isLabel: boolean) => void;
   onSizeChange?: (id: string, size: { width: number, height: number }, isLabel: boolean) => void;
   siblingPositions: Record<string, { x: number, y: number }>; // For snapping
-}> = ({ id, label, position, size = { width: 80, height: 28 }, onPositionChange, onSizeChange, siblingPositions }) => {
+  containerSize: { width: number, height: number }; // For boundary check
+}> = ({ id, label, position, size = { width: 80, height: 28 }, onPositionChange, onSizeChange, siblingPositions, containerSize }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(position);
@@ -77,6 +78,10 @@ const DraggableLabel: React.FC<{
       x: e.clientX - dragStart.x,
       y: e.clientY - dragStart.y
     };
+
+    // Boundary check
+    newPosition.x = Math.max(0, Math.min(newPosition.x, containerSize.width - currentSize.width));
+    newPosition.y = Math.max(0, Math.min(newPosition.y, containerSize.height - currentSize.height));
     
     // Check for snapping to other elements
     let snappedPosition = { ...newPosition };
@@ -412,7 +417,8 @@ const RegisterValue: React.FC<{
   onPositionChange: (id: string, position: { x: number, y: number }, isLabel: boolean) => void;
   onSizeChange?: (id: string, size: { width: number, height: number }, isLabel: boolean) => void;
   siblingPositions: Record<string, { x: number, y: number }>; // For snapping
-}> = ({ register, onPositionChange, onSizeChange, siblingPositions }) => {
+  containerSize: { width: number, height: number }; // For boundary check
+}> = ({ register, onPositionChange, onSizeChange, siblingPositions, containerSize }) => {
   const [value, setValue] = useState<any>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -476,6 +482,10 @@ const RegisterValue: React.FC<{
       y: e.clientY - dragStart.y
     };
     
+    // Boundary check
+    newPosition.x = Math.max(0, Math.min(newPosition.x, containerSize.width - size.width));
+    newPosition.y = Math.max(0, Math.min(newPosition.y, containerSize.height - size.height));
+
     // Check for snapping to other elements
     let snappedPosition = { ...newPosition };
     let newHelperLines: HelperLineState = { vertical: undefined, horizontal: undefined };
@@ -938,10 +948,12 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
       
         <div
           ref={containerRef}
-          className="relative w-full rounded-lg"
+          className="absolute rounded-lg border border-gray-300 dark:border-gray-600"
           style={{
-            height: `${widgetSize.height - 100}px`,
-            position: "relative",
+            top: '64px',
+            left: '24px',
+            right: '24px',
+            bottom: '40px',
             overflow: "hidden"
           }}
         >
@@ -955,6 +967,7 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
                   onPositionChange={handlePositionChange}
                   onSizeChange={handleSizeChange}
                   siblingPositions={allPositions}
+                  containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
                 />
                 <RegisterValue
                   register={{
@@ -965,6 +978,7 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
                   onPositionChange={handlePositionChange}
                   onSizeChange={handleSizeChange}
                   siblingPositions={allPositions}
+                  containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
                 />
               </React.Fragment>
             ))}
