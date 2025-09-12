@@ -58,6 +58,7 @@ export default function HomePage() {
   const [widgets, setWidgets] = useState<any[]>([]);
   const [widgetsLoading, setWidgetsLoading] = useState(true);
   const [editingWidget, setEditingWidget] = useState<any | null>(null);
+  const [widgetPositions, setWidgetPositions] = useState<Record<string, { x: number, y: number }>>({});
   
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -570,6 +571,40 @@ export default function HomePage() {
         );
       }, []);
 
+      // Widget pozisyonlarını güncelleme fonksiyonu
+      const handleWidgetPositionChange = useCallback(async (widgetId: string, newPosition: { x: number, y: number }) => {
+        // Widget pozisyonlarını yerel state'te güncelle
+        setWidgetPositions(prev => ({
+          ...prev,
+          [widgetId]: newPosition
+        }));
+        
+        // Widget'ları state'te güncelle
+        setWidgets(prevWidgets =>
+          prevWidgets.map(widget => {
+            if (widget._id === widgetId) {
+              return { ...widget, position: newPosition };
+            }
+            return widget;
+          })
+        );
+        
+        try {
+          // Widget pozisyonunu veritabanına kaydet
+          const response = await fetch(`/api/widgets/${widgetId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ position: newPosition }),
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to update widget position');
+          }
+        } catch (error) {
+          console.error("Error updating widget position:", error);
+        }
+      }, []);
+
       const handleUpdateWidgetDetails = async (newName: string, newSize: { width: number, height: number }) => {
         if (!editingWidget) return;
 
@@ -656,7 +691,7 @@ export default function HomePage() {
               Add Widget
             </Button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {widgetsLoading ? (
               <div className="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
                 <div className="flex items-center justify-center h-48">
@@ -676,12 +711,14 @@ export default function HomePage() {
                     registers={widget.registers}
                     size={widget.size}
                     id={widget._id}
+                    position={widget.position || { x: 0, y: 0 }}
                     onDelete={() => handleDeleteWidget(widget)}
                     onPositionsChange={handlePositionsChange}
                     onRegisterDelete={handleRegisterDelete}
                     onRegisterAdd={handleRegisterAdd}
                     onRegisterUpdate={handleRegisterUpdate}
                     onEdit={() => setEditingWidget(widget)}
+                    onWidgetPositionChange={handleWidgetPositionChange}
                   />
                 );
               })

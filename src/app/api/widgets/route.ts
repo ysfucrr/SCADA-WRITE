@@ -36,14 +36,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Widget başlığı zorunludur" }, { status: 400 });
     }
     
+    const { db } = await connectToDatabase();
+    
+    // Widget'ların dışına çıkamayacağı sınırları tanımla
+    const BOUNDARY = {
+      LEFT: 260, // Sol menü genişliği
+      TOP: 290,  // Üst alan yüksekliği (sekme alanı ve başlık)
+      RIGHT: 20, // Sağ kenardan boşluk
+      BOTTOM: 20 // Alt kenardan boşluk
+    };
+    
+    // Mevcut widget sayısını al ve buna göre yeni widget'ın pozisyonunu belirle
+    const widgetCount = await db.collection("widgets").countDocuments();
+    
+    // Güvenli grid sistemi - widget'ların güvenli bir şekilde yerleştirilmesi
+    // Varsayılan grid boyutu
+    const GRID_WIDTH = 650;  // İki widget arası yatay mesafe
+    const GRID_HEIGHT = 450; // İki widget arası dikey mesafe
+    
+    // Sınırlar içinde başlangıç pozisyonu
+    const defaultPosition = {
+      x: Math.max(BOUNDARY.LEFT, 200 + (widgetCount % 3) * GRID_WIDTH), // Sol sınırdan başla
+      y: Math.max(BOUNDARY.TOP, 200 + Math.floor(widgetCount / 3) * GRID_HEIGHT) // Üst sınırdan başla
+    };
+    
     // Varsayılan değerleri ekle
     const newWidget = {
       ...widget,
       createdAt: new Date(),
       registers: widget.registers || [], // registers yoksa boş array olarak başlat
+      position: widget.position || defaultPosition // kademeli artan pozisyon
     }
     
-    const { db } = await connectToDatabase();
     await db.collection("widgets").insertOne(newWidget);
     
     return NextResponse.json(newWidget, { status: 201 });

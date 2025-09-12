@@ -60,6 +60,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       updateFields.title = updateData.title;
     }
     
+    // Widget pozisyon güncellemesi varsa
+    if (updateData.position) {
+      updateFields.position = updateData.position;
+      console.log("Updating widget position:", updateData.position);
+    }
+    
     // Boş güncelleme olmasını engelle
     if (Object.keys(updateFields).length === 0) {
       return NextResponse.json({ message: "No valid fields to update" }, { status: 400 });

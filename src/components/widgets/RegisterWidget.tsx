@@ -1,7 +1,7 @@
 "use client";
 
 import { useWebSocket } from "@/context/WebSocketContext";
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { WidgetToolbar } from './WidgetToolbar';
 import { WidgetDnDProvider, useWidgetDnD } from '@/context/WidgetDnDContext';
@@ -42,12 +42,23 @@ interface RegisterWidgetProps {
   id?: string; // Widget ID
   size?: { width: number, height: number }; // Widget size
   position?: { x: number, y: number }; // Widget position
+  onWidgetPositionChange?: (widgetId: string, newPosition: { x: number, y: number }) => void;
 }
 
 // Constants for snapping
-const SNAP_THRESHOLD = 8;
-const SNAP_ATTRACTION = 2;
-const GRID_SIZE = 10;
+const SNAP_THRESHOLD = 10;
+const SNAP_ATTRACTION = 5;
+const GRID_SIZE = 20;
+const WIDGET_SNAP_THRESHOLD = 15; // Widget'lar arası snapping için eşik değeri - Daha düşük değer daha az yapışkan davranış sağlar
+const VERTICAL_SNAP_MULTIPLIER = 0.5; // Dikey snapping için çarpan - 1'den küçük değerler dikey snapping'i daha zayıf yapar
+
+// Sınır değerleri - widget'ların dışına çıkamayacağı alanı tanımlar
+const BOUNDARY = {
+  LEFT: 260, // Sol menü genişliği
+  TOP: 290,  // Üst alan yüksekliği (sekme alanı ve başlık)
+  RIGHT: 20, // Sağ kenardan boşluk
+  BOTTOM: 20 // Alt kenardan boşluk
+};
 
 // Resizable and draggable label component
 const DraggableLabel: React.FC<{
@@ -463,18 +474,399 @@ const RegisterValue: React.FC<{
   );
 };
 
-const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registers: Register[] }> = ({
-  title,
-  registers = [],
-  onDelete,
-  onPositionsChange,
-  onRegisterDelete,
-  onRegisterAdd,
-  onRegisterUpdate,
-  onEdit,
-  id,
-  size = { width: 600, height: 400 },
-}) => {
+const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registers: Register[] }> = (props) => {
+  const {
+    title,
+    registers = [],
+    onDelete,
+    onPositionsChange,
+    onRegisterDelete,
+    onRegisterAdd,
+    onRegisterUpdate,
+    onEdit,
+    id,
+    size = { width: 600, height: 400 },
+    onWidgetPositionChange
+  } = props;
+  
+  // Widget sürükleme state'leri
+  const [isDraggingWidget, setIsDraggingWidget] = useState(false);
+  const [widgetDragStart, setWidgetDragStart] = useState({ x: 0, y: 0 });
+  const [widgetPosition, setWidgetPosition] = useState(props.position || { x: 0, y: 0 });
+  const widgetPositionRef = useRef(widgetPosition);
+  
+  // Sayfa yüksekliğini ayarlama fonksiyonu
+  const adjustPageHeight = useCallback(() => {
+    // Tüm widget'ların konumlarını ve boyutlarını al
+    const allWidgets = document.querySelectorAll('.widget-container');
+    let maxBottomPosition = 0;
+    
+    // Eğer hiç widget yoksa, minimum viewport yüksekliğini kullan
+    if (allWidgets.length === 0) {
+      document.body.style.minHeight = `${window.innerHeight}px`;
+      return;
+    }
+    
+    // Tüm widget'ları kontrol et ve en alttakini bul
+    allWidgets.forEach((widget) => {
+      const rect = widget.getBoundingClientRect();
+      // Ekran scroll pozisyonunu da dikkate al
+      const bottomPosition = window.scrollY + rect.bottom + 100; // 100px ekstra boşluk
+      maxBottomPosition = Math.max(maxBottomPosition, bottomPosition);
+    });
+    
+    // Viewport yüksekliği
+    const viewportHeight = window.innerHeight;
+    
+    // Sayfanın yüksekliğini widget'ların en altının konumuna göre ayarla
+    // Ancak en az viewport yüksekliği kadar olsun
+    document.body.style.minHeight = `${Math.max(viewportHeight, maxBottomPosition)}px`;
+    
+    // Sayfa yüksekliği değiştiğinde konsola bilgi ver
+    console.log(`Sayfa yüksekliği ayarlandı: ${Math.max(viewportHeight, maxBottomPosition)}px`);
+  }, []);
+  
+  // Sayfa yüklendiğinde ilk yükseklik ayarını yap
+  useEffect(() => {
+    // Sayfa yüklendikten sonra çağır
+    setTimeout(adjustPageHeight, 500);
+    
+    // Pencere boyutu değiştiğinde de yüksekliği ayarla
+    window.addEventListener('resize', adjustPageHeight);
+    return () => {
+      window.removeEventListener('resize', adjustPageHeight);
+    };
+  }, [adjustPageHeight]);
+  
+  // Widget sürükleme yönetimi
+  const handleWidgetMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    setIsDraggingWidget(true);
+    setWidgetDragStart({
+      x: e.clientX - (props.position?.x || 0),
+      y: e.clientY - (props.position?.y || 0)
+    });
+  };
+  
+  const handleWidgetTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    const touch = e.touches[0];
+    setIsDraggingWidget(true);
+    setWidgetDragStart({
+      x: touch.clientX - (props.position?.x || 0),
+      y: touch.clientY - (props.position?.y || 0)
+    });
+  };
+  
+  // Widget grid çizgilerini göstermek için state
+  const [widgetHelperLines, setWidgetHelperLines] = useState<{
+    vertical: number | undefined,
+    horizontal: number | undefined
+  }>({ vertical: undefined, horizontal: undefined });
+  
+  // Diğer widget'ların pozisyonlarını alıp bu widget'ı snap etmek için kullanacağımız fonksiyon
+  const getOtherWidgetPositions = useCallback(() => {
+    // Widget'lar için kolayca erişilebilen bir prop yok
+    // Burada document.querySelectorAll kullanarak DOM'dan diğer widget'ları alabiliriz
+    const allWidgets = document.querySelectorAll('.widget-container');
+    type OtherWidget = {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    
+    const otherWidgets: Array<OtherWidget> = [];
+    
+    allWidgets.forEach((el) => {
+      const widgetId = el.getAttribute('data-widget-id');
+      if (widgetId && widgetId !== id) {
+        const rect = el.getBoundingClientRect();
+        otherWidgets.push({
+          id: widgetId,
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    });
+    
+    return otherWidgets;
+  }, [id]);
+
+  useEffect(() => {
+    const handleWidgetMouseMove = (e: MouseEvent) => {
+      if (!isDraggingWidget) return;
+      e.preventDefault();
+      
+      const newPosition = {
+        x: e.clientX - widgetDragStart.x,
+        y: e.clientY - widgetDragStart.y
+      };
+      
+      // Sınırları uygula - Widget'ın dışarı çıkmasını engelle
+      // Sol sınır (menü genişliği)
+      newPosition.x = Math.max(BOUNDARY.LEFT, newPosition.x);
+      
+      // Üst sınır (sekme alanı yüksekliği)
+      newPosition.y = Math.max(BOUNDARY.TOP, newPosition.y);
+      
+      // Sağ sınır (pencere genişliğini dikkate alarak)
+      const windowWidth = window.innerWidth - BOUNDARY.RIGHT;
+      
+      // Sadece sağ sınırı uygula, alt sınırı uygulama (aşağı kaydırma için)
+      newPosition.x = Math.min(newPosition.x, windowWidth - widgetSize.width);
+      
+      // Sayfa kaydırma - Fare imleci viewport'un alt kısmına yakınsa
+      const viewportHeight = window.innerHeight;
+      const mousePositionInViewport = e.clientY;
+      const scrollThreshold = 50; // Alt kenardan 50px içinde ise kaydır
+      
+      // Eğer fare imleci alt kenara yakınsa ve widget aşağı doğru sürükleniyorsa
+      if (mousePositionInViewport > viewportHeight - scrollThreshold &&
+          newPosition.y > widgetPosition.y) {
+        // Sayfayı aşağı kaydır
+        window.scrollBy(0, 10); // Her seferinde 10px kaydır
+        
+        // Widget'ın alt kenarını hesapla (ekran koordinatları + scroll)
+        const widgetBottom = newPosition.y + widgetSize.height + window.scrollY;
+        
+        // Sayfa aşağıya doğru büyüsün - gerekirse body min-height ayarla
+        const body = document.body;
+        
+        // Widget'ın alt kenarı + 100px boşluk bırak
+        const neededHeight = widgetBottom + 100;
+        
+        // Mevcut yükseklikten daha fazlaysa ayarla
+        if (neededHeight > body.offsetHeight) {
+          body.style.minHeight = neededHeight + 'px';
+        }
+      }
+      
+      // Grid'e snapping - 20px grid'e snap et
+      const gridSnappedX = Math.round(newPosition.x / GRID_SIZE) * GRID_SIZE;
+      const gridSnappedY = Math.round(newPosition.y / GRID_SIZE) * GRID_SIZE;
+      
+      let snappedPosition = { ...newPosition };
+      let newHelperLines: {vertical: number | undefined, horizontal: number | undefined} = { vertical: undefined, horizontal: undefined };
+      
+      // Grid snapping
+      if (Math.abs(gridSnappedX - newPosition.x) < SNAP_THRESHOLD) {
+        snappedPosition.x = gridSnappedX;
+        newHelperLines.vertical = gridSnappedX;
+      }
+      
+      if (Math.abs(gridSnappedY - newPosition.y) < SNAP_THRESHOLD) {
+        snappedPosition.y = gridSnappedY;
+        newHelperLines.horizontal = gridSnappedY;
+      }
+      
+      // Diğer widget'lara snapping
+      const otherWidgets = getOtherWidgetPositions();
+      
+      // Fare tuşlarının durumunu kontrol et - Shift tuşu basılıysa snapping'i geçici olarak devre dışı bırak
+      const isShiftKeyPressed = e.shiftKey;
+      
+      if (!isShiftKeyPressed) {
+        // Hareket yönünü belirle
+        const isMovingDown = newPosition.y > widgetPosition.y;
+        const isMovingUp = newPosition.y < widgetPosition.y;
+        
+        // Diğer widget'lar için snapping kontrolleri
+        otherWidgets.forEach((otherWidget: {id: string; x: number; y: number; width: number; height: number}) => {
+          // Yatay snapping - normal eşik değeri kullan
+          
+          // Sol kenar hizalama
+          if (Math.abs(otherWidget.x - snappedPosition.x) < WIDGET_SNAP_THRESHOLD) {
+            snappedPosition.x = otherWidget.x;
+            newHelperLines.vertical = otherWidget.x;
+          }
+          
+          // Sağ kenar hizalama - bu widget'ın sağ kenarı ile diğer widget'ın sol kenarı
+          const currentWidgetRight = snappedPosition.x + widgetSize.width;
+          if (Math.abs(currentWidgetRight - otherWidget.x) < WIDGET_SNAP_THRESHOLD) {
+            snappedPosition.x = otherWidget.x - widgetSize.width;
+            newHelperLines.vertical = otherWidget.x;
+          }
+          
+          // Dikey snapping için daha düşük eşik değeri kullan
+          const verticalThreshold = WIDGET_SNAP_THRESHOLD * VERTICAL_SNAP_MULTIPLIER;
+          
+          // Aşağı doğru sürükleme sırasında dikey snapping'i azalt
+          if (isMovingDown) {
+            // Aşağı doğru sürüklerken üst kenar hizalama için daha yüksek eşik (daha zor yapışır)
+            if (Math.abs(otherWidget.y - snappedPosition.y) < verticalThreshold) {
+              snappedPosition.y = otherWidget.y;
+              newHelperLines.horizontal = otherWidget.y;
+            }
+          } else {
+            // Normal sürükleme için standart snapping
+            if (Math.abs(otherWidget.y - snappedPosition.y) < WIDGET_SNAP_THRESHOLD) {
+              snappedPosition.y = otherWidget.y;
+              newHelperLines.horizontal = otherWidget.y;
+            }
+          }
+          
+          // Alt kenar hizalama - bu widget'ın alt kenarı ile diğer widget'ın üst kenarı
+          const currentWidgetBottom = snappedPosition.y + widgetSize.height;
+          
+          // Aşağı doğru sürükleme sırasında alt kenar hizalamayı azalt
+          if (isMovingDown) {
+            if (Math.abs(currentWidgetBottom - otherWidget.y) < verticalThreshold) {
+              snappedPosition.y = otherWidget.y - widgetSize.height;
+              newHelperLines.horizontal = otherWidget.y;
+            }
+          } else {
+            if (Math.abs(currentWidgetBottom - otherWidget.y) < WIDGET_SNAP_THRESHOLD) {
+              snappedPosition.y = otherWidget.y - widgetSize.height;
+              newHelperLines.horizontal = otherWidget.y;
+            }
+          }
+        });
+      }
+      
+      // Güncellenen pozisyonları ve yardımcı çizgileri ayarla
+      setWidgetHelperLines(newHelperLines);
+      setWidgetPosition(snappedPosition);
+      widgetPositionRef.current = snappedPosition;
+    };
+    
+    const handleWidgetTouchMove = (e: TouchEvent) => {
+      if (!isDraggingWidget || !e.touches[0]) return;
+      e.preventDefault();
+      
+      const touch = e.touches[0];
+      const newPosition = {
+        x: touch.clientX - widgetDragStart.x,
+        y: touch.clientY - widgetDragStart.y
+      };
+      
+      // Sınırları uygula - Widget'ın dışarı çıkmasını engelle
+      // Sol sınır (menü genişliği)
+      newPosition.x = Math.max(BOUNDARY.LEFT, newPosition.x);
+      
+      // Üst sınır (sekme alanı yüksekliği)
+      newPosition.y = Math.max(BOUNDARY.TOP, newPosition.y);
+      
+      // Sağ sınır (pencere genişliğini dikkate alarak)
+      const windowWidth = window.innerWidth - BOUNDARY.RIGHT;
+      
+      // Sadece sağ sınırı uygula, alt sınırı uygulamıyoruz (aşağı kaydırma için)
+      newPosition.x = Math.min(newPosition.x, windowWidth - widgetSize.width);
+      
+      // Dokunmatik olaylar için sayfa kaydırma
+      // Dokunulan nokta ekranın alt kısmına yakınsa
+      const viewportHeight = window.innerHeight;
+      const touchPositionInViewport = touch.clientY;
+      const scrollThreshold = 50; // Alt kenardan 50px içinde ise kaydır
+      
+      if (touchPositionInViewport > viewportHeight - scrollThreshold &&
+          newPosition.y > widgetPosition.y) {
+        // Sayfayı aşağı kaydır
+        window.scrollBy(0, 5); // Mobile için daha yumuşak kaydırma
+        
+        // Widget'ın alt kenarını hesapla (ekran koordinatları + scroll)
+        const widgetBottom = newPosition.y + widgetSize.height + window.scrollY;
+        
+        // Sayfa yüksekliğini artır
+        const body = document.body;
+        
+        // Widget'ın alt kenarı + 100px boşluk bırak
+        const neededHeight = widgetBottom + 100;
+        
+        // Mevcut yükseklikten daha fazlaysa ayarla
+        if (neededHeight > body.offsetHeight) {
+          body.style.minHeight = neededHeight + 'px';
+        }
+      }
+      
+      // Grid'e snapping - 20px grid'e snap et
+      const gridSnappedX = Math.round(newPosition.x / GRID_SIZE) * GRID_SIZE;
+      const gridSnappedY = Math.round(newPosition.y / GRID_SIZE) * GRID_SIZE;
+      
+      let snappedPosition = { ...newPosition };
+      let newHelperLines: {vertical: number | undefined, horizontal: number | undefined} = { vertical: undefined, horizontal: undefined };
+      
+      // Dokunmatik olay için hareket yönünü belirle
+      const isMovingDown = newPosition.y > widgetPosition.y;
+      const isMovingUp = newPosition.y < widgetPosition.y;
+      
+      // Grid snapping - yatay için normal
+      if (Math.abs(gridSnappedX - newPosition.x) < SNAP_THRESHOLD) {
+        snappedPosition.x = gridSnappedX;
+        newHelperLines.vertical = gridSnappedX;
+      }
+      
+      // Grid snapping - dikey için hareket yönüne göre ayarla
+      const verticalGridThreshold = isMovingDown ?
+        SNAP_THRESHOLD * VERTICAL_SNAP_MULTIPLIER : // Aşağı hareket ediyorsa daha az yapışkan
+        SNAP_THRESHOLD; // Diğer durumlarda normal yapışkanlık
+        
+      if (Math.abs(gridSnappedY - newPosition.y) < verticalGridThreshold) {
+        snappedPosition.y = gridSnappedY;
+        newHelperLines.horizontal = gridSnappedY;
+      }
+      
+      // Diğer widget'lara snapping benzer şekilde uygulanabilir (mobile için)
+      
+      // Güncellenen pozisyonları ve yardımcı çizgileri ayarla
+      setWidgetHelperLines(newHelperLines);
+      setWidgetPosition(snappedPosition);
+      widgetPositionRef.current = snappedPosition;
+    };
+    
+    const handleWidgetMouseUp = () => {
+      if (!isDraggingWidget) return;
+      setIsDraggingWidget(false);
+      
+      // Yardımcı çizgileri temizle
+      setWidgetHelperLines({ vertical: undefined, horizontal: undefined });
+      
+      // Widget pozisyonunu veritabanına kaydet
+      if (onWidgetPositionChange && id) {
+        onWidgetPositionChange(id, widgetPositionRef.current);
+      }
+      
+      // Widget pozisyonu değiştiğinde sayfa yüksekliğini ayarla
+      // setTimeout ile geciktirerek DOM güncellemelerinin tamamlanmasını bekle
+      setTimeout(adjustPageHeight, 50);
+    };
+    
+    const handleWidgetTouchEnd = () => {
+      if (!isDraggingWidget) return;
+      setIsDraggingWidget(false);
+      
+      // Widget pozisyonunu veritabanına kaydet
+      if (onWidgetPositionChange && id) {
+        onWidgetPositionChange(id, widgetPositionRef.current);
+      }
+      
+      // Widget pozisyonu değiştiğinde sayfa yüksekliğini ayarla
+      setTimeout(adjustPageHeight, 50);
+    };
+    
+    if (isDraggingWidget) {
+      document.addEventListener('mousemove', handleWidgetMouseMove);
+      document.addEventListener('mouseup', handleWidgetMouseUp);
+      document.addEventListener('touchmove', handleWidgetTouchMove as EventListener);
+      document.addEventListener('touchend', handleWidgetTouchEnd);
+    } else {
+      document.removeEventListener('mousemove', handleWidgetMouseMove);
+      document.removeEventListener('mouseup', handleWidgetMouseUp);
+      document.removeEventListener('touchmove', handleWidgetTouchMove as EventListener);
+      document.removeEventListener('touchend', handleWidgetTouchEnd);
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleWidgetMouseMove);
+      document.removeEventListener('mouseup', handleWidgetMouseUp);
+      document.removeEventListener('touchmove', handleWidgetTouchMove as EventListener);
+      document.removeEventListener('touchend', handleWidgetTouchEnd);
+    };
+  }, [isDraggingWidget, widgetDragStart, id, onWidgetPositionChange]);
   const [valuePositions, setValuePositions] = useState<Record<string, { x: number, y: number }>>({});
   const [labelPositions, setLabelPositions] = useState<Record<string, { x: number, y: number }>>({});
   const [valueSizes, setValueSizes] = useState<Record<string, { width: number, height: number }>>({});
@@ -908,10 +1300,31 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   const allPositions = useMemo(() => ({ ...valuePositions, ...labelPositions }), [valuePositions, labelPositions]);
 
   return (
-      <div
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 relative group border border-transparent hover:border-blue-500 transition-all duration-300"
-        style={{ width: `${widgetSize.width}px`, height: `${widgetSize.height}px`, position: 'relative' }}
-      >
+      <>
+        {/* Yardımcı çizgiler */}
+        {widgetHelperLines.vertical !== undefined &&
+          <div className="absolute top-0 h-full w-[1px] bg-blue-500 pointer-events-none z-50"
+               style={{ left: `${widgetHelperLines.vertical}px` }} />
+        }
+        {widgetHelperLines.horizontal !== undefined &&
+          <div className="absolute left-0 w-full h-[1px] bg-blue-500 pointer-events-none z-50"
+               style={{ top: `${widgetHelperLines.horizontal}px` }} />
+        }
+        
+        <div
+          data-widget-id={id}
+          className="widget-container bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 relative group border border-transparent hover:border-blue-500 transition-all duration-300"
+          style={{
+            width: `${widgetSize.width}px`,
+            height: `${widgetSize.height}px`,
+            position: 'absolute',
+            left: widgetPosition.x,
+            top: widgetPosition.y,
+            zIndex: isDraggingWidget ? 100 : 1,
+            transition: isDraggingWidget ? 'none' : 'box-shadow 0.2s ease',
+            boxShadow: isDraggingWidget ? '0 10px 25px rgba(0, 0, 0, 0.15)' : ''
+          }}
+        >
         <AddRegisterToWidgetModal
             isOpen={isAddRegisterModalOpen}
             onClose={() => setIsAddRegisterModalOpen(false)}
@@ -946,7 +1359,22 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
               </button>
           </div>
         
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 text-center tracking-wider">{title}</h3>
+          <h3
+            className="text-xl font-bold text-gray-900 dark:text-white mb-4 text-center tracking-wider select-none"
+            style={{
+              cursor: isDraggingWidget ? 'grabbing' : 'grab',
+              padding: '8px 12px',
+              marginTop: '-8px',
+              marginLeft: '-12px',
+              marginRight: '-12px',
+              borderTopLeftRadius: '0.75rem',
+              borderTopRightRadius: '0.75rem',
+              backgroundColor: 'rgba(0, 0, 0, 0.03)',
+              borderBottom: '1px solid rgba(0, 0, 0, 0.05)'
+            }}
+            onMouseDown={handleWidgetMouseDown}
+            onTouchStart={handleWidgetTouchStart}
+          >{title}</h3>
         
           <div
             ref={containerRef}
@@ -1017,7 +1445,8 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
               })}
           </div>
           <WidgetToolbar />
-      </div>
+        </div>
+      </>
   );
 };
 
