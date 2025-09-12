@@ -6,6 +6,8 @@ import Button from "@/components/ui/button/Button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { showToast } from "../ui/alert";
+import { Typography } from '@/components/ui/typography';
+import Slider from "@/components/ui/slider";
 
 interface EditLabelModalProps {
   isOpen: boolean;
@@ -105,88 +107,70 @@ export const EditLabelModal: React.FC<EditLabelModalProps> = ({ isOpen, onClose,
                 </div>
             </div>
             
-            <div className="space-y-4 mt-4">
-                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Appearance Settings</h4>
-                
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <Label htmlFor="fontFamily" className="text-sm font-medium text-gray-700 dark:text-gray-300">Font Family</Label>
-                        <select
-                            id="fontFamily"
-                            value={fontFamily}
-                            onChange={(e) => setFontFamily(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        >
-                            <option value="Arial">Arial</option>
-                            <option value="Helvetica">Helvetica</option>
-                            <option value="Times New Roman">Times New Roman</option>
-                            <option value="Courier New">Courier New</option>
-                            <option value="Verdana">Verdana</option>
-                            <option value="Georgia">Georgia</option>
-                            <option value="Palatino">Palatino</option>
-                            <option value="Garamond">Garamond</option>
-                            <option value="Bookman">Bookman</option>
-                            <option value="Comic Sans MS">Comic Sans MS</option>
-                            <option value="Trebuchet MS">Trebuchet MS</option>
-                            <option value="Arial Black">Arial Black</option>
-                            <option value="Impact">Impact</option>
-                            <option value="Tahoma">Tahoma</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <Label htmlFor="opacity" className="text-sm font-medium text-gray-700 dark:text-gray-300">Opacity (%)</Label>
-                        <Input
-                            id="opacity"
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={opacity}
-                            onChange={(e) => setOpacity(Number(e.target.value))}
-                            className="mt-1"
-                        />
-                    </div>
+            {/* Appearance Settings */}
+            <div className="mt-6">
+              <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+                Appearance Settings
+              </Typography>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="fontFamily">Font Family</Label>
+                  <select
+                    id="fontFamily"
+                    value={fontFamily}
+                    onChange={(e) => setFontFamily(e.target.value)}
+                    className="text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-white dark:[&>option]:bg-slate-800 dark:[&>option]:text-white"
+                    style={{ colorScheme: 'auto' }}
+                  >
+                    <option value="Arial, sans-serif" style={{ fontFamily: 'Arial, sans-serif' }}>Arial</option>
+                    <option value="Verdana, sans-serif" style={{ fontFamily: 'Verdana, sans-serif' }}>Verdana</option>
+                    <option value="Helvetica, sans-serif" style={{ fontFamily: 'Helvetica, sans-serif' }}>Helvetica</option>
+                    <option value="Times New Roman, serif" style={{ fontFamily: 'Times New Roman, serif' }}>Times New Roman</option>
+                    <option value="Georgia, serif" style={{ fontFamily: 'Georgia, serif' }}>Georgia</option>
+                    <option value="Courier New, monospace" style={{ fontFamily: 'Courier New, monospace' }}>Courier New</option>
+                    <option value="Trebuchet MS, sans-serif" style={{ fontFamily: 'Trebuchet MS, sans-serif' }}>Trebuchet MS</option>
+                    <option value="Impact, sans-serif" style={{ fontFamily: 'Impact, sans-serif' }}>Impact</option>
+                    <option value="Seven Segment" style={{ fontFamily: 'Seven Segment' }}>Seven Segment</option>
+                  </select>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-4 mt-2">
-                    <div>
-                        <Label htmlFor="fontColor" className="text-sm font-medium text-gray-700 dark:text-gray-300">Font Color</Label>
-                        <div className="flex mt-1">
-                            <Input
-                                id="fontColor"
-                                type="color"
-                                value={fontColor}
-                                onChange={(e) => setFontColor(e.target.value)}
-                                className="w-12 h-9 p-1 mr-2"
-                            />
-                            <Input
-                                type="text"
-                                value={fontColor}
-                                onChange={(e) => setFontColor(e.target.value)}
-                                className="flex-1"
-                            />
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <Label htmlFor="backgroundColor" className="text-sm font-medium text-gray-700 dark:text-gray-300">Background Color</Label>
-                        <div className="flex mt-1">
-                            <Input
-                                id="backgroundColor"
-                                type="color"
-                                value={backgroundColor}
-                                onChange={(e) => setBackgroundColor(e.target.value)}
-                                className="w-12 h-9 p-1 mr-2"
-                            />
-                            <Input
-                                type="text"
-                                value={backgroundColor}
-                                onChange={(e) => setBackgroundColor(e.target.value)}
-                                className="flex-1"
-                            />
-                        </div>
-                    </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="textColor">Text Color</Label>
+                  <Input
+                    id="textColor"
+                    type="color"
+                    value={fontColor}
+                    onChange={(e) => setFontColor(e.target.value)}
+                    className="w-full h-10 p-1"
+                  />
                 </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="backgroundColor">Background Color</Label>
+                  <Input
+                    id="backgroundColor"
+                    type="color"
+                    value={backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    className="w-full h-10 p-1"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="opacity">Background Opacity</Label>
+                  <div className="flex items-center gap-2">
+                    <Slider
+                      id="opacity"
+                      min={0}
+                      max={100}
+                      value={opacity}
+                      onChange={setOpacity}
+                      className="flex-1"
+                    />
+                    <span className="w-16 text-center text-black dark:text-white">{opacity}%</span>
+                  </div>
+                </div>
+              </div>
             </div>
         </div>
 
