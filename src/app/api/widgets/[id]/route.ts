@@ -42,7 +42,17 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     
     // Registers dizisi güncellemesi varsa
     if (updateData.registers && Array.isArray(updateData.registers)) {
-      updateFields.registers = updateData.registers;
+      // Label ile ilgili alanları normal register'lardan temizle
+      const cleanedRegisters = updateData.registers.map((reg: any) => {
+        if (reg.dataType !== "label") {
+          const cleanedReg = { ...reg };
+          delete cleanedReg.labelPosition;
+          delete cleanedReg.labelSize;
+          return cleanedReg;
+        }
+        return reg;
+      });
+      updateFields.registers = cleanedRegisters;
     }
     
     // Başlık güncellemesi varsa

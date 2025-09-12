@@ -585,9 +585,6 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
       const newRegisterWithPosition = {
         ...newRegisterData,
         valuePosition: dropPosition,
-        labelPosition: { x: -1000, y: -1000 }, // Position label off-screen so it's not visible
-        valueSize: { width: 120, height: 80 }, // Açıkça varsayılan değerleri belirtiyoruz
-        labelSize: { width: 80, height: 28 }   // Açıkça varsayılan değerleri belirtiyoruz
       };
       onRegisterAdd(id, newRegisterWithPosition);
     }
@@ -634,13 +631,18 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
     const saveTimer = setTimeout(async () => {
       try {
         // Güncel register verilerini widget içinde sakla
-        const updatedRegisters = registers.map(reg => ({
-          ...reg,
-          valuePosition: valuePositions[reg.id] || reg.valuePosition,
-          labelPosition: labelPositions[reg.id] || reg.labelPosition,
-          valueSize: valueSizes[reg.id] || reg.valueSize,
-          labelSize: labelSizes[reg.id] || reg.labelSize
-        }));
+        const updatedRegisters = registers.map(reg => {
+          const updatedReg = {
+            ...reg,
+            valuePosition: valuePositions[reg.id] || reg.valuePosition,
+            valueSize: valueSizes[reg.id] || reg.valueSize,
+          };
+          if (reg.dataType === "label") {
+            updatedReg.labelPosition = labelPositions[reg.id] || reg.labelPosition;
+            updatedReg.labelSize = labelSizes[reg.id] || reg.labelSize;
+          }
+          return updatedReg;
+        });
         
         await fetch(`/api/widgets/${id}`, {
           method: 'PUT',
@@ -667,10 +669,10 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
     const newValueSizes: Record<string, { width: number, height: number }> = {};
 
     registers.forEach(reg => {
-      newValuePositions[reg.id] = reg.valuePosition || { x: 0, y: 0 };
-      newLabelPositions[reg.id] = reg.labelPosition || { x: 0, y: 0 };
-      newLabelSizes[reg.id] = reg.labelSize || { width: 80, height: 28 };
-      newValueSizes[reg.id] = reg.valueSize || { width: 120, height: 80 };
+      newValuePositions[reg.id] = valuePositions[reg.id] || reg.valuePosition || { x: 0, y: 0 };
+      newLabelPositions[reg.id] = labelPositions[reg.id] || reg.labelPosition || { x: 0, y: 0 };
+      newLabelSizes[reg.id] = labelSizes[reg.id] || (reg.dataType === "label" ? (reg.labelSize || { width: 80, height: 28 }) : null);
+      newValueSizes[reg.id] = valueSizes[reg.id] || reg.valueSize || { width: 120, height: 80 };
     });
 
     setValuePositions(newValuePositions);
@@ -708,7 +710,9 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
         
         // Sadece pozisyon bilgisini güncelle, diğer bilgileri koru
         if (isLabel) {
-          updatedRegister.labelPosition = position;
+          if (updatedRegister.dataType === "label") {
+            updatedRegister.labelPosition = position;
+          }
         } else {
           updatedRegister.valuePosition = position;
         }
@@ -716,7 +720,6 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
         // Boyut bilgilerini açıkça belirt (state'ten al)
         // Eğer state'te boyut bilgisi varsa, onu kullan
         const currentValueSize = valueSizes[registerId];
-        const currentLabelSize = labelSizes[registerId];
         
         if (currentValueSize) {
           updatedRegister.valueSize = { ...currentValueSize };
@@ -728,14 +731,20 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
           updatedRegister.valueSize = { width: 120, height: 80 };
         }
         
-        if (currentLabelSize) {
-          updatedRegister.labelSize = { ...currentLabelSize };
-        } else if (updatedRegister.labelSize) {
-          // State'te değer yoksa ama register'da varsa onu koru
-          updatedRegister.labelSize = { ...updatedRegister.labelSize };
+        // Label için sadece dataType "label" ise labelSize ayarla
+        if (updatedRegister.dataType === "label") {
+          const currentLabelSize = labelSizes[registerId];
+          if (currentLabelSize) {
+            updatedRegister.labelSize = { ...currentLabelSize };
+          } else if (updatedRegister.labelSize) {
+            updatedRegister.labelSize = { ...updatedRegister.labelSize };
+          } else {
+            updatedRegister.labelSize = { width: 80, height: 28 };
+          }
         } else {
-          // Hiçbir değer yoksa varsayılan değerleri kullan
-          updatedRegister.labelSize = { width: 80, height: 28 };
+          // Normal register için label alanlarını temizle
+          delete updatedRegister.labelPosition;
+          delete updatedRegister.labelSize;
         }
         
         // Güncellenmiş register'ı diziye yerleştir
@@ -786,14 +795,21 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
         
         // Sadece boyut bilgisini güncelle, diğer bilgileri koru
         if (isLabel) {
-          updatedRegister.labelSize = size;
+          if (updatedRegister.dataType === "label") {
+            updatedRegister.labelSize = size;
+          }
         } else {
           updatedRegister.valueSize = size;
         }
         
         // Pozisyon bilgilerini açıkça belirt (state'ten al)
         updatedRegister.valuePosition = valuePositions[elementId] || updatedRegister.valuePosition;
-        updatedRegister.labelPosition = labelPositions[elementId] || updatedRegister.labelPosition;
+        if (updatedRegister.dataType === "label") {
+          updatedRegister.labelPosition = labelPositions[elementId] || updatedRegister.labelPosition;
+        } else {
+          delete updatedRegister.labelPosition;
+          delete updatedRegister.labelSize;
+        }
         
         // Güncellenmiş register'ı diziye yerleştir
         currentRegisters[registerIndex] = updatedRegister;
@@ -859,49 +875,57 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
             onDrop={handleDrop}
           >
               {registers.filter(reg => reg && reg.id).map((reg) => {
-                if (!reg || !reg.id || !labelPositions[reg.id] || !valuePositions[reg.id]) return null;
+                if (!reg || !reg.id) return null;
                 
                 const registerKey = `register-${reg.id}`;
+                const hasValue = valuePositions[reg.id];
+                const hasLabel = reg.dataType === "label" && labelPositions[reg.id];
+                
+                if (!hasValue && !hasLabel) return null;
                 
                 return (
                   <React.Fragment key={registerKey}>
-                    <DraggableLabel
-                     key={`label-${reg.id}`}
-                     id={reg.id}
-                     label={reg.label || ''}
-                     position={labelPositions[reg.id]}
-                     size={labelSizes[reg.id]}
-                     onPositionChange={handlePositionChange}
-                     onSizeChange={handleSizeChange}
-                     siblingPositions={allPositions}
-                     containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
-                     isActive={activeElementId === `label-${reg.id}`}
-                     onSetActive={() => {
-                       setActiveElementId(`label-${reg.id}`);
-                     }}
-                     onDeleteClick={() => {
-                         if (id) onRegisterDelete(id, reg.id);
-                         setActiveElementId(null);
-                     }}
-                     onEditClick={handleEditRegister}
-                    />
-                    <RegisterValue
-                      key={`value-${reg.id}`}
-                      register={{ ...reg, valuePosition: valuePositions[reg.id], valueSize: valueSizes[reg.id] }}
-                      onPositionChange={handlePositionChange}
-                      onSizeChange={handleSizeChange}
-                      siblingPositions={allPositions}
-                      containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
-                      isActive={activeElementId === `value-${reg.id}`}
-                      onSetActive={() => {
-                        setActiveElementId(`value-${reg.id}`);
-                      }}
-                      onDeleteClick={() => {
-                          if (id) onRegisterDelete(id, reg.id);
-                          setActiveElementId(null);
-                      }}
-                      onEditClick={handleEditRegister}
-                    />
+                    {hasLabel && (
+                      <DraggableLabel
+                        key={`label-${reg.id}`}
+                        id={reg.id}
+                        label={reg.label || ''}
+                        position={labelPositions[reg.id]}
+                        size={labelSizes[reg.id]}
+                        onPositionChange={handlePositionChange}
+                        onSizeChange={handleSizeChange}
+                        siblingPositions={allPositions}
+                        containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
+                        isActive={activeElementId === `label-${reg.id}`}
+                        onSetActive={() => {
+                          setActiveElementId(`label-${reg.id}`);
+                        }}
+                        onDeleteClick={() => {
+                            if (id) onRegisterDelete(id, reg.id);
+                            setActiveElementId(null);
+                        }}
+                        onEditClick={handleEditRegister}
+                      />
+                    )}
+                    {hasValue && (
+                      <RegisterValue
+                        key={`value-${reg.id}`}
+                        register={{ ...reg, valuePosition: valuePositions[reg.id], valueSize: valueSizes[reg.id] }}
+                        onPositionChange={handlePositionChange}
+                        onSizeChange={handleSizeChange}
+                        siblingPositions={allPositions}
+                        containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
+                        isActive={activeElementId === `value-${reg.id}`}
+                        onSetActive={() => {
+                          setActiveElementId(`value-${reg.id}`);
+                        }}
+                        onDeleteClick={() => {
+                            if (id) onRegisterDelete(id, reg.id);
+                            setActiveElementId(null);
+                        }}
+                        onEditClick={handleEditRegister}
+                      />
+                    )}
                   </React.Fragment>
                 );
               })}

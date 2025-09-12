@@ -26,7 +26,6 @@ interface AddRegisterToWidgetModalProps {
 export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> = ({ isOpen, onClose, onConfirm }) => {
   const [allRegisters, setAllRegisters] = useState<RegisterOption[]>([]);
   const [selectedRegister, setSelectedRegister] = useState<RegisterOption | null>(null);
-  const [labelSize, setLabelSize] = useState({ width: 80, height: 28 });
   const [valueSize, setValueSize] = useState({ width: 120, height: 80 });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -57,7 +56,6 @@ export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> =
       fetchRegisters();
     } else {
       setSelectedRegister(null);
-      setLabelSize({ width: 80, height: 28 });
       setValueSize({ width: 120, height: 80 });
     }
   }, [isOpen]);
@@ -75,7 +73,6 @@ export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> =
         address: selectedRegister.address,
         dataType: selectedRegister.dataType,
         bit: selectedRegister.bit,
-        labelSize,
         valueSize,
     };
 
@@ -99,16 +96,6 @@ export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> =
               className="mt-1 text-black"
               classNamePrefix="select"
             />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-sm">Label Width</Label>
-              <Input type="number" value={labelSize.width} onChange={(e) => setLabelSize(s => ({...s, width: Number(e.target.value)}))} className="mt-1" />
-            </div>
-             <div>
-              <Label className="text-sm">Label Height</Label>
-              <Input type="number" value={labelSize.height} onChange={(e) => setLabelSize(s => ({...s, height: Number(e.target.value)}))} className="mt-1" />
-            </div>
           </div>
            <div className="grid grid-cols-2 gap-4">
             <div>
