@@ -719,7 +719,7 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
     
     const saveWidgetData = async () => {
       try {
-        const response = await fetch(`/api/widgets/${id}`, {
+        await fetch(`/api/widgets/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -732,21 +732,13 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
             labelSizes
           }),
         });
-        
-        if (!response.ok) {
-          console.error('Failed to save widget data');
-        }
       } catch (error) {
         console.error('Error saving widget data:', error);
       }
     };
     
-    // Use debounce technique to avoid too many API calls
-    const timeoutId = setTimeout(() => {
-      saveWidgetData();
-    }, 1000);
+    saveWidgetData();
     
-    return () => clearTimeout(timeoutId);
   }, [id, widgetSize, valuePositions, labelPositions, valueSizes, labelSizes]);
 
   
