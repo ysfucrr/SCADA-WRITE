@@ -10,6 +10,7 @@ import { AddRegisterToWidgetModal } from './AddRegisterToWidgetModal';
 import { AddLabelModal } from './AddLabelModal';
 import { EditRegisterModal } from './EditRegisterModal';
 import { EditLabelModal } from './EditLabelModal';
+import { useAuth } from '@/hooks/use-auth';
 
 
 interface Register {
@@ -56,7 +57,7 @@ const VERTICAL_SNAP_MULTIPLIER = 0.5; // Dikey snapping için çarpan - 1'den k�
 // Sınır değerleri - widget'ların dışına çıkamayacağı alanı tanımlar
 const BOUNDARY = {
   LEFT: 260, // Sol menü genişliği
-  TOP: 290,  // Üst alan yüksekliği (sekme alanı ve başlık)
+  TOP: 215,  // Üst alan yüksekliği (sekme alanı ve başlık)
   RIGHT: 20, // Sağ kenardan boşluk
   BOTTOM: 20 // Alt kenardan boşluk
 };
@@ -75,7 +76,8 @@ const DraggableLabel: React.FC<{
   onEditClick: (id: string) => void;
   siblingPositions: Record<string, { x: number, y: number }>;
   containerSize: { width: number, height: number };
-}> = ({ id, label, position, size = { width: 80, height: 28 }, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick }) => {
+  isAdmin: boolean;
+}> = ({ id, label, position, size = { width: 80, height: 28 }, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick, isAdmin }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(position);
   const [currentSize, setCurrentSize] = useState(size);
@@ -95,7 +97,8 @@ const DraggableLabel: React.FC<{
   const [helperLines, setHelperLines] = useState<HelperLineState>({ vertical: undefined, horizontal: undefined });
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    // Admin değilse sürüklemeye izin verme
+    if (e.button !== 0 || (!window.isAdmin && !isAdmin)) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX - currentPosition.x, y: e.clientY - currentPosition.y });
     e.preventDefault();
@@ -191,6 +194,9 @@ const DraggableLabel: React.FC<{
   };
   
   const handleTouchStart = (e: React.TouchEvent) => {
+    // Admin değilse dokunmatik sürüklemeye izin verme
+    if (!window.isAdmin && !isAdmin) return;
+    
     const touch = e.touches[0];
     setIsDragging(true);
     setDragStart({ x: touch.clientX - currentPosition.x, y: touch.clientY - currentPosition.y });
@@ -243,7 +249,7 @@ const DraggableLabel: React.FC<{
       
       <div
         style={{ position: 'absolute', left: `${currentPosition.x}px`, top: `${currentPosition.y}px`, width: `${currentSize.width}px`, height: `${currentSize.height}px`, transform: isDragging ? 'scale(1.02)' : 'scale(1)', zIndex: isDragging ? 10 : 1, transition: (isDragging) ? 'none' : 'transform 0.2s ease' }}
-        className={`bg-gray-100 dark:bg-gray-700 rounded-lg text-center cursor-move shadow-md flex items-center justify-center relative transition-all duration-200 ${isActive ? 'border-2 border-blue-500' : 'border border-gray-200 dark:border-gray-600'}`}
+        className={`bg-gray-100 dark:bg-gray-700 rounded-lg text-center ${window.isAdmin || isAdmin ? 'cursor-move' : 'cursor-default'} shadow-md flex items-center justify-center relative transition-all duration-200 ${isActive ? 'border-2 border-blue-500' : 'border border-gray-200 dark:border-gray-600'}`}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onClick={onSetActive}
@@ -253,22 +259,28 @@ const DraggableLabel: React.FC<{
         </p>
         
         {isActive && (
-          <div className="absolute -top-3 -right-3 flex items-center gap-1 bg-white dark:bg-gray-800 p-1 rounded-full shadow-lg border border-gray-200 dark:border-gray-600">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEditClick(id);
-              }}
-              className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <PencilSquareIcon className="h-4 w-4" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDeleteClick(); }}
-              className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <TrashIcon className="h-4 w-4" />
-            </button>
+          <div className="absolute -top-8 left-0 flex items-center gap-1">
+            {window.isAdmin && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditClick(id);
+                  }}
+                  className="p-1.5 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors shadow-md"
+                  title="Edit Label"
+                >
+                  <PencilSquareIcon className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDeleteClick(); }}
+                  className="p-1.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors shadow-md"
+                  title="Delete Label"
+                >
+                  <TrashIcon className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -286,7 +298,8 @@ const RegisterValue: React.FC<{
   onEditClick: (id: string) => void;
   siblingPositions: Record<string, { x: number, y: number }>;
   containerSize: { width: number, height: number };
-}> = ({ register, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick }) => {
+  isAdmin: boolean;
+}> = ({ register, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick, isAdmin }) => {
   const [value, setValue] = useState<any>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState<{ x: number, y: number }>(register.valuePosition || { x: 0, y: 0 });
@@ -316,7 +329,8 @@ const RegisterValue: React.FC<{
   }, [register, watchRegister, unwatchRegister]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    // Admin değilse sürüklemeye izin verme
+    if (e.button !== 0 || (!window.isAdmin && !isAdmin)) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
     e.preventDefault();
@@ -389,6 +403,9 @@ const RegisterValue: React.FC<{
   };
   
   const handleTouchStart = (e: React.TouchEvent) => {
+    // Admin değilse dokunmatik sürüklemeye izin verme
+    if (!window.isAdmin && !isAdmin) return;
+    
     const touch = e.touches[0];
     setIsDragging(true);
     setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
@@ -442,7 +459,7 @@ const RegisterValue: React.FC<{
       <div
         ref={elementRef}
         style={{ position: 'absolute', left: `${position.x}px`, top: `${position.y}px`, width: `${size.width}px`, height: `${size.height}px`, transform: isDragging ? 'scale(1.02)' : 'scale(1)', zIndex: isDragging ? 10 : 1, transition: isDragging ? 'none' : 'transform 0.2s ease' }}
-        className={`bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center cursor-move shadow-lg flex items-center justify-center relative transition-all duration-200 ${isActive ? 'border-2 border-blue-500' : 'border border-gray-200 dark:border-gray-600'}`}
+        className={`bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center ${window.isAdmin || isAdmin ? 'cursor-move' : 'cursor-default'} shadow-lg flex items-center justify-center relative transition-all duration-200 ${isActive ? 'border-2 border-blue-500' : 'border border-gray-200 dark:border-gray-600'}`}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onClick={onSetActive}
@@ -452,22 +469,28 @@ const RegisterValue: React.FC<{
         </p>
         
         {isActive && (
-          <div className="absolute -top-3 -right-3 flex items-center gap-1 bg-white dark:bg-gray-800 p-1 rounded-full shadow-lg border border-gray-200 dark:border-gray-600">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEditClick(register.id);
-              }}
-              className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <PencilSquareIcon className="h-4 w-4" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDeleteClick(); }}
-              className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <TrashIcon className="h-4 w-4" />
-            </button>
+          <div className="absolute -top-8 left-0 flex items-center gap-1">
+            {window.isAdmin && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditClick(register.id);
+                  }}
+                  className="p-1.5 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors shadow-md"
+                  title="Edit Value"
+                >
+                  <PencilSquareIcon className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDeleteClick(); }}
+                  className="p-1.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors shadow-md"
+                  title="Delete Value"
+                >
+                  <TrashIcon className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -489,6 +512,9 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
     size = { width: 600, height: 400 },
     onWidgetPositionChange
   } = props;
+  
+  // Auth durumunu kontrol etmek için
+  const { isAdmin } = useAuth();
   
   // Widget sürükleme state'leri
   const [isDraggingWidget, setIsDraggingWidget] = useState(false);
@@ -541,7 +567,8 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   
   // Widget sürükleme yönetimi
   const handleWidgetMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    // Admin değilse widget sürüklemeye izin verme
+    if (e.button !== 0 || (!window.isAdmin && !isAdmin)) return;
     e.stopPropagation();
     setIsDraggingWidget(true);
     setWidgetDragStart({
@@ -551,6 +578,9 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   };
   
   const handleWidgetTouchStart = (e: React.TouchEvent) => {
+    // Admin değilse widget dokunmatik sürüklemeye izin verme
+    if (!window.isAdmin && !isAdmin) return;
+    
     e.stopPropagation();
     const touch = e.touches[0];
     setIsDraggingWidget(true);
@@ -885,11 +915,17 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   const { draggedType } = useWidgetDnD();
 
   const handleDragOver = (e: React.DragEvent) => {
+    // Admin değilse drag-over işlemlerine izin verme
+    if (!window.isAdmin && !isAdmin) return;
+    
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   };
 
   const handleDrop = (e: React.DragEvent) => {
+    // Admin değilse drop işlemlerine izin verme
+    if (!window.isAdmin && !isAdmin) return;
+    
     e.preventDefault();
     const dropX = e.clientX - (containerRef.current?.getBoundingClientRect().left || 0);
     const dropY = e.clientY - (containerRef.current?.getBoundingClientRect().top || 0);
@@ -1326,6 +1362,31 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
             boxShadow: isDraggingWidget ? '0 10px 25px rgba(0, 0, 0, 0.15)' : ''
           }}
         >
+          {/* Widget Edit/Delete Buttons - Widget üzerinde ama dışında görünecek - Sadece admin kullanıcılar için */}
+          {isAdmin && (
+            <div className="absolute -top-8 left-2 flex items-center gap-1 z-10">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                className="p-1.5 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors shadow-md"
+                title="Widget Düzenle"
+              >
+                <PencilSquareIcon className="h-4 w-4" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="p-1.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors shadow-md"
+                title="Widget Sil"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         {/* Render modals in a portal */}
         {ReactDOM.createPortal(
           <>
@@ -1357,19 +1418,12 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
           </>,
           document.body
         )}
-          <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-30">
-              <button onClick={onEdit} className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                  <PencilSquareIcon className="h-5 w-5" />
-              </button>
-              <button onClick={onDelete} className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                  <TrashIcon className="h-5 w-5" />
-              </button>
-          </div>
+          {/* Removing the old action buttons from inside the widget */}
         
           <h3
             className="text-xl font-bold text-gray-900 dark:text-white mb-4 text-center tracking-wider select-none"
             style={{
-              cursor: isDraggingWidget ? 'grabbing' : 'grab',
+              cursor: (window.isAdmin || isAdmin) ? (isDraggingWidget ? 'grabbing' : 'grab') : 'default',
               padding: '8px 12px',
               marginTop: '-8px',
               marginLeft: '-12px',
@@ -1426,6 +1480,7 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
                             setActiveElementId(null);
                         }}
                         onEditClick={handleEditRegister}
+                        isAdmin={isAdmin}
                       />
                     )}
                     {isRegister && (
@@ -1445,6 +1500,7 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
                             setActiveElementId(null);
                         }}
                         onEditClick={handleEditRegister}
+                        isAdmin={isAdmin}
                       />
                     )}
                   </React.Fragment>
@@ -1457,8 +1513,26 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   );
 };
 
-export const RegisterWidget: React.FC<RegisterWidgetProps> = (props) => (
+export const RegisterWidget: React.FC<RegisterWidgetProps> = (props) => {
+  // Global isAdmin değerini window nesnesine atayalım ki alt bileşenler de erişebilsin
+  const { isAdmin } = useAuth();
+  
+  useEffect(() => {
+    // isAdmin değerini global window nesnesine atayalım
+    // Bu sayede diğer bileşenler de bu değere erişebilir
+    window.isAdmin = isAdmin;
+  }, [isAdmin]);
+  
+  return (
     <WidgetDnDProvider>
-        <WidgetContent {...props} />
+      <WidgetContent {...props} />
     </WidgetDnDProvider>
-);
+  );
+};
+
+// TypeScript için global window tipini genişlet
+declare global {
+  interface Window {
+    isAdmin?: boolean;
+  }
+}

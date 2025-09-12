@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronRightIcon, PlusCircleIcon, PhotoIcon, Bars3BottomLeftIcon, TableCellsIcon } from '@heroicons/react/24/outline';
 import { useWidgetDnD } from '@/context/WidgetDnDContext';
+import { useAuth } from '@/hooks/use-auth';
 
 export const WidgetToolbar: React.FC = () => {
   const { setDraggedType } = useWidgetDnD();
@@ -10,6 +11,7 @@ export const WidgetToolbar: React.FC = () => {
   const [position, setPosition] = useState({ x: 20, y: 20 });
   const toolbarRef = useRef<HTMLDivElement>(null);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const { isAdmin } = useAuth();
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -63,6 +65,11 @@ export const WidgetToolbar: React.FC = () => {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging]);
+
+  // Admin değilse toolbar gösterme
+  if (!isAdmin && !window.isAdmin) {
+    return null;
+  }
 
   return (
     <div

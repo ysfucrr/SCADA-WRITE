@@ -10,6 +10,7 @@ import { AddWidgetModal } from "@/components/widgets/AddWidgetModal";
 import { EditWidgetModal } from "@/components/widgets/EditWidgetModal";
 import { RegisterWidget } from "@/components/widgets/RegisterWidget";
 import { showConfirmAlert, showToast } from "@/components/ui/alert";
+import { useAuth } from "@/hooks/use-auth";
 // Dynamically import ReactApexChart to avoid SSR issues
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
@@ -65,6 +66,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState(10); // seconds
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  
+  // Auth durumunu kontrol etmek için useAuth hook'u
+  const { isAdmin } = useAuth();
 
   useEffect(() => {
     const fetchWidgets = async () => {
@@ -657,7 +661,7 @@ export default function HomePage() {
             Overview
           </button>
           <button
-            className={`py-4 px-8 text-base font-bold transition-colors focus:outline-none rounded-lg shadow-md ${
+            className={`py-4 px-8 mr-4 text-base font-bold transition-colors focus:outline-none rounded-lg shadow-md ${
               activeTab === 'system-health'
                 ? 'bg-blue-600 text-white dark:bg-blue-700'
                 : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
@@ -666,31 +670,39 @@ export default function HomePage() {
           >
             System Health
           </button>
-        </div>
-        
-        <div className="flex items-center">
-          <button
-            onClick={() => setRefreshInterval(prevInterval => prevInterval === 5 ? 10 : 5)}
-            className="text-sm px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-md transition-colors mr-4"
-          >
-            Refresh: {refreshInterval}s
-          </button>
-          {lastUpdated && (
-            <SmallText className="text-gray-500">
-              Last updated: {lastUpdated.toLocaleTimeString()}
-            </SmallText>
+          
+          {/* Add Widget butonu tab butonlarıyla aynı hizada - sadece admin kullanıcılar için */}
+          {activeTab === 'overview' && isAdmin && (
+            <button
+              className="py-4 px-8 text-base font-bold transition-colors focus:outline-none rounded-lg shadow-md bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+              onClick={() => setIsModalOpen(true)}
+            >
+              Add Widget
+            </button>
           )}
         </div>
+        
+        {/* Sadece System Health tabında gösterilecek refresh bilgisi */}
+        {activeTab === 'system-health' && (
+          <div className="flex items-center">
+            <button
+              onClick={() => setRefreshInterval(prevInterval => prevInterval === 5 ? 10 : 5)}
+              className="text-sm px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-md transition-colors mr-4"
+            >
+              Refresh: {refreshInterval}s
+            </button>
+            {lastUpdated && (
+              <SmallText className="text-gray-500">
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </SmallText>
+            )}
+          </div>
+        )}
       </div>
       
       {/* Content based on active tab */}
       {activeTab === 'overview' ? (
         <div>
-          <div className="flex justify-end mb-4">
-            <Button onClick={() => setIsModalOpen(true)}>
-              Add Widget
-            </Button>
-          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {widgetsLoading ? (
               <div className="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
