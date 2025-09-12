@@ -7,6 +7,7 @@ import { ApexOptions } from "apexcharts";
 import { Heading3, Paragraph, SmallText } from "@/components/ui/typography";
 import Button from "@/components/ui/button/Button";
 import { AddWidgetModal } from "@/components/widgets/AddWidgetModal";
+import { EditWidgetModal } from "@/components/widgets/EditWidgetModal";
 import { RegisterWidget } from "@/components/widgets/RegisterWidget";
 import { showConfirmAlert, showToast } from "@/components/ui/alert";
 // Dynamically import ReactApexChart to avoid SSR issues
@@ -56,7 +57,7 @@ export default function HomePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [widgets, setWidgets] = useState<any[]>([]);
   const [widgetsLoading, setWidgetsLoading] = useState(true);
-  const [widgetToEdit, setWidgetToEdit] = useState<any | null>(null);
+  const [editingWidget, setEditingWidget] = useState<any | null>(null);
   
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -424,62 +425,14 @@ export default function HomePage() {
     ? [parseFloat(systemInfo.system.memoryUsagePercent)]
     : [0];
 
-  const handleAddWidget = async (widgetTitle: string, selectedRegisters: any[], widgetSize: { width: number, height: number }) => {
-    // Benzersiz kimlikler ile register nesneleri oluştur
-    const registers = selectedRegisters.map((r, index) => {
-      if (!r.selectedRegister) {
-        console.warn("Invalid register found:", r);
-        return null;
-      }
-      
-      // Benzersiz ID'yi kontrol et ve varsayılan değerler ekle
-      return {
-        id: r.selectedRegister.value || `reg-${Date.now()}-${index}`,
-        label: r.customLabel || (r.selectedRegister.label ? r.selectedRegister.label.split("(")[0].trim() : ''),
-        analyzerId: r.selectedRegister.analyzerId || '',
-        address: r.selectedRegister.address || 0,
-        dataType: r.selectedRegister.dataType || 'uint16',
-        bit: r.selectedRegister.bit,
-        labelSize: {
-          width: Number(r.labelWidth) || 80,
-          height: Number(r.labelHeight) || 28
-        },
-        valueSize: {
-          width: Number(r.valueWidth) || 120,
-          height: Number(r.valueHeight) || 80
-        },
-        // Başlangıç pozisyonlarını belirle
-        valuePosition: { x: 0, y: 0 },
-        labelPosition: { x: 0, y: 0 },
-      };
-    }).filter(Boolean); // null değerleri filtrele
-    
+  const handleAddWidget = async (widgetTitle: string, widgetSize: { width: number, height: number }) => {
     const widgetData = {
       title: widgetTitle,
       size: widgetSize,
-      registers: registers
+      registers: [] // Start with an empty array of registers
     };
 
     try {
-      if (widgetToEdit) {
-        // Update existing widget
-        const response = await fetch(`/api/widgets/${widgetToEdit._id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(widgetData),
-        });
-        if (!response.ok) throw new Error("Failed to update widget");
-        const updatedWidget = await response.json();
-        setWidgets(widgets.map(w =>
-          w._id === widgetToEdit._id
-            ? {
-                ...w, // Keep existing position/size data
-                ...updatedWidget // Overwrite with new data from API
-              }
-            : w
-        ));
-        showToast("Widget updated successfully.", "success");
-      } else {
         // Add new widget
         const response = await fetch("/api/widgets", {
           method: "POST",
@@ -490,12 +443,9 @@ export default function HomePage() {
         const newWidget = await response.json();
         setWidgets([...widgets, newWidget]);
         showToast("Widget added successfully.", "success");
-      }
     } catch (error) {
       console.error(error);
       showToast("An error occurred.", "error");
-    } finally {
-        setWidgetToEdit(null);
     }
   };
     
@@ -538,17 +488,110 @@ export default function HomePage() {
           })
         );
       }, []);
+
+      const handleRegisterDelete = useCallback(async (widgetId: string, registerId: string) => {
+        let updatedWidget: any;
+
+        setWidgets(prevWidgets =>
+          prevWidgets.map(widget => {
+            if (widget._id === widgetId) {
+              const updatedRegisters = widget.registers.filter((reg: any) => reg.id !== registerId);
+              updatedWidget = { ...widget, registers: updatedRegisters };
+              return updatedWidget;
+            }
+            return widget;
+          })
+        );
+        
+        if (updatedWidget) {
+            try {
+                const response = await fetch(`/api/widgets/${widgetId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ registers: updatedWidget.registers }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to delete register from widget');
+                }
+                showToast("Register deleted successfully.", "success");
+            } catch (error) {
+                console.error(error);
+                showToast("An error occurred while deleting the register.", "error");
+            }
+        }
+      }, []);
+      
+      const handleRegisterAdd = useCallback(async (widgetId: string, newRegister: any) => {
+        let updatedWidget: any;
+        setWidgets(prevWidgets =>
+          prevWidgets.map(widget => {
+            if (widget._id === widgetId) {
+              // Ensure registers is an array
+              const registers = Array.isArray(widget.registers) ? widget.registers : [];
+              const updatedRegisters = [...registers, newRegister];
+              updatedWidget = { ...widget, registers: updatedRegisters };
+              return updatedWidget;
+            }
+            return widget;
+          })
+        );
+
+        if (updatedWidget) {
+            try {
+                const response = await fetch(`/api/widgets/${widgetId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ registers: updatedWidget.registers }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to add register to widget');
+                }
+                showToast("Register added successfully.", "success");
+            } catch (error) {
+                console.error(error);
+                showToast("An error occurred while adding the register.", "error");
+            }
+        }
+      }, []);
+
+      const handleUpdateWidgetDetails = async (newName: string, newSize: { width: number, height: number }) => {
+        if (!editingWidget) return;
+
+        const widgetId = editingWidget._id;
+        const updatedData = { title: newName, size: newSize };
+
+        setWidgets(prev => prev.map(w => w._id === widgetId ? { ...w, ...updatedData } : w));
+
+        try {
+            const response = await fetch(`/api/widgets/${widgetId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedData),
+            });
+            if (!response.ok) throw new Error('Failed to update widget details');
+            showToast("Widget details updated successfully.", "success");
+        } catch (error) {
+            console.error("Error updating widget details:", error);
+            showToast("An error occurred.", "error");
+            // Optionally revert state on error
+            setWidgets(prev => prev.map(w => w._id === widgetId ? editingWidget : w));
+        }
+      };
     
       return (
         <>
         <AddWidgetModal
-            isOpen={isModalOpen || !!widgetToEdit}
-            widgetToEdit={widgetToEdit}
-            onClose={() => {
-                setIsModalOpen(false)
-                setWidgetToEdit(null)
-            }}
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
             onConfirm={handleAddWidget}
+        />
+        <EditWidgetModal
+            isOpen={!!editingWidget}
+            onClose={() => setEditingWidget(null)}
+            onConfirm={handleUpdateWidgetDetails}
+            widget={editingWidget}
         />
     <div className="w-full p-6">
       {/* Tab navigation - More prominent buttons */}
@@ -619,9 +662,11 @@ export default function HomePage() {
                     registers={widget.registers}
                     size={widget.size}
                     id={widget._id}
-                    onEdit={() => setWidgetToEdit(widget)}
                     onDelete={() => handleDeleteWidget(widget)}
                     onPositionsChange={handlePositionsChange}
+                    onRegisterDelete={handleRegisterDelete}
+                    onRegisterAdd={handleRegisterAdd}
+                    onEdit={() => setEditingWidget(widget)}
                   />
                 );
               })
