@@ -673,21 +673,17 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
       // Emin olmak için varsayılan boyut değerini kontrol et
       const labelSize = newLabelData.size || { width: 80, height: 28 };
       
-      // Create a label-only element with explicit sizing
+      // Etiket için gerekli minimum alanları içeren nesne oluştur
+      // dataType korunuyor, diğer gereksiz alanlar kaldırıldı
       const newLabel = {
         id: labelId,
         label: newLabelData.text,
         labelPosition: dropPosition,
         labelSize: labelSize, // Açıkça belirtilen veya varsayılan boyut değerini kullan
-        // Add empty fields to make it compatible with existing register structure
-        analyzerId: "",
-        address: 0,
-        dataType: "label",
-        valuePosition: { x: -1000, y: -1000 }, // Position off-screen
-        valueSize: { width: 0, height: 0 }
+        dataType: "label" // Etiketleri ayırt etmek için dataType gerekli
       };
       
-      // API'ye kaydetmek için tüm bilgilerin olduğu register'ı ekle
+      // API'ye kaydetmek için sadece gerekli alanları içeren etiket nesnesini ekle
       onRegisterAdd(id, newLabel);
     }
   };
@@ -707,16 +703,22 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
       try {
         // Güncel register verilerini widget içinde sakla
         const updatedRegisters = registers.map(reg => {
-          const updatedReg = {
-            ...reg,
-            valuePosition: valuePositions[reg.id] || reg.valuePosition,
-            valueSize: valueSizes[reg.id] || reg.valueSize,
-          };
-          if (reg.dataType === "label") {
-            updatedReg.labelPosition = labelPositions[reg.id] || reg.labelPosition;
-            updatedReg.labelSize = labelSizes[reg.id] || reg.labelSize;
+          // Bir etiket mi (analyzerId olmayan) yoksa normal register mı olduğunu kontrol et
+          if (!reg.analyzerId) {
+            // Bu bir etiket, sadece etiket özelliklerini güncelle
+            return {
+              ...reg,
+              labelPosition: labelPositions[reg.id] || reg.labelPosition,
+              labelSize: labelSizes[reg.id] || reg.labelSize
+            };
+          } else {
+            // Bu normal bir register, normal özellikleri güncelle
+            return {
+              ...reg,
+              valuePosition: valuePositions[reg.id] || reg.valuePosition,
+              valueSize: valueSizes[reg.id] || reg.valueSize
+            };
           }
-          return updatedReg;
         });
         
         await fetch(`/api/widgets/${id}`, {
@@ -960,14 +962,16 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
                 if (!reg || !reg.id) return null;
                 
                 const registerKey = `register-${reg.id}`;
-                const hasValue = valuePositions[reg.id];
-                const hasLabel = reg.dataType === "label" && labelPositions[reg.id];
+                // Etiket kontrolü - dataType='label' veya analyzerId olmayan kayıtlar
+                const isLabel = (reg.dataType === "label" || !reg.analyzerId) && labelPositions[reg.id];
+                // Normal register kontrolü - analyzerId olan ve valuePosition olan kayıtlar
+                const isRegister = reg.analyzerId && valuePositions[reg.id];
                 
-                if (!hasValue && !hasLabel) return null;
+                if (!isLabel && !isRegister) return null;
                 
                 return (
                   <React.Fragment key={registerKey}>
-                    {hasLabel && (
+                    {isLabel && (
                       <DraggableLabel
                         key={`label-${reg.id}`}
                         id={reg.id}
@@ -989,7 +993,7 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
                         onEditClick={handleEditRegister}
                       />
                     )}
-                    {hasValue && (
+                    {isRegister && (
                       <RegisterValue
                         key={`value-${reg.id}`}
                         register={{ ...reg, valuePosition: valuePositions[reg.id], valueSize: valueSizes[reg.id] }}
