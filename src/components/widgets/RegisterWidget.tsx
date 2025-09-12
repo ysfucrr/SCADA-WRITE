@@ -245,9 +245,17 @@ const DraggableLabel: React.FC<{
       }
     });
     
-    setHelperLines(newHelperLines);
-    setCurrentPosition(snappedPosition);
-    positionRef.current = snappedPosition;
+    // Sonsuz güncelleme döngüsünü engellemek için performans optimizasyonu
+    if (JSON.stringify(helperLines) !== JSON.stringify(newHelperLines)) {
+      setHelperLines(newHelperLines);
+    }
+    
+    // Pozisyon değişikliğini sadece gerekli olduğunda yapalım
+    if (JSON.stringify(currentPosition) !== JSON.stringify(snappedPosition)) {
+      setCurrentPosition(snappedPosition);
+      positionRef.current = snappedPosition;
+    }
+    
     e.preventDefault();
   };
   
@@ -286,7 +294,11 @@ const DraggableLabel: React.FC<{
       y: touch.clientY - dragStart.y
     };
     
-    setCurrentPosition(newPosition);
+    // Dokunmatik olaylar için de optimizasyon
+    if (JSON.stringify(currentPosition) !== JSON.stringify(newPosition)) {
+      setCurrentPosition(newPosition);
+      positionRef.current = newPosition;
+    }
     e.preventDefault();
   };
   
@@ -532,9 +544,17 @@ const RegisterValue: React.FC<{
       }
     });
     
-    setHelperLines(newHelperLines);
-    setPosition(snappedPosition);
-    positionRef.current = snappedPosition;
+    // Sonsuz güncelleme döngüsünü engellemek için performans optimizasyonu
+    if (JSON.stringify(helperLines) !== JSON.stringify(newHelperLines)) {
+      setHelperLines(newHelperLines);
+    }
+    
+    // Pozisyon değişikliğini sadece gerekli olduğunda yapalım
+    if (JSON.stringify(position) !== JSON.stringify(snappedPosition)) {
+      setPosition(snappedPosition);
+      positionRef.current = snappedPosition;
+    }
+    
     e.preventDefault();
   };
   
@@ -575,7 +595,11 @@ const RegisterValue: React.FC<{
       y: touch.clientY - dragStart.y
     };
     
-    setPosition(newPosition);
+    // Dokunmatik olaylar için de optimizasyon
+    if (JSON.stringify(position) !== JSON.stringify(newPosition)) {
+      setPosition(newPosition);
+      positionRef.current = newPosition;
+    }
     e.preventDefault();
   };
   
@@ -664,7 +688,7 @@ const RegisterValue: React.FC<{
 
 export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
   title,
-  registers,
+  registers = [],
   onEdit,
   onDelete,
   id,
@@ -813,36 +837,46 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
             overflow: "hidden"
           }}
         >
-            {registers.map((reg) => {
+            {registers.filter(reg => reg && reg.id).map((reg) => {
+              // Ensure register has valid ID before rendering
+              if (!reg || !reg.id) return null;
+              
               // Do not render the draggable components until their positions are loaded.
               if (!labelPositions[reg.id] || !valuePositions[reg.id]) {
                 return null;
               }
+              
+              // Ensure unique keys for all components
+              const registerKey = `register-${reg.id}`;
+              
               return (
-              <React.Fragment key={reg.id}>
-                <DraggableLabel
-                  id={reg.id}
-                  label={reg.label}
-                  position={labelPositions[reg.id]}
-                  size={labelSizes[reg.id]}
-                  onPositionChange={handlePositionChange}
-                  onSizeChange={handleSizeChange}
-                  siblingPositions={allPositions}
-                  containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
-                />
-                <RegisterValue
-                  register={{
-                    ...reg,
-                    valuePosition: valuePositions[reg.id],
-                    valueSize: valueSizes[reg.id]
-                  }}
-                  onPositionChange={handlePositionChange}
-                  onSizeChange={handleSizeChange}
-                  siblingPositions={allPositions}
-                  containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
-                />
-              </React.Fragment>
-            )})}
+                <React.Fragment key={registerKey}>
+                  <DraggableLabel
+                    key={`label-${reg.id}`}
+                    id={reg.id}
+                    label={reg.label || ''}
+                    position={labelPositions[reg.id]}
+                    size={labelSizes[reg.id]}
+                    onPositionChange={handlePositionChange}
+                    onSizeChange={handleSizeChange}
+                    siblingPositions={allPositions}
+                    containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
+                  />
+                  <RegisterValue
+                    key={`value-${reg.id}`}
+                    register={{
+                      ...reg,
+                      valuePosition: valuePositions[reg.id],
+                      valueSize: valueSizes[reg.id]
+                    }}
+                    onPositionChange={handlePositionChange}
+                    onSizeChange={handleSizeChange}
+                    siblingPositions={allPositions}
+                    containerSize={{ width: widgetSize.width - 48, height: widgetSize.height - 104 }}
+                  />
+                </React.Fragment>
+              );
+            })}
         </div>
         
         {/* Widget resize handle removed */}

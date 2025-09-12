@@ -73,7 +73,40 @@ export default function HomePage() {
           throw new Error("Failed to fetch widgets");
         }
         const data = await response.json();
-        setWidgets(data);
+        
+        // Pozisyon bilgilerini register nesnelerine aktarma
+        const processedWidgets = data.map((widget: any) => {
+          if (widget.registers && Array.isArray(widget.registers)) {
+            const updatedRegisters = widget.registers.map((register: any) => {
+              // valuePosition bilgilerini aktarma
+              if (widget.valuePositions && widget.valuePositions[register.id]) {
+                register.valuePosition = widget.valuePositions[register.id];
+              }
+              
+              // labelPosition bilgilerini aktarma
+              if (widget.labelPositions && widget.labelPositions[register.id]) {
+                register.labelPosition = widget.labelPositions[register.id];
+              }
+              
+              // valueSize bilgilerini aktarma
+              if (widget.valueSizes && widget.valueSizes[register.id]) {
+                register.valueSize = widget.valueSizes[register.id];
+              }
+              
+              // labelSize bilgilerini aktarma
+              if (widget.labelSizes && widget.labelSizes[register.id]) {
+                register.labelSize = widget.labelSizes[register.id];
+              }
+              
+              return register;
+            });
+            
+            return {...widget, registers: updatedRegisters};
+          }
+          return widget;
+        });
+        
+        setWidgets(processedWidgets);
       } catch (error) {
         console.error(error);
       } finally {
@@ -392,19 +425,39 @@ export default function HomePage() {
     : [0];
 
   const handleAddWidget = async (widgetTitle: string, selectedRegisters: any[], widgetSize: { width: number, height: number }) => {
+    // Benzersiz kimlikler ile register nesneleri oluştur
+    const registers = selectedRegisters.map((r, index) => {
+      if (!r.selectedRegister) {
+        console.warn("Invalid register found:", r);
+        return null;
+      }
+      
+      // Benzersiz ID'yi kontrol et ve varsayılan değerler ekle
+      return {
+        id: r.selectedRegister.value || `reg-${Date.now()}-${index}`,
+        label: r.customLabel || (r.selectedRegister.label ? r.selectedRegister.label.split("(")[0].trim() : ''),
+        analyzerId: r.selectedRegister.analyzerId || '',
+        address: r.selectedRegister.address || 0,
+        dataType: r.selectedRegister.dataType || 'uint16',
+        bit: r.selectedRegister.bit,
+        labelSize: {
+          width: Number(r.labelWidth) || 80,
+          height: Number(r.labelHeight) || 28
+        },
+        valueSize: {
+          width: Number(r.valueWidth) || 120,
+          height: Number(r.valueHeight) || 80
+        },
+        // Başlangıç pozisyonlarını belirle
+        valuePosition: { x: 0, y: 0 },
+        labelPosition: { x: 0, y: 0 },
+      };
+    }).filter(Boolean); // null değerleri filtrele
+    
     const widgetData = {
       title: widgetTitle,
       size: widgetSize,
-      registers: selectedRegisters.map((r) => ({
-        id: r.selectedRegister.value,
-        label: r.customLabel || r.selectedRegister.label.split("(")[0].trim(),
-        analyzerId: r.selectedRegister.analyzerId,
-        address: r.selectedRegister.address,
-        dataType: r.selectedRegister.dataType,
-        bit: r.selectedRegister.bit,
-        labelSize: { width: r.labelWidth, height: r.labelHeight },
-        valueSize: { width: r.valueWidth, height: r.valueHeight },
-      })),
+      registers: registers
     };
 
     try {
@@ -417,7 +470,14 @@ export default function HomePage() {
         });
         if (!response.ok) throw new Error("Failed to update widget");
         const updatedWidget = await response.json();
-        setWidgets(widgets.map(w => w._id === widgetToEdit._id ? updatedWidget : w));
+        setWidgets(widgets.map(w =>
+          w._id === widgetToEdit._id
+            ? {
+                ...w, // Keep existing position/size data
+                ...updatedWidget // Overwrite with new data from API
+              }
+            : w
+        ));
         showToast("Widget updated successfully.", "success");
       } else {
         // Add new widget
@@ -532,17 +592,21 @@ export default function HomePage() {
                 </div>
               </div>
             ) : widgets.length > 0 ? (
-              widgets.map((widget) => (
-              <RegisterWidget
-                key={widget._id}
-                title={widget.title}
-                registers={widget.registers}
-                size={widget.size}
-                id={widget._id}
-                onEdit={() => setWidgetToEdit(widget)}
-                onDelete={() => handleDeleteWidget(widget)}
-              />
-            ))
+              widgets.map((widget) => {
+                // Benzersiz ID kontrolü
+                const widgetKey = widget._id || `widget-${Math.random()}`;
+                return (
+                  <RegisterWidget
+                    key={widgetKey}
+                    title={widget.title}
+                    registers={widget.registers}
+                    size={widget.size}
+                    id={widget._id}
+                    onEdit={() => setWidgetToEdit(widget)}
+                    onDelete={() => handleDeleteWidget(widget)}
+                  />
+                );
+              })
             ) : (
             <div className="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 mb-6">
               <div className="flex items-center justify-center h-48">

@@ -101,8 +101,16 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
       if(widgetToEdit.size) {
         setWidgetSize(widgetToEdit.size);
       }
+      // Widget verilerinde undefined değer olmadığından emin olalım
       setSelectedRows(widgetToEdit.registers.map((r: any) => {
         const correspondingRegister = allRegisters.find(reg => reg.value === r.id);
+        
+        // Varsayılan boyutları kullan ya da geçerli bir sayısal değer olduğundan emin ol
+        const labelWidth = r.labelSize && typeof r.labelSize.width === 'number' ? r.labelSize.width : 80;
+        const labelHeight = r.labelSize && typeof r.labelSize.height === 'number' ? r.labelSize.height : 28;
+        const valueWidth = r.valueSize && typeof r.valueSize.width === 'number' ? r.valueSize.width : 120;
+        const valueHeight = r.valueSize && typeof r.valueSize.height === 'number' ? r.valueSize.height : 80;
+        
         return {
           id: `row-${Math.random()}`,
           selectedRegister: {
@@ -114,11 +122,11 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
             dataType: r.dataType,
             bit: r.bit,
           },
-          customLabel: r.label,
-          labelWidth: r.labelSize?.width || 80,
-          labelHeight: r.labelSize?.height || 28,
-          valueWidth: r.valueSize?.width || 120,
-          valueHeight: r.valueSize?.height || 80,
+          customLabel: r.label || '',
+          labelWidth: labelWidth,
+          labelHeight: labelHeight,
+          valueWidth: valueWidth,
+          valueHeight: valueHeight,
         };
       }));
     }
@@ -156,7 +164,36 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
   };
 
   const handleSizeChange = (rowId: string, field: 'labelWidth' | 'labelHeight' | 'valueWidth' | 'valueHeight', value: string) => {
-    const numericValue = value === '' ? undefined : Number(value);
+    // Boş değer kontrolü - boş değerleri varsayılan değerlere çevir
+    let numericValue: number;
+    
+    if (value === '') {
+      // Varsayılan değerler
+      switch(field) {
+        case 'labelWidth':
+          numericValue = 80;
+          break;
+        case 'labelHeight':
+          numericValue = 28;
+          break;
+        case 'valueWidth':
+          numericValue = 120;
+          break;
+        case 'valueHeight':
+          numericValue = 80;
+          break;
+        default:
+          numericValue = 0;
+      }
+    } else {
+      numericValue = Number(value);
+    }
+    
+    // Negatif değerlere izin verme
+    if (numericValue <= 0) {
+      return;
+    }
+    
     setSelectedRows(prevRows =>
       prevRows.map(row =>
         row.id === rowId ? { ...row, [field]: numericValue } : row
@@ -174,7 +211,17 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
         showToast("Please select at least one register.", "error");
         return;
     }
-    onConfirm(widgetTitle, validRegisters, widgetSize);
+    
+    // Boyut değerlerinin sayısal olduğundan emin olalım
+    const processedRegisters = validRegisters.map(register => ({
+      ...register,
+      labelWidth: Number(register.labelWidth) || 80,
+      labelHeight: Number(register.labelHeight) || 28,
+      valueWidth: Number(register.valueWidth) || 120,
+      valueHeight: Number(register.valueHeight) || 80
+    }));
+    
+    onConfirm(widgetTitle, processedRegisters, widgetSize);
     onClose();
   };
 
@@ -203,10 +250,16 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
                      <Input
                          id="widgetWidth"
                          type="number"
-                         value={widgetSize.width}
-                         onChange={(e) => setWidgetSize(s => ({...s, width: Number(e.target.value)}))}
+                         value={widgetSize.width || 600}
+                         onChange={(e) => {
+                           const newWidth = e.target.value === '' ? 600 : Number(e.target.value);
+                           if (newWidth > 0) {
+                             setWidgetSize(s => ({...s, width: newWidth}));
+                           }
+                         }}
                          placeholder="e.g., 600"
                          className="mt-1"
+                         min="1"
                      />
                 </div>
                 <div>
@@ -214,10 +267,16 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
                      <Input
                          id="widgetHeight"
                          type="number"
-                         value={widgetSize.height}
-                         onChange={(e) => setWidgetSize(s => ({...s, height: Number(e.target.value)}))}
+                         value={widgetSize.height || 400}
+                         onChange={(e) => {
+                           const newHeight = e.target.value === '' ? 400 : Number(e.target.value);
+                           if (newHeight > 0) {
+                             setWidgetSize(s => ({...s, height: newHeight}));
+                           }
+                         }}
                          placeholder="e.g., 400"
                          className="mt-1"
+                         min="1"
                      />
                 </div>
             </div>
@@ -258,19 +317,43 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div>
                                     <Label className="text-xs text-gray-500">Label Width</Label>
-                                    <Input type="number" value={row.labelWidth} onChange={(e) => handleSizeChange(row.id, 'labelWidth', e.target.value)} className="mt-1" placeholder="80"/>
+                                    <Input
+                                        type="number"
+                                        value={row.labelWidth || 80}
+                                        onChange={(e) => handleSizeChange(row.id, 'labelWidth', e.target.value)}
+                                        className="mt-1"
+                                        placeholder="80"
+                                    />
                                 </div>
                                 <div>
                                     <Label className="text-xs text-gray-500">Label Height</Label>
-                                    <Input type="number" value={row.labelHeight} onChange={(e) => handleSizeChange(row.id, 'labelHeight', e.target.value)} className="mt-1" placeholder="28"/>
+                                    <Input
+                                        type="number"
+                                        value={row.labelHeight || 28}
+                                        onChange={(e) => handleSizeChange(row.id, 'labelHeight', e.target.value)}
+                                        className="mt-1"
+                                        placeholder="28"
+                                    />
                                 </div>
                                 <div>
                                     <Label className="text-xs text-gray-500">Value Width</Label>
-                                    <Input type="number" value={row.valueWidth} onChange={(e) => handleSizeChange(row.id, 'valueWidth', e.target.value)} className="mt-1" placeholder="120" />
+                                    <Input
+                                        type="number"
+                                        value={row.valueWidth || 120}
+                                        onChange={(e) => handleSizeChange(row.id, 'valueWidth', e.target.value)}
+                                        className="mt-1"
+                                        placeholder="120"
+                                    />
                                 </div>
                                 <div>
                                     <Label className="text-xs text-gray-500">Value Height</Label>
-                                    <Input type="number" value={row.valueHeight} onChange={(e) => handleSizeChange(row.id, 'valueHeight', e.target.value)} className="mt-1" placeholder="80" />
+                                    <Input
+                                        type="number"
+                                        value={row.valueHeight || 80}
+                                        onChange={(e) => handleSizeChange(row.id, 'valueHeight', e.target.value)}
+                                        className="mt-1"
+                                        placeholder="80"
+                                    />
                                 </div>
                             </div>
                         </div>

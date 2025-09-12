@@ -12,7 +12,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     delete widget._id;
     
     await db.collection("widgets").updateOne({ _id: new ObjectId(id) }, { $set: widget });
-    return NextResponse.json({ message: "Widget updated successfully" });
+    const updatedWidget = await db.collection("widgets").findOne({ _id: new ObjectId(id) });
+    return NextResponse.json(updatedWidget);
   } catch (error) {
     console.error("Error updating widget:", error);
     return NextResponse.json({ message: "Error updating widget" }, { status: 500 });
