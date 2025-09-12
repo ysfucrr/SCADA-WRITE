@@ -28,6 +28,7 @@ interface RegisterWidgetProps {
   registers: Register[];
   onEdit: () => void;
   onDelete: () => void;
+  onPositionsChange: (widgetId: string, newPositions: { labelPositions: any, valuePositions: any }) => void;
   id?: string; // Widget ID
   size?: { width: number, height: number }; // Widget size
   position?: { x: number, y: number }; // Widget position
@@ -691,6 +692,7 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
   registers = [],
   onEdit,
   onDelete,
+  onPositionsChange,
   id,
   size = { width: 600, height: 400 },
   position = { x: 0, y: 0 }
@@ -762,17 +764,23 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = ({
     setValueSizes(newValueSizes);
   }, [registers]);
 
-  const handlePositionChange = (id: string, position: { x: number, y: number }, isLabel: boolean) => {
+  const handlePositionChange = (registerId: string, position: { x: number, y: number }, isLabel: boolean) => {
+    const newLabelPositions = { ...labelPositions };
+    const newValuePositions = { ...valuePositions };
+
     if (isLabel) {
-      setLabelPositions(prev => ({
-        ...prev,
-        [id]: position
-      }));
+      newLabelPositions[registerId] = position;
+      setLabelPositions(newLabelPositions);
     } else {
-      setValuePositions(prev => ({
-        ...prev,
-        [id]: position
-      }));
+      newValuePositions[registerId] = position;
+      setValuePositions(newValuePositions);
+    }
+
+    if(id){
+      onPositionsChange(id, {
+        labelPositions: newLabelPositions,
+        valuePositions: newValuePositions,
+      });
     }
   };
   

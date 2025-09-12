@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { ApexOptions } from "apexcharts";
 
@@ -521,6 +521,23 @@ export default function HomePage() {
             }
         }
       };
+
+      const handlePositionsChange = useCallback((widgetId: string, newPositions: { labelPositions: any, valuePositions: any }) => {
+        setWidgets(prevWidgets =>
+          prevWidgets.map(widget => {
+            if (widget._id === widgetId) {
+              // Gelen yeni pozisyonları widget'ın register'larına işle
+              const updatedRegisters = widget.registers.map((reg: any) => ({
+                ...reg,
+                labelPosition: newPositions.labelPositions[reg.id] || reg.labelPosition,
+                valuePosition: newPositions.valuePositions[reg.id] || reg.valuePosition,
+              }));
+              return { ...widget, registers: updatedRegisters };
+            }
+            return widget;
+          })
+        );
+      }, []);
     
       return (
         <>
@@ -604,6 +621,7 @@ export default function HomePage() {
                     id={widget._id}
                     onEdit={() => setWidgetToEdit(widget)}
                     onDelete={() => handleDeleteWidget(widget)}
+                    onPositionsChange={handlePositionsChange}
                   />
                 );
               })
