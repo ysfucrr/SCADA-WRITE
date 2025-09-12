@@ -111,7 +111,34 @@ const IconUploader: React.FC<IconUploaderProps> = ({
   const handleRemoveIcon = async () => {
     try {
       setIsUploading(true);
+      
+      // Eğer mevcut bir ikon varsa, önce sunucudan sil
+      if (currentIcon) {
+        const iconFilename = currentIcon.split('/').pop();
+        
+        if (iconFilename) {
+          try {
+            // API'ye DELETE isteği gönder
+            const deleteResponse = await fetch('/api/upload', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filePath: iconFilename })
+            });
+            
+            if (!deleteResponse.ok) {
+              console.warn('Icon file deletion from server failed:', deleteResponse.status);
+            } else {
+              console.log('Icon file deleted from uploads:', iconFilename);
+            }
+          } catch (deleteError) {
+            console.error('Error deleting icon file:', deleteError);
+          }
+        }
+      }
+      
+      // İkon referansını null yap
       await onIconChange(null);
+      
       // İkon kaldırıldığında olay yayınla
       eventEmitter.emit(EVENTS.ICON_UPDATED, null);
       showToast("Icon removed successfully", "success");

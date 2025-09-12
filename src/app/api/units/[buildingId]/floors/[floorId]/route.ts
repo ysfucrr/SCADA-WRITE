@@ -258,10 +258,19 @@ export async function DELETE(
       }
     }
 
+    // Kat ikonunu sil
     if (floorToDelete?.icon) {
-      const iconPath = path.join(process.cwd(), "public", "uploads", floorToDelete.icon);
-      if (fs.existsSync(iconPath)) {
-        fs.unlinkSync(iconPath);
+      try {
+        const iconFilename = floorToDelete.icon.split('/').pop();
+        if (iconFilename) {
+          const iconPath = path.join(process.cwd(), 'public', 'uploads', iconFilename);
+          if (fs.existsSync(iconPath)) {
+            await fs.promises.unlink(iconPath);
+            console.log('Floor icon deleted:', iconFilename);
+          }
+        }
+      } catch (error) {
+        console.error('Error deleting floor icon:', error);
       }
     }
     //delete all images and backgroundImages from flowData nodes if exist
@@ -289,10 +298,19 @@ export async function DELETE(
     if (floorToDelete?.rooms) {
       const rooms = floorToDelete.rooms;
       for (const room of rooms) {
+        // Oda ikonunu sil
         if (room.icon) {
-          const iconPath = path.join(process.cwd(), "public", "uploads", room.icon);
-          if (fs.existsSync(iconPath)) {
-            fs.unlinkSync(iconPath);
+          try {
+            const iconFilename = room.icon.split('/').pop();
+            if (iconFilename) {
+              const iconPath = path.join(process.cwd(), 'public', 'uploads', iconFilename);
+              if (fs.existsSync(iconPath)) {
+                await fs.promises.unlink(iconPath);
+                console.log('Room icon deleted:', iconFilename);
+              }
+            }
+          } catch (error) {
+            console.error('Error deleting room icon:', error);
           }
         }
         //delete all images and backgroundImages from flowData nodes if exist

@@ -274,10 +274,19 @@ export async function DELETE(
       }
     }
     // Eğer odanın ikonu varsa, dosyayı sil
+    // Oda ikonunu sil
     if (roomToDelete?.icon) {
-      const iconPath = path.join(process.cwd(), "public", "uploads", roomToDelete.icon);
-      if (fs.existsSync(iconPath)) {
-        fs.unlinkSync(iconPath);
+      try {
+        const iconFilename = roomToDelete.icon.split('/').pop();
+        if (iconFilename) {
+          const iconPath = path.join(process.cwd(), 'public', 'uploads', iconFilename);
+          if (fs.existsSync(iconPath)) {
+            await fs.promises.unlink(iconPath);
+            console.log('Room icon deleted:', iconFilename);
+          }
+        }
+      } catch (error) {
+        console.error('Error deleting room icon:', error);
       }
     }
     if (roomToDelete?.flowData) {

@@ -260,10 +260,19 @@ export async function DELETE(
     }
 
 
+    // Bina ikonunu sil
     if (building?.icon) {
-      const iconPath = path.join(process.cwd(), "public", "uploads", building.icon);
-      if (fs.existsSync(iconPath)) {
-        fs.unlinkSync(iconPath);
+      try {
+        const iconFilename = building.icon.split('/').pop();
+        if (iconFilename) {
+          const iconPath = path.join(process.cwd(), 'public', 'uploads', iconFilename);
+          if (fs.existsSync(iconPath)) {
+            await fs.promises.unlink(iconPath);
+            console.log('Building icon deleted:', iconFilename);
+          }
+        }
+      } catch (error) {
+        console.error('Error deleting building icon:', error);
       }
     }
     if (building?.flowData) {
@@ -290,10 +299,19 @@ export async function DELETE(
 
     const floors = building?.floors || [];
     for (const floor of floors) {
+      // Kat ikonunu sil
       if (floor.icon) {
-        const iconPath = path.join(process.cwd(), "public", "uploads", floor.icon);
-        if (fs.existsSync(iconPath)) {
-          fs.unlinkSync(iconPath);
+        try {
+          const iconFilename = floor.icon.split('/').pop();
+          if (iconFilename) {
+            const iconPath = path.join(process.cwd(), 'public', 'uploads', iconFilename);
+            if (fs.existsSync(iconPath)) {
+              await fs.promises.unlink(iconPath);
+              console.log('Floor icon deleted:', iconFilename);
+            }
+          }
+        } catch (error) {
+          console.error('Error deleting floor icon:', error);
         }
       }
       if (floor.flowData) {
@@ -319,10 +337,19 @@ export async function DELETE(
       const rooms = floor.rooms || [];
       for (const room of rooms) {
         console.log("room", JSON.stringify(room))
+        // Oda ikonunu sil
         if (room.icon) {
-          const iconPath = path.join(process.cwd(), "public", "uploads", room.icon);
-          if (fs.existsSync(iconPath)) {
-            fs.unlinkSync(iconPath);
+          try {
+            const iconFilename = room.icon.split('/').pop();
+            if (iconFilename) {
+              const iconPath = path.join(process.cwd(), 'public', 'uploads', iconFilename);
+              if (fs.existsSync(iconPath)) {
+                await fs.promises.unlink(iconPath);
+                console.log('Room icon deleted:', iconFilename);
+              }
+            }
+          } catch (error) {
+            console.error('Error deleting room icon:', error);
           }
         }
         if (room.flowData) {
