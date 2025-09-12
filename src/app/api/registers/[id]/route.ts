@@ -66,6 +66,7 @@ export async function DELETE(
     const { id } = await params; // This is the nodeId to be deleted
     const { db } = await connectToDatabase();
 
+    // 1. Silinecek node'un bilgilerini al (ikonlar için)
     const containingDoc = await db
       .collection("buildings")
       .findOne({ "flowData.nodes.id": id });
@@ -99,6 +100,7 @@ export async function DELETE(
       }
     }
 
+    // 2. Building koleksiyonundan register'ı sil
     const result = await db
       .collection("buildings")
       .updateOne(
@@ -111,6 +113,30 @@ export async function DELETE(
         { error: "Register node not found to delete" },
         { status: 404 }
       );
+    }
+
+    // 3. Tüm widget'lardan bu register'ı sil
+    try {
+      // Silinen register ID'sine sahip tüm widget'ları bul
+      const widgets = await db.collection("widgets").find({
+        "registers.id": id
+      }).toArray();
+
+      // Her bir widget için register'ı sil
+      const updatePromises = widgets.map(widget => {
+        return db.collection("widgets").updateOne(
+          { _id: widget._id },
+          { $pull: { registers: { id: id } } } as any
+        );
+      });
+
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises);
+        console.log(`Register ${id} removed from ${updatePromises.length} widgets`);
+      }
+    } catch (widgetError) {
+      console.error("Widget güncellenirken hata oluştu:", widgetError);
+      // Widget güncellenemese bile ana işleme devam et
     }
 
     return NextResponse.json({ message: "Register deleted successfully" });
