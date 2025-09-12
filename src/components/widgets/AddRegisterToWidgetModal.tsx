@@ -27,7 +27,7 @@ interface AddRegisterToWidgetModalProps {
 export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> = ({ isOpen, onClose, onConfirm }) => {
   const [allRegisters, setAllRegisters] = useState<RegisterOption[]>([]);
   const [selectedRegister, setSelectedRegister] = useState<RegisterOption | null>(null);
-  const [valueSize, setValueSize] = useState({ width: 120, height: 80 });
+  const [valueSize, setValueSize] = useState({ width: 70, height: 40 });
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> =
       fetchRegisters();
     } else {
       setSelectedRegister(null);
-      setValueSize({ width: 120, height: 80 });
+      setValueSize({ width: 70, height: 40 });
     }
   }, [isOpen]);
 

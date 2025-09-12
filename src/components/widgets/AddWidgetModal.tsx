@@ -15,13 +15,13 @@ interface AddWidgetModalProps {
 
 export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose, onConfirm }) => {
   const [widgetTitle, setWidgetTitle] = useState("");
-  const [widgetSize, setWidgetSize] = useState({ width: 600, height: 400 });
+  const [widgetSize, setWidgetSize] = useState({ width: 300, height: 400 });
 
   useEffect(() => {
     if (!isOpen) {
       // Reset state on close
       setWidgetTitle("");
-      setWidgetSize({ width: 600, height: 400 });
+      setWidgetSize({ width: 300, height: 400 });
     }
   }, [isOpen]);
 
@@ -58,14 +58,14 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
                      <Input
                          id="widgetWidth"
                          type="number"
-                         value={widgetSize.width || 600}
+                         value={widgetSize.width || 300}
                          onChange={(e) => {
-                           const newWidth = e.target.value === '' ? 600 : Number(e.target.value);
+                           const newWidth = e.target.value === '' ? 300 : Number(e.target.value);
                            if (newWidth > 0) {
                              setWidgetSize(s => ({...s, width: newWidth}));
                            }
                          }}
-                         placeholder="e.g., 600"
+                         placeholder="e.g., 300"
                          className="mt-1"
                          min="1"
                      />
