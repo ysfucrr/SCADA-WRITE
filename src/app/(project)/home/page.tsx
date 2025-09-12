@@ -430,10 +430,23 @@ export default function HomePage() {
     ? [parseFloat(systemInfo.system.memoryUsagePercent)]
     : [0];
 
-  const handleAddWidget = async (widgetTitle: string, widgetSize: { width: number, height: number }) => {
+  // Interface for appearance settings
+  interface WidgetAppearance {
+    fontFamily: string;
+    textColor: string;
+    backgroundColor: string;
+    opacity: number;
+  }
+
+  const handleAddWidget = async (
+    widgetTitle: string,
+    widgetSize: { width: number, height: number },
+    appearance: WidgetAppearance
+  ) => {
     const widgetData = {
       title: widgetTitle,
       size: widgetSize,
+      appearance: appearance,
       registers: [] // Start with an empty array of registers
     };
 
@@ -609,11 +622,19 @@ export default function HomePage() {
         }
       }, []);
 
-      const handleUpdateWidgetDetails = async (newName: string, newSize: { width: number, height: number }) => {
+      const handleUpdateWidgetDetails = async (
+        newName: string,
+        newSize: { width: number, height: number },
+        appearance: WidgetAppearance
+      ) => {
         if (!editingWidget) return;
 
         const widgetId = editingWidget._id;
-        const updatedData = { title: newName, size: newSize };
+        const updatedData = {
+          title: newName,
+          size: newSize,
+          appearance: appearance
+        };
 
         setWidgets(prev => prev.map(w => w._id === widgetId ? { ...w, ...updatedData } : w));
 
@@ -724,6 +745,7 @@ export default function HomePage() {
                     size={widget.size}
                     id={widget._id}
                     position={widget.position || { x: 0, y: 0 }}
+                    appearance={widget.appearance}
                     onDelete={() => handleDeleteWidget(widget)}
                     onPositionsChange={handlePositionsChange}
                     onRegisterDelete={handleRegisterDelete}

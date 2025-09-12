@@ -24,12 +24,24 @@ interface Register {
   labelPosition?: { x: number, y: number };
   valueSize?: { width: number, height: number };
   labelSize?: { width: number, height: number };
+  fontFamily?: string;
+  fontColor?: string;
+  backgroundColor?: string;
+  opacity?: number;
 }
 
 // Helper line state interface
 interface HelperLineState {
   vertical: number | undefined;
   horizontal: number | undefined;
+}
+
+// Interface for appearance settings
+interface WidgetAppearance {
+  fontFamily: string;
+  textColor: string;
+  backgroundColor: string;
+  opacity: number;
 }
 
 interface RegisterWidgetProps {
@@ -45,6 +57,7 @@ interface RegisterWidgetProps {
   size?: { width: number, height: number }; // Widget size
   position?: { x: number, y: number }; // Widget position
   onWidgetPositionChange?: (widgetId: string, newPosition: { x: number, y: number }) => void;
+  appearance?: WidgetAppearance; // Appearance settings
 }
 
 // Constants for snapping
@@ -77,7 +90,11 @@ const DraggableLabel: React.FC<{
   siblingPositions: Record<string, { x: number, y: number }>;
   containerSize: { width: number, height: number };
   isAdmin: boolean;
-}> = ({ id, label, position, size = { width: 80, height: 28 }, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick, isAdmin }) => {
+  fontFamily?: string;
+  fontColor?: string;
+  backgroundColor?: string;
+  opacity?: number;
+}> = ({ id, label, position, size = { width: 80, height: 28 }, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick, isAdmin, fontFamily, fontColor, backgroundColor, opacity }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(position);
   const [currentSize, setCurrentSize] = useState(size);
@@ -248,13 +265,31 @@ const DraggableLabel: React.FC<{
       {helperLines.horizontal !== undefined && <div className="absolute left-0 w-full h-[1px] bg-blue-500 pointer-events-none z-50" style={{ top: `${helperLines.horizontal}px` }} />}
       
       <div
-        style={{ position: 'absolute', left: `${currentPosition.x}px`, top: `${currentPosition.y}px`, width: `${currentSize.width}px`, height: `${currentSize.height}px`, transform: isDragging ? 'scale(1.02)' : 'scale(1)', zIndex: isDragging ? 10 : 1, transition: (isDragging) ? 'none' : 'transform 0.2s ease' }}
+        style={{
+          position: 'absolute',
+          left: `${currentPosition.x}px`,
+          top: `${currentPosition.y}px`,
+          width: `${currentSize.width}px`,
+          height: `${currentSize.height}px`,
+          transform: isDragging ? 'scale(1.02)' : 'scale(1)',
+          zIndex: isDragging ? 10 : 1,
+          transition: (isDragging) ? 'none' : 'transform 0.2s ease',
+          backgroundColor: backgroundColor ? `rgba(${hexToRgb(backgroundColor)}, ${opacity !== undefined ? opacity/100 : 1})` : 'inherit',
+        }}
         className={`bg-gray-100 dark:bg-gray-700 rounded-lg text-center ${window.isAdmin || isAdmin ? 'cursor-move' : 'cursor-default'} shadow-md flex items-center justify-center relative transition-all duration-200 ${isActive ? 'border-2 border-blue-500' : 'border border-gray-200 dark:border-gray-600'}`}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onClick={onSetActive}
       >
-        <p className="text-gray-600 dark:text-gray-300 font-medium truncate px-2" style={{ fontSize }}>
+        <p
+          className="text-gray-600 dark:text-gray-300 font-medium truncate px-2"
+          style={{
+            fontSize,
+            fontFamily: fontFamily || 'inherit',
+            color: fontColor || 'inherit',
+            backgroundColor: backgroundColor ? `rgba(${hexToRgb(backgroundColor)}, ${opacity !== undefined ? opacity/100 : 1})` : 'inherit',
+          }}
+        >
           {label}
         </p>
         
@@ -299,7 +334,11 @@ const RegisterValue: React.FC<{
   siblingPositions: Record<string, { x: number, y: number }>;
   containerSize: { width: number, height: number };
   isAdmin: boolean;
-}> = ({ register, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick, isAdmin }) => {
+  fontFamily?: string;
+  fontColor?: string;
+  backgroundColor?: string;
+  opacity?: number;
+}> = ({ register, onPositionChange, onSizeChange, siblingPositions, containerSize, isActive, onSetActive, onDeleteClick, onEditClick, isAdmin, fontFamily, fontColor, backgroundColor, opacity }) => {
   const [value, setValue] = useState<any>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState<{ x: number, y: number }>(register.valuePosition || { x: 0, y: 0 });
@@ -458,13 +497,27 @@ const RegisterValue: React.FC<{
       {helperLines.horizontal !== undefined && <div className="absolute left-0 w-full h-[1px] bg-blue-500 pointer-events-none z-50" style={{ top: `${helperLines.horizontal}px` }}/>}
       <div
         ref={elementRef}
-        style={{ position: 'absolute', left: `${position.x}px`, top: `${position.y}px`, width: `${size.width}px`, height: `${size.height}px`, transform: isDragging ? 'scale(1.02)' : 'scale(1)', zIndex: isDragging ? 10 : 1, transition: isDragging ? 'none' : 'transform 0.2s ease' }}
+        style={{
+          position: 'absolute',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          transform: isDragging ? 'scale(1.02)' : 'scale(1)',
+          zIndex: isDragging ? 10 : 1,
+          transition: isDragging ? 'none' : 'transform 0.2s ease',
+          backgroundColor: backgroundColor ? `rgba(${hexToRgb(backgroundColor)}, ${opacity !== undefined ? opacity/100 : 1})` : 'inherit',
+        }}
         className={`bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center ${window.isAdmin || isAdmin ? 'cursor-move' : 'cursor-default'} shadow-lg flex items-center justify-center relative transition-all duration-200 ${isActive ? 'border-2 border-blue-500' : 'border border-gray-200 dark:border-gray-600'}`}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onClick={onSetActive}
       >
-        <p className="font-bold text-gray-900 dark:text-white" style={{ fontSize }}>
+        <p className="font-bold text-gray-900 dark:text-white" style={{
+          fontSize,
+          fontFamily: fontFamily || 'inherit',
+          color: fontColor || 'inherit',
+        }}>
           {value !== null ? value.toString() : <span className="text-xs text-gray-500">Loading...</span>}
         </p>
         
@@ -1350,7 +1403,7 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
         
         <div
           data-widget-id={id}
-          className="widget-container bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 relative group border border-transparent hover:border-blue-500 transition-all duration-300"
+          className="widget-container rounded-xl shadow-lg p-6 relative group border border-transparent hover:border-blue-500 transition-all duration-300"
           style={{
             width: `${widgetSize.width}px`,
             height: `${widgetSize.height}px`,
@@ -1359,7 +1412,11 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
             top: widgetPosition.y,
             zIndex: isDraggingWidget ? 100 : 1,
             transition: isDraggingWidget ? 'none' : 'box-shadow 0.2s ease',
-            boxShadow: isDraggingWidget ? '0 10px 25px rgba(0, 0, 0, 0.15)' : ''
+            boxShadow: isDraggingWidget ? '0 10px 25px rgba(0, 0, 0, 0.15)' : '',
+            backgroundColor: props.appearance ?
+              `rgba(${hexToRgb(props.appearance.backgroundColor)}, ${props.appearance.opacity / 100})` :
+              'var(--bg-white-dark-gray-800)',
+            fontFamily: props.appearance?.fontFamily || 'inherit',
           }}
         >
           {/* Widget Edit/Delete Buttons - Widget üzerinde ama dışında görünecek - Sadece admin kullanıcılar için */}
@@ -1421,7 +1478,7 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
           {/* Removing the old action buttons from inside the widget */}
         
           <h3
-            className="text-xl font-bold text-gray-900 dark:text-white mb-4 text-center tracking-wider select-none"
+            className="text-xl font-bold mb-4 text-center tracking-wider select-none"
             style={{
               cursor: (window.isAdmin || isAdmin) ? (isDraggingWidget ? 'grabbing' : 'grab') : 'default',
               padding: '8px 12px',
@@ -1431,7 +1488,9 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
               borderTopLeftRadius: '0.75rem',
               borderTopRightRadius: '0.75rem',
               backgroundColor: 'rgba(0, 0, 0, 0.03)',
-              borderBottom: '1px solid rgba(0, 0, 0, 0.05)'
+              borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
+              color: props.appearance?.textColor || 'var(--text-gray-900-white)',
+              fontFamily: props.appearance?.fontFamily || 'inherit',
             }}
             onMouseDown={handleWidgetMouseDown}
             onTouchStart={handleWidgetTouchStart}
@@ -1481,6 +1540,10 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
                         }}
                         onEditClick={handleEditRegister}
                         isAdmin={isAdmin}
+                        fontFamily={reg.fontFamily}
+                        fontColor={reg.fontColor}
+                        backgroundColor={reg.backgroundColor}
+                        opacity={reg.opacity}
                       />
                     )}
                     {isRegister && (
@@ -1501,6 +1564,10 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
                         }}
                         onEditClick={handleEditRegister}
                         isAdmin={isAdmin}
+                        fontFamily={reg.fontFamily}
+                        fontColor={reg.fontColor}
+                        backgroundColor={reg.backgroundColor}
+                        opacity={reg.opacity}
                       />
                     )}
                   </React.Fragment>
@@ -1535,4 +1602,18 @@ declare global {
   interface Window {
     isAdmin?: boolean;
   }
+}
+
+// Helper function to convert hex color to RGB
+function hexToRgb(hex: string): string {
+  // Remove the # if present
+  hex = hex.replace('#', '');
+  
+  // Parse the hex values
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  
+  // Return as CSS rgb string
+  return `${r}, ${g}, ${b}`;
 }
