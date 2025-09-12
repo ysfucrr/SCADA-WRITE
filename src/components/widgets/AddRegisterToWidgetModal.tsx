@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 interface RegisterOption {
   value: string;
   label: string;
+  analyzerName: string;
   analyzerId: string;
   address: number;
   dataType: string;
@@ -40,6 +41,7 @@ export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> =
           const options = data.map((reg: any) => ({
             value: reg.id,
             label: `${reg.label} (${reg.analyzerName} - ${reg.address})`,
+            analyzerName: reg.analyzerName,
             analyzerId: reg.analyzerId,
             address: reg.address,
             dataType: reg.dataType,
@@ -69,6 +71,7 @@ export const AddRegisterToWidgetModal: React.FC<AddRegisterToWidgetModalProps> =
     const newRegisterData = {
         id: selectedRegister.value,
         label: selectedRegister.label.split('(')[0].trim(),
+        analyzerName: selectedRegister.analyzerName,
         analyzerId: selectedRegister.analyzerId,
         address: selectedRegister.address,
         dataType: selectedRegister.dataType,

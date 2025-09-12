@@ -14,6 +14,7 @@ interface EditRegisterModalProps {
   register: {
     id: string;
     label?: string;
+    analyzerName?: string;
     analyzerId?: string;
     address?: number;
     dataType?: string;
@@ -101,8 +102,8 @@ export const EditRegisterModal: React.FC<EditRegisterModalProps> = ({
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 dark:bg-gray-700/30 dark:border-gray-600">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-xs font-medium text-gray-500 dark:text-gray-400">Analyzer ID</Label>
-                  <p className="text-sm text-gray-700 dark:text-gray-300">{register.analyzerId}</p>
+                  <Label className="text-xs font-medium text-gray-500 dark:text-gray-400">Analyzer Name</Label>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">{register.analyzerName || register.analyzerId}</p>
                 </div>
                 <div>
                   <Label className="text-xs font-medium text-gray-500 dark:text-gray-400">Address</Label>

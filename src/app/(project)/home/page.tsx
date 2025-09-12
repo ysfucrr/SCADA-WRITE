@@ -536,7 +536,7 @@ export default function HomePage() {
             return widget;
           })
         );
-
+    
         if (updatedWidget) {
             try {
                 const response = await fetch(`/api/widgets/${widgetId}`, {
@@ -544,7 +544,7 @@ export default function HomePage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ registers: updatedWidget.registers }),
                 });
-
+    
                 if (!response.ok) {
                     throw new Error('Failed to add register to widget');
                 }
@@ -554,6 +554,20 @@ export default function HomePage() {
                 showToast("An error occurred while adding the register.", "error");
             }
         }
+      }, []);
+    
+      const handleRegisterUpdate = useCallback((widgetId: string, registerId: string, updatedRegister: any) => {
+        setWidgets(prevWidgets =>
+          prevWidgets.map(widget => {
+            if (widget._id === widgetId) {
+              const updatedRegisters = widget.registers.map((reg: any) =>
+                reg.id === registerId ? { ...reg, ...updatedRegister } : reg
+              );
+              return { ...widget, registers: updatedRegisters };
+            }
+            return widget;
+          })
+        );
       }, []);
 
       const handleUpdateWidgetDetails = async (newName: string, newSize: { width: number, height: number }) => {
@@ -666,6 +680,7 @@ export default function HomePage() {
                     onPositionsChange={handlePositionsChange}
                     onRegisterDelete={handleRegisterDelete}
                     onRegisterAdd={handleRegisterAdd}
+                    onRegisterUpdate={handleRegisterUpdate}
                     onEdit={() => setEditingWidget(widget)}
                   />
                 );

@@ -36,6 +36,7 @@ interface RegisterWidgetProps {
   onPositionsChange: (widgetId: string, newPositions: { labelPositions: any, valuePositions: any }) => void;
   onRegisterDelete: (widgetId: string, registerId: string) => void;
   onRegisterAdd: (widgetId: string, newRegister: any) => void;
+  onRegisterUpdate?: (widgetId: string, registerId: string, updatedRegister: any) => void;
   onEdit: () => void;
   id?: string; // Widget ID
   size?: { width: number, height: number }; // Widget size
@@ -468,6 +469,7 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   onPositionsChange,
   onRegisterDelete,
   onRegisterAdd,
+  onRegisterUpdate,
   onEdit,
   id,
   size = { width: 600, height: 400 },
@@ -574,6 +576,11 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
       }
       
       console.log("Register updated successfully");
+      
+      // Parent'a bildir
+      if (onRegisterUpdate) {
+        onRegisterUpdate(id, updatedRegister.id, updatedRegisterData);
+      }
     } catch (error) {
       console.error("Error updating register:", error);
     }
