@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ApexOptions } from "apexcharts";
 
@@ -54,7 +55,25 @@ interface SystemInfo {
 
 export default function HomePage() {
   // Tab state
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'overview' | 'system-health'>('overview');
+  
+  // Check if this is a direct access via URL (from redirect)
+  useEffect(() => {
+    // Check URL for the redirect parameter
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const fromRedirect = urlParams.get('source') === 'redirect';
+      
+      if (fromRedirect) {
+        setActiveTab('system-health');
+        
+        // Clean up the URL by removing the parameter (optional)
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
+  }, []);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [widgets, setWidgets] = useState<any[]>([]);
   const [widgetsLoading, setWidgetsLoading] = useState(true);

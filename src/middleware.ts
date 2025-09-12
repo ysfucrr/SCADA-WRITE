@@ -39,14 +39,18 @@ export async function middleware(request: NextRequest) {
                 const data = await response.json();
                 console.log("has admin: ", data)
                 if (data.hasAdmin) {
-                    return NextResponse.redirect(new URL('/dashboard', request.url));
+                    const redirectUrl = new URL('/home', request.url);
+                    redirectUrl.searchParams.set('source', 'redirect');
+                    return NextResponse.redirect(redirectUrl);
                 }else{
                     return NextResponse.redirect(new URL('/setup-admin', request.url));
                 }
             } else {
                 if (user.permissions?.dashboard) {
                     console.log("dashboard")
-                    return NextResponse.redirect(new URL('/dashboard', request.url));
+                    const redirectUrl = new URL('/home', request.url);
+                    redirectUrl.searchParams.set('source', 'redirect');
+                    return NextResponse.redirect(redirectUrl);
                 } else if (user.permissions?.units) {
                     console.log("units")
                     return NextResponse.redirect(new URL('/units', request.url));
@@ -65,8 +69,10 @@ export async function middleware(request: NextRequest) {
                 }
 
             }
-            // Giriş yapmış kullanıcı signin sayfasına erişmeye çalışırsa dashboard'a yönlendir
-            return NextResponse.redirect(new URL('/dashboard', request.url));
+            // Giriş yapmış kullanıcı signin sayfasına erişmeye çalışırsa home sayfasına yönlendir
+            const redirectUrl = new URL('/home', request.url);
+            redirectUrl.searchParams.set('source', 'redirect');
+            return NextResponse.redirect(redirectUrl);
         }
         return NextResponse.next();
     } else {
@@ -76,18 +82,32 @@ export async function middleware(request: NextRequest) {
             const user = token
 
             if (user && user.role === 'admin') {
-                if (pathname === "/") return NextResponse.redirect(new URL('/dashboard', request.url));
+                if (pathname === "/") {
+                    const redirectUrl = new URL('/home', request.url);
+                    redirectUrl.searchParams.set('source', 'redirect');
+                    return NextResponse.redirect(redirectUrl);
+                }
                 return NextResponse.next();
 
             } else if (user) {
                 console.log("user: ", user)
                 //check permissions
 
-                if (pathname.startsWith('/dashboard') || pathname === '/') {
+                if (pathname.startsWith('/dashboard') || pathname === '/' || pathname.startsWith('/home')) {
                     console.log("dashboard: ", pathname)
                     if (user.permissions?.dashboard) {
                         console.log("dashboard")
-                        if (pathname === "/") return NextResponse.redirect(new URL('/dashboard', request.url));
+                        if (pathname === "/") {
+                            const redirectUrl = new URL('/home', request.url);
+                            redirectUrl.searchParams.set('source', 'redirect');
+                            return NextResponse.redirect(redirectUrl);
+                        }
+                        // Also redirect /dashboard to /home
+                        if (pathname === "/dashboard") {
+                            const redirectUrl = new URL('/home', request.url);
+                            redirectUrl.searchParams.set('source', 'redirect');
+                            return NextResponse.redirect(redirectUrl);
+                        }
                         return NextResponse.next();
                     } else {
                         //fallback to first permission
@@ -161,6 +181,7 @@ export const config = {
     matcher: [
         '/',
         '/dashboard',
+        '/home',
         '/signin',
         '/buildings/:path*',
         '/users/:path*',
