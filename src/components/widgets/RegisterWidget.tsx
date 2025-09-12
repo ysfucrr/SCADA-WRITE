@@ -2,6 +2,7 @@
 
 import { useWebSocket } from "@/context/WebSocketContext";
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import ReactDOM from "react-dom";
 import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { WidgetToolbar } from './WidgetToolbar';
 import { WidgetDnDProvider, useWidgetDnD } from '@/context/WidgetDnDContext';
@@ -1325,31 +1326,37 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
             boxShadow: isDraggingWidget ? '0 10px 25px rgba(0, 0, 0, 0.15)' : ''
           }}
         >
-        <AddRegisterToWidgetModal
-            isOpen={isAddRegisterModalOpen}
-            onClose={() => setIsAddRegisterModalOpen(false)}
-            onConfirm={handleAddRegister}
-        />
-        
-        <AddLabelModal
-            isOpen={isAddLabelModalOpen}
-            onClose={() => setIsAddLabelModalOpen(false)}
-            onConfirm={handleAddLabel}
-        />
-        
-        <EditRegisterModal
-            isOpen={isEditRegisterModalOpen}
-            onClose={() => setIsEditRegisterModalOpen(false)}
-            onConfirm={handleUpdateRegister}
-            register={selectedRegister}
-        />
-        
-        <EditLabelModal
-            isOpen={isEditLabelModalOpen}
-            onClose={() => setIsEditLabelModalOpen(false)}
-            onConfirm={handleUpdateLabel}
-            label={selectedLabel}
-        />
+        {/* Render modals in a portal */}
+        {ReactDOM.createPortal(
+          <>
+            <AddRegisterToWidgetModal
+                isOpen={isAddRegisterModalOpen}
+                onClose={() => setIsAddRegisterModalOpen(false)}
+                onConfirm={handleAddRegister}
+            />
+            
+            <AddLabelModal
+                isOpen={isAddLabelModalOpen}
+                onClose={() => setIsAddLabelModalOpen(false)}
+                onConfirm={handleAddLabel}
+            />
+            
+            <EditRegisterModal
+                isOpen={isEditRegisterModalOpen}
+                onClose={() => setIsEditRegisterModalOpen(false)}
+                onConfirm={handleUpdateRegister}
+                register={selectedRegister}
+            />
+            
+            <EditLabelModal
+                isOpen={isEditLabelModalOpen}
+                onClose={() => setIsEditLabelModalOpen(false)}
+                onConfirm={handleUpdateLabel}
+                label={selectedLabel}
+            />
+          </>,
+          document.body
+        )}
           <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-30">
               <button onClick={onEdit} className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <PencilSquareIcon className="h-5 w-5" />
