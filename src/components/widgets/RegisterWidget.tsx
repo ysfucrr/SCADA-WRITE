@@ -8,6 +8,7 @@ import { WidgetDnDProvider, useWidgetDnD } from '@/context/WidgetDnDContext';
 import { AddRegisterToWidgetModal } from './AddRegisterToWidgetModal';
 import { AddLabelModal } from './AddLabelModal';
 import { EditRegisterModal } from './EditRegisterModal';
+import { EditLabelModal } from './EditLabelModal';
 
 
 interface Register {
@@ -484,7 +485,9 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   const [isAddRegisterModalOpen, setIsAddRegisterModalOpen] = useState(false);
   const [isAddLabelModalOpen, setIsAddLabelModalOpen] = useState(false);
   const [isEditRegisterModalOpen, setIsEditRegisterModalOpen] = useState(false);
+  const [isEditLabelModalOpen, setIsEditLabelModalOpen] = useState(false);
   const [selectedRegister, setSelectedRegister] = useState<Register | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<Register | null>(null);
   const [dropPosition, setDropPosition] = useState<{x: number, y: number} | null>(null);
   const { draggedType } = useWidgetDnD();
 
@@ -511,8 +514,73 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
   const handleEditRegister = (registerId: string) => {
     const register = registers.find(reg => reg.id === registerId);
     if (register) {
-      setSelectedRegister(register);
-      setIsEditRegisterModalOpen(true);
+      if (register.dataType === "label") {
+        // Eğer düzenlenen öğe bir etiket ise, EditLabelModal'ı aç
+        setSelectedLabel(register);
+        setIsEditLabelModalOpen(true);
+      } else {
+        // Normal bir register ise, EditRegisterModal'ı aç
+        setSelectedRegister(register);
+        setIsEditRegisterModalOpen(true);
+      }
+    }
+  };
+  
+  // Handle label update
+  const handleUpdateLabel = async (updatedLabel: any) => {
+    if (!id) return;
+    
+    try {
+      console.log("Updating label with data:", updatedLabel);
+      
+      // Mevcut registers listesini al
+      const currentRegisters = [...registers];
+      
+      // Güncellenecek etiketin index'ini bul
+      const labelIndex = currentRegisters.findIndex(reg => reg.id === updatedLabel.id);
+      
+      if (labelIndex === -1) {
+        console.error("Label not found in the list:", updatedLabel.id);
+        return;
+      }
+      
+      // Etiketi güncelle
+      const updatedLabelData = {
+        ...currentRegisters[labelIndex],
+        label: updatedLabel.label,
+        labelSize: updatedLabel.labelSize
+      };
+      
+      // Yerelde registers dizisini güncelle
+      currentRegisters[labelIndex] = updatedLabelData;
+      
+      // State'leri güncelle
+      if (updatedLabel.labelSize) {
+        setLabelSizes(prev => ({...prev, [updatedLabel.id]: updatedLabel.labelSize}));
+      }
+      
+      // Widget'ı veritabanında güncelle
+      const response = await fetch(`/api/widgets/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          registers: currentRegisters
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`API error: ${errorData.message || 'Unknown error'}`);
+      }
+      
+      console.log("Label updated successfully");
+      
+      // Parent'a bildir
+      if (onRegisterUpdate) {
+        onRegisterUpdate(id, updatedLabel.id, updatedLabelData);
+      }
+    } catch (error) {
+      console.error("Error updating label:", error);
     }
   };
   
@@ -859,6 +927,13 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
             onClose={() => setIsEditRegisterModalOpen(false)}
             onConfirm={handleUpdateRegister}
             register={selectedRegister}
+        />
+        
+        <EditLabelModal
+            isOpen={isEditLabelModalOpen}
+            onClose={() => setIsEditLabelModalOpen(false)}
+            onConfirm={handleUpdateLabel}
+            label={selectedLabel}
         />
           <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-30">
               <button onClick={onEdit} className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
