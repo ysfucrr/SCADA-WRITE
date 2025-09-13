@@ -4,7 +4,6 @@ import { useWebSocket } from "@/context/WebSocketContext";
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { WidgetToolbar } from './WidgetToolbar';
 import { WidgetDnDProvider, useWidgetDnD } from '@/context/WidgetDnDContext';
 import { AddRegisterToWidgetModal } from './AddRegisterToWidgetModal';
 import { AddLabelModal } from './AddLabelModal';
@@ -1590,7 +1589,7 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
                 );
               })}
           </div>
-          <WidgetToolbar />
+          {/* Global toolbar ile değiştirildi */}
         </div>
       </>
   );
@@ -1607,9 +1606,7 @@ export const RegisterWidget: React.FC<RegisterWidgetProps> = (props) => {
   }, [isAdmin]);
   
   return (
-    <WidgetDnDProvider>
-      <WidgetContent {...props} />
-    </WidgetDnDProvider>
+    <WidgetContent {...props} />
   );
 };
 

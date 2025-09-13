@@ -12,6 +12,8 @@ import { EditWidgetModal } from "@/components/widgets/EditWidgetModal";
 import { RegisterWidget } from "@/components/widgets/RegisterWidget";
 import { showConfirmAlert, showToast } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/use-auth";
+import { GlobalWidgetToolbar } from "@/components/widgets/GlobalWidgetToolbar";
+import { WidgetDnDProvider } from "@/context/WidgetDnDContext";
 // Dynamically import ReactApexChart to avoid SSR issues
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
@@ -674,18 +676,22 @@ export default function HomePage() {
       };
     
       return (
-        <>
-        <AddWidgetModal
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
-            onConfirm={handleAddWidget}
-        />
-        <EditWidgetModal
-            isOpen={!!editingWidget}
-            onClose={() => setEditingWidget(null)}
-            onConfirm={handleUpdateWidgetDetails}
-            widget={editingWidget}
-        />
+        <WidgetDnDProvider>
+          <>
+          <AddWidgetModal
+              isOpen={isModalOpen}
+              onClose={() => setIsModalOpen(false)}
+              onConfirm={handleAddWidget}
+          />
+          <EditWidgetModal
+              isOpen={!!editingWidget}
+              onClose={() => setEditingWidget(null)}
+              onConfirm={handleUpdateWidgetDetails}
+              widget={editingWidget}
+          />
+          
+          {/* Global widget toolbar - sadece overview sekmesinde ve admin kullanıcılar için */}
+          {activeTab === 'overview' && isAdmin && <GlobalWidgetToolbar />}
     <div className="w-full p-6">
       {/* Tab navigation - More prominent buttons */}
       <div className="mb-8 flex justify-between items-center">
@@ -1021,17 +1027,18 @@ export default function HomePage() {
                   </Paragraph>
                 </div>
               </div>
-            </>
-          ) : (
-            <div className="h-80 flex items-center justify-center text-gray-500">
-              Collecting I/O data...
-            </div>
-          )}
-        </div>
+              </>
+        ) : (
+          <div className="h-80 flex items-center justify-center text-gray-500">
+            Collecting I/O data...
           </div>
-        </>
-      )}
-    </div>
-    </>
+        )}
+      </div>
+        </div>
+      </>
+    )}
+  </div>
+  </>
+</WidgetDnDProvider>
   );
 }
