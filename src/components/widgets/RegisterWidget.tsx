@@ -1026,11 +1026,15 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
         return;
       }
       
-      // Etiketi güncelle
+      // Etiketi güncelle - görünüm ayarlarını da dahil et
       const updatedLabelData = {
         ...currentRegisters[labelIndex],
         label: updatedLabel.label,
-        labelSize: updatedLabel.labelSize
+        labelSize: updatedLabel.labelSize,
+        fontFamily: updatedLabel.fontFamily,
+        fontColor: updatedLabel.fontColor,
+        backgroundColor: updatedLabel.backgroundColor,
+        opacity: updatedLabel.opacity
       };
       
       // Yerelde registers dizisini güncelle
@@ -1155,17 +1159,29 @@ const WidgetContent: React.FC<Omit<RegisterWidgetProps, 'registers'> & { registe
       // Emin olmak için varsayılan boyut değerini kontrol et
       const labelSize = newLabelData.size || { width: 80, height: 28 };
       
+      // Görünüm ayarlarını al
+      const appearance = newLabelData.appearance || {
+        fontFamily: 'Arial, sans-serif',
+        textColor: '#000000',
+        backgroundColor: '#ffffff',
+        opacity: 100
+      };
+      
       // Etiket için gerekli minimum alanları içeren nesne oluştur
-      // dataType korunuyor, diğer gereksiz alanlar kaldırıldı
       const newLabel = {
         id: labelId,
         label: newLabelData.text,
         labelPosition: dropPosition,
         labelSize: labelSize, // Açıkça belirtilen veya varsayılan boyut değerini kullan
-        dataType: "label" // Etiketleri ayırt etmek için dataType gerekli
+        dataType: "label", // Etiketleri ayırt etmek için dataType gerekli
+        // Görünüm ayarlarını ekle
+        fontFamily: appearance.fontFamily,
+        fontColor: appearance.textColor,
+        backgroundColor: appearance.backgroundColor,
+        opacity: appearance.opacity
       };
       
-      // API'ye kaydetmek için sadece gerekli alanları içeren etiket nesnesini ekle
+      // API'ye kaydetmek için etiket nesnesini ekle
       onRegisterAdd(id, newLabel);
     }
   };
