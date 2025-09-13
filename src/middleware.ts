@@ -1,14 +1,14 @@
 import { getToken } from 'next-auth/jwt';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { connectToDatabase } from './lib/mongodb';
+
 
 
 
 
 export async function middleware(request: NextRequest) {
-    // Debug için konsola yazdırma
-    console.log('Middleware çalışıyor - yol:', request.nextUrl.pathname);
+    // Printing to console for debugging
+    console.log('Middleware running - path:', request.nextUrl.pathname);
 
     const pathname = request.nextUrl.pathname;
     console.log("pathname: ", pathname)
@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
     }
 
 
-    // Signin sayfası için özel kontrol
+    // Special check for signin page
     if (pathname === '/signin') {
         const token: any = await getToken({ req: request });
         console.log("token: ", token)
@@ -46,30 +46,13 @@ export async function middleware(request: NextRequest) {
                     return NextResponse.redirect(new URL('/setup-admin', request.url));
                 }
             } else {
-                if (user.permissions?.dashboard) {
-                    console.log("dashboard")
-                    const redirectUrl = new URL('/home', request.url);
-                    redirectUrl.searchParams.set('source', 'redirect');
-                    return NextResponse.redirect(redirectUrl);
-                } else if (user.permissions?.units) {
-                    console.log("units")
-                    return NextResponse.redirect(new URL('/units', request.url));
-                } else if (user.permissions?.trendLog) {
-                    console.log("trendLog")
-                    return NextResponse.redirect(new URL('/trend-log', request.url));
-                } else if (user.permissions?.users) {
-                    console.log("users")
-                    return NextResponse.redirect(new URL('/users', request.url));
-                } else if (user.buildingPermissions) {
-                    console.log("buildingPermissions")
-                    //building permissions is an objecct with map<string, boolean> type, value must be true for the building to be accessible
-                    const firstBuildingId = Object.keys(user.buildingPermissions).find(key => user.buildingPermissions[key]);
-                    console.log("firstBuildingId: ", firstBuildingId)
-                    return NextResponse.redirect(new URL(`/buildings/${firstBuildingId}`, request.url));
-                }
-
+                // Redirect all users to home page, regardless of their permissions
+                console.log("User is being redirected to home page")
+                const redirectUrl = new URL('/home', request.url);
+                redirectUrl.searchParams.set('source', 'redirect');
+                return NextResponse.redirect(redirectUrl);
             }
-            // Giriş yapmış kullanıcı signin sayfasına erişmeye çalışırsa home sayfasına yönlendir
+            // Redirect to home page if a logged-in user tries to access the signin page
             const redirectUrl = new URL('/home', request.url);
             redirectUrl.searchParams.set('source', 'redirect');
             return NextResponse.redirect(redirectUrl);
@@ -95,6 +78,14 @@ export async function middleware(request: NextRequest) {
 
                 if (pathname.startsWith('/dashboard') || pathname === '/' || pathname.startsWith('/home')) {
                     console.log("dashboard: ", pathname)
+                    
+                    // If URL has 'source=redirect' parameter, don't redirect again
+                    // This prevents infinite redirection loops
+                    if (request.nextUrl.searchParams.get('source') === 'redirect') {
+                        console.log("Already redirected, continue")
+                        return NextResponse.next();
+                    }
+                    
                     if (user.permissions?.dashboard) {
                         console.log("dashboard")
                         if (pathname === "/") {
@@ -110,20 +101,10 @@ export async function middleware(request: NextRequest) {
                         }
                         return NextResponse.next();
                     } else {
-                        //fallback to first permission
-                        if (user.permissions?.trendLog) {
-                            return NextResponse.redirect(new URL('/trend-log', request.url));
-                        }
-                        if (user.permissions?.users) {
-                            return NextResponse.redirect(new URL('/users', request.url));
-                        }
-                        if (user.permissions?.units) {
-                            return NextResponse.redirect(new URL('/units', request.url));
-                        }
-                        if (user.buildingPermissions) {
-                            const firstBuildingId = Object.keys(user.buildingPermissions).find(key => user.buildingPermissions[key]);
-                            return NextResponse.redirect(new URL(`/buildings/${firstBuildingId}`, request.url));
-                        }
+                        // If no dashboard permission, redirect directly to System Health tab
+                        const redirectUrl = new URL('/home', request.url);
+                        redirectUrl.searchParams.set('source', 'redirect');
+                        return NextResponse.redirect(redirectUrl);
                     }
                 }
                 if (pathname.startsWith('/trend-log')) {
@@ -131,21 +112,45 @@ export async function middleware(request: NextRequest) {
                     if (user.permissions?.trendLog) {
                         return NextResponse.next();
                     }
-                    return NextResponse.redirect(new URL('/access-denied', request.url));
+                    // If no TrendLog access, redirect to System Health tab
+                    // If already coming from a redirect source, continue with NextResponse.next()
+                    if (request.nextUrl.searchParams.get('source') === 'redirect') {
+                        console.log("Already redirected, continue")
+                        return NextResponse.next();
+                    }
+                    const redirectUrl = new URL('/home', request.url);
+                    redirectUrl.searchParams.set('source', 'redirect');
+                    return NextResponse.redirect(redirectUrl);
                 }
                 if (pathname.startsWith('/users')) {
                     console.log("users", pathname)
                     if (user.permissions?.users) {
                         return NextResponse.next();
                     }
-                    return NextResponse.redirect(new URL('/access-denied', request.url));
+                    // If no users permission, redirect to System Health tab
+                    // If already coming from a redirect source, continue with NextResponse.next()
+                    if (request.nextUrl.searchParams.get('source') === 'redirect') {
+                        console.log("Already redirected, continue")
+                        return NextResponse.next();
+                    }
+                    const redirectUrl = new URL('/home', request.url);
+                    redirectUrl.searchParams.set('source', 'redirect');
+                    return NextResponse.redirect(redirectUrl);
                 }
                 if (pathname.startsWith('/units')) {
                     console.log("units", pathname)
                     if (user.permissions?.units) {
                         return NextResponse.next();
                     }
-                    return NextResponse.redirect(new URL('/access-denied', request.url));
+                    // If no units permission, redirect to System Health tab
+                    // If already coming from a redirect source, continue with NextResponse.next()
+                    if (request.nextUrl.searchParams.get('source') === 'redirect') {
+                        console.log("Already redirected, continue")
+                        return NextResponse.next();
+                    }
+                    const redirectUrl = new URL('/home', request.url);
+                    redirectUrl.searchParams.set('source', 'redirect');
+                    return NextResponse.redirect(redirectUrl);
                 }
 
                 if (pathname.startsWith('/buildings')) {
@@ -153,12 +158,28 @@ export async function middleware(request: NextRequest) {
                         if (user.buildingPermissions[pathname.split('/')[2]]) {
                             return NextResponse.next();
                         }
-                        return NextResponse.redirect(new URL('/access-denied', request.url));
+                        // If no building permission, redirect to System Health tab
+                        // If already coming from a redirect source, continue with NextResponse.next()
+                        if (request.nextUrl.searchParams.get('source') === 'redirect') {
+                            console.log("Already redirected, continue")
+                            return NextResponse.next();
+                        }
+                        const redirectUrl = new URL('/home', request.url);
+                        redirectUrl.searchParams.set('source', 'redirect');
+                        return NextResponse.redirect(redirectUrl);
                     }
                 }
                 //block admin only routes
                 if (pathname.startsWith('/gateway-settings') || pathname.startsWith('/analyzers')) {
-                    return NextResponse.redirect(new URL('/access-denied', request.url));
+                    // For admin-only pages, redirect to System Health tab
+                    // If already coming from a redirect source, continue with NextResponse.next()
+                    if (request.nextUrl.searchParams.get('source') === 'redirect') {
+                        console.log("Already redirected, continue")
+                        return NextResponse.next();
+                    }
+                    const redirectUrl = new URL('/home', request.url);
+                    redirectUrl.searchParams.set('source', 'redirect');
+                    return NextResponse.redirect(redirectUrl);
                 }
 
                 // return NextResponse.redirect(new URL('/error-404', request.url));
@@ -176,7 +197,7 @@ export async function middleware(request: NextRequest) {
 
 }
 
-// Hangi yollar için middleware'in çalışacağını belirt
+// Specify which paths the middleware will run for
 export const config = {
     matcher: [
         '/',
