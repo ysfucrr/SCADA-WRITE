@@ -66,6 +66,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       console.log("Updating widget position:", updateData.position);
     }
     
+    // Görünüm ayarları (appearance) güncellemesi varsa
+    if (updateData.appearance) {
+      updateFields.appearance = updateData.appearance;
+      console.log("Updating widget appearance:", updateData.appearance);
+    }
+    
     // Boş güncelleme olmasını engelle
     if (Object.keys(updateFields).length === 0) {
       return NextResponse.json({ message: "No valid fields to update" }, { status: 400 });
