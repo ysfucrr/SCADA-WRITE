@@ -4,6 +4,7 @@ import { SmallText } from "@/components/ui/typography";
 import Label from "@/components/form/Label";
 import InputField from "@/components/form/input/InputField";
 import Select from "@/components/form/Select";
+import { Loader2 } from "lucide-react";
 
 interface GatewayFormProps {
     gateway?: GatewayType;
@@ -19,6 +20,23 @@ interface GatewayFormProps {
     onCancel: () => void;
 }
 
+// Interface for serial port information
+interface SerialPortInfo {
+    path: string;
+    manufacturer?: string | null;
+    serialNumber?: string | null;
+    pnpId?: string | null;
+    vendorId?: string | null;
+    productId?: string | null;
+}
+
+// API response interface
+interface SerialPortsResponse {
+    ports: SerialPortInfo[];
+    error?: string;
+    platform?: string;
+}
+
 const GatewayForm: React.FC<GatewayFormProps> = ({ gateway, onSubmit, onCancel }) => {
     const [gatewayName, setGatewayName] = useState(gateway?.name || "");
     const [connectionType, setConnectionType] = useState(gateway?.connectionType || "tcp");
@@ -28,6 +46,13 @@ const GatewayForm: React.FC<GatewayFormProps> = ({ gateway, onSubmit, onCancel }
     const [parity, setParity] = useState(gateway?.parity || "None");
     const [stopBits, setStopBits] = useState(gateway?.stopBits || "1");
     const [ipAddressError, setIpAddressError] = useState("");
+    
+    // State for serial port list
+    const [serialPorts, setSerialPorts] = useState<SerialPortInfo[]>([]);
+    const [loadingPorts, setLoadingPorts] = useState(false);
+    const [portError, setPortError] = useState("");
+    const [useManualPortEntry, setUseManualPortEntry] = useState(false);
+    const [platformType, setPlatformType] = useState<string>("unknown");
 
     // Validate IP address format
     const validateIpAddress = (ip: string) => {
@@ -47,6 +72,81 @@ const GatewayForm: React.FC<GatewayFormProps> = ({ gateway, onSubmit, onCancel }
         } else {
             setIpAddressError("");
         }
+    };
+
+    // Load serial ports from API
+    useEffect(() => {
+        // Only load ports if serial connection type is selected and not in edit mode
+        if (connectionType === "serial") {
+            fetchSerialPorts();
+        }
+    }, [connectionType]);
+
+    // API call to fetch serial ports
+    const fetchSerialPorts = async () => {
+        if (loadingPorts) return;
+        
+        setLoadingPorts(true);
+        setPortError("");
+        
+        try {
+            const response = await fetch('/api/serial-ports');
+            const data: SerialPortsResponse = await response.json();
+            
+            // Save platform information
+            if (data.platform) {
+                setPlatformType(data.platform);
+                console.log(`Detected platform: ${data.platform}`);
+            }
+            
+            if (data.ports && Array.isArray(data.ports)) {
+                setSerialPorts(data.ports);
+                
+                // If port list is empty, switch to manual entry
+                if (data.ports.length === 0) {
+                    setUseManualPortEntry(true);
+                    setPortError("No available serial ports found. Please enter the port name manually.");
+                } else {
+                    setUseManualPortEntry(false);
+                    
+                    // If there's no current port value, select the first port
+                    if (!port && data.ports.length > 0) {
+                        setPort(data.ports[0].path);
+                        
+                        // Log successful port detection
+                        console.log("Successfully detected serial ports:", data.ports.map((p: SerialPortInfo) => p.path).join(", "));
+                    }
+                }
+            } else {
+                setUseManualPortEntry(true);
+                setPortError("Could not retrieve port list. Please enter the port name manually.");
+            }
+            
+            // Handle any API error more gracefully
+            if (data.error) {
+                console.error("Serial port detection error:", data.error);
+                
+                // Show a simplified user-friendly error
+                if (data.error.includes("native build") || data.error.includes("No native")) {
+                    setPortError("Port auto-detection is not available. Please enter the port name manually.");
+                } else {
+                    setPortError(`Could not detect ports: ${data.error.split(':')[0]}`);
+                }
+                
+                setUseManualPortEntry(true);
+            }
+        } catch (error) {
+            console.error("Failed to fetch serial ports:", error);
+            setPortError("Could not connect to port detection service. Please enter the port name manually.");
+            setUseManualPortEntry(true);
+        } finally {
+            setLoadingPorts(false);
+        }
+    };
+
+    // Toggle manual port entry
+    const toggleManualEntry = () => {
+        setUseManualPortEntry(!useManualPortEntry);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -124,13 +224,86 @@ const GatewayForm: React.FC<GatewayFormProps> = ({ gateway, onSubmit, onCancel }
                 {/* Port */}
                 <div className="space-y-2">
                     <Label htmlFor="port">Port</Label>
-                    <InputField
+                    
+                    {connectionType === "tcp" ? (
+                        <InputField
                             id="port"
-                            type={connectionType === "tcp" ? "number" : "text"}
-                            placeholder={connectionType === "tcp" ? "502" : "COM3"}
+                            type="number"
+                            placeholder="502"
                             value={port}
                             onChange={(e) => setPort(e.target.value)}
                         />
+                    ) : loadingPorts ? (
+                        <div className="flex items-center space-x-2 h-10 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700">
+                            <Loader2 className="animate-spin h-4 w-4 text-blue-500" />
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                                Detecting serial ports...
+                            </span>
+                        </div>
+                    ) : useManualPortEntry || serialPorts.length === 0 ? (
+                        <div className="space-y-2">
+                            <InputField
+                                id="port"
+                                type="text"
+                                placeholder="COM3"
+                                value={port}
+                                onChange={(e) => setPort(e.target.value)}
+                            />
+                            {serialPorts.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={toggleManualEntry}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                >
+                                    Back to automatic port selection
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            <Select
+                                options={serialPorts.map(port => ({
+                                    value: port.path,
+                                    label: `${port.path}${port.manufacturer ? ` (${port.manufacturer})` : ''}`
+                                }))}
+                                onChange={(value) => setPort(value)}
+                                defaultValue={port || (serialPorts.length > 0 ? serialPorts[0].path : '')}
+                            />
+                            <button
+                                type="button"
+                                onClick={toggleManualEntry}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                                Manual port entry
+                            </button>
+                            <button
+                                type="button"
+                                onClick={fetchSerialPorts}
+                                className="ml-3 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                                Refresh port list
+                            </button>
+                        </div>
+                    )}
+                    
+                    {portError && (
+                        <SmallText className="text-amber-500">
+                            {portError}
+                            {portError.includes("not available") && (
+                                <span className="block mt-1 text-gray-500">
+                                    {platformType === "win32" ? (
+                                        "Common port names: COM1, COM2, COM3, COM4"
+                                    ) : platformType === "linux" ? (
+                                        "Common port names: /dev/ttyS0, /dev/ttyUSB0, /dev/ttyACM0"
+                                    ) : platformType === "darwin" ? (
+                                        "Common port names: /dev/tty.usbserial, /dev/cu.usbmodem"
+                                    ) : (
+                                        "Enter the port name for your serial device"
+                                    )}
+                                </span>
+                            )}
+                        </SmallText>
+                    )}
                 </div>
 
                 {/* Serial-specific options */}
