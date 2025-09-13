@@ -351,8 +351,65 @@ export class ModbusPoller extends EventEmitter {
                 } else {
                     //backendLogger.debug(`Non-critical building change detected (likely position or style). Skipping poller update.`, "ModbusPoller", { buildingId });
                 }
+            } else if (change.operationType === 'delete') {
+                // Bina silindiğinde özel işleme
+                const buildingId = change.documentKey._id.toString();
+                
+                // Silinen binanın tüm register'larını bul
+                const oldRegisters = Array.from(this.allKnownRegisters.values())
+                    .filter(r => r.buildingId === buildingId);
+                
+                // Etkilenen analizörleri belirle
+                const involvedAnalyzerIds = new Set<string>();
+                oldRegisters.forEach(r => r.analyzerId && involvedAnalyzerIds.add(r.analyzerId));
+                
+                // Register'ları internal cache'den kaldır
+                oldRegisters.forEach(r => this.allKnownRegisters.delete(r.id));
+                
+                backendLogger.info(`Building deleted: ${buildingId}, removed ${oldRegisters.length} registers affecting ${involvedAnalyzerIds.size} analyzers`, "ModbusPoller");
+                
+                // Etkilenen tüm analizörler için worker'ları güncelle
+                for (const analyzerId of involvedAnalyzerIds) {
+                    if (!analyzerId) continue;
+                    
+                    // Analizörün serial olup olmadığını kontrol et
+                    try {
+                        const { db } = await connectToDatabase();
+                        const analyzerDoc = await db.collection('analyzers').findOne({ _id: new ObjectId(analyzerId) });
+                        
+                        if (analyzerDoc?.connection === 'serial') {
+                            if (this.serialPoller) {
+                                this.serialPoller.updateAnalyzerRegisters(analyzerId).catch(err => {
+                                    backendLogger.error(`Failed to send update to SerialPoller for ${analyzerId}`, "ModbusPoller", { error: (err as Error).message });
+                                });
+                            }
+                            continue; // Sonraki analizöre geç
+                        }
+                        
+                        // TCP analizörleri için, güncellenen internal cache'den tam liste oluştur
+                        const completeRegisterList = Array.from(this.allKnownRegisters.values())
+                            .filter(r => r.analyzerId === analyzerId);
+                        
+                        const workerIndex = this.analyzerToWorker.get(analyzerId);
+                        if (workerIndex !== undefined) {
+                            const worker = this.workers[workerIndex];
+                            worker.postMessage({
+                                type: 'UPDATE_ANALYZER_REGISTERS',
+                                payload: {
+                                    analyzerId: analyzerId,
+                                    registers: completeRegisterList
+                                }
+                            });
+                            backendLogger.info(`Sent update to worker ${workerIndex} for analyzer ${analyzerId} after building deletion. New register count: ${completeRegisterList.length}`, "ModbusPoller");
+                        } else {
+                            backendLogger.warning(`Surgical update skipped: TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
+                        }
+                    } catch (err) {
+                        backendLogger.error(`Failed to update analyzer ${analyzerId} after building deletion`, "ModbusPoller", { error: (err as Error).message });
+                    }
+                }
             } else {
-                // 'insert' veya 'delete' gibi diğer işlemler topyekün güncellemeyi tetikler.
+                // 'insert' gibi diğer işlemler topyekün güncellemeyi tetikler.
                 bulkUpdateHandler(change);
             }
         };
