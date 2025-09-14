@@ -23,6 +23,7 @@ let mainWindow: BrowserWindow | null = null;
 let loadingWindow: BrowserWindow | null = null;
 let nextProcess: ChildProcess | null = null;
 let serviceProcess: ChildProcess | null = null;
+let licenseServerProcess: ChildProcess | null = null;
 
 // Setup logging
 const logsDir = path.join(app.getPath("userData"), "logs");
@@ -105,13 +106,71 @@ async function createWindow() {
   });
 
   //
-  // 1. Service başlat
+  // 1. Service ve Lisans Sunucusunu başlat
   //
-  // Geliştirme ortamında, bu işlemleri `concurrently` zaten yapıyor.
-  // Bu yüzden `electron/main.ts` içinde tekrar başlatmıyoruz.
-  if (process.env.NODE_ENV !== "development") {
+  // Önce her durumda lisans sunucusunu başlat
+  if (process.env.NODE_ENV === "development") {
+    // Development modunda
+    log("Development environment detected. Starting license server...");
+    
+    // Geliştirme modunda license-server.exe'yi proje dizininden başlat
+    const licenseServerPath = path.join(process.cwd(), "license-server", "license-server.exe");
+    log(`Starting license server from: ${licenseServerPath}`);
+    
+    licenseServerProcess = spawn(licenseServerPath, [], {
+      env: {
+        ...process.env,
+        NODE_ENV: "development"
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true // Windows'ta konsol penceresi gösterme
+    });
+    
+    // Lisans sunucusu çıktılarını logla
+    licenseServerProcess.stdout?.on('data', (data) => {
+      log(`[License Server STDOUT]: ${data.toString()}`);
+    });
+    
+    licenseServerProcess.stderr?.on('data', (data) => {
+      log(`[License Server STDERR]: ${data.toString()}`);
+    });
+    
+    licenseServerProcess.on('exit', (code) => {
+      log(`License server process exited with code: ${code}`);
+    });
+    
+    log("Development license server started.");
+  } else {
+    // Production modunda
     const serviceFile = path.join(appPath, "dist-service", "service_bundle.js");
 
+    // Lisans sunucusunu başlat
+    const licenseServerPath = path.join(process.resourcesPath, "app", "license-server.exe");
+    log(`Starting license server: ${licenseServerPath}`);
+    
+    licenseServerProcess = spawn(licenseServerPath, [], {
+      env: {
+        ...process.env,
+        NODE_ENV: "production"
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true // Windows'ta konsol penceresi gösterme
+    });
+    
+    // Lisans sunucusu çıktılarını logla
+    licenseServerProcess.stdout?.on('data', (data) => {
+      log(`[License Server STDOUT]: ${data.toString()}`);
+    });
+    
+    licenseServerProcess.stderr?.on('data', (data) => {
+      log(`[License Server STDERR]: ${data.toString()}`);
+    });
+    
+    licenseServerProcess.on('exit', (code) => {
+      log(`License server process exited with code: ${code}`);
+    });
+    
+    // Service sürecini başlat
     serviceProcess = fork(serviceFile, [], {
       env: {
         ...process.env,
@@ -143,8 +202,6 @@ async function createWindow() {
     });
     nextProcess.setMaxListeners(30);
     log("Started production processes.");
-  } else {
-    log("Development environment detected. Skipping process fork.");
   }
 
   // Next.js hazır olana kadar bekle
@@ -243,6 +300,11 @@ function stopProcesses() {
       log("Killing Service process: " + serviceProcess!.pid!);
       treeKill(serviceProcess!.pid!, "SIGKILL");
       serviceProcess = null;
+    }
+    if (licenseServerProcess) {
+      log("Killing License Server process: " + licenseServerProcess!.pid!);
+      treeKill(licenseServerProcess!.pid!, "SIGKILL");
+      licenseServerProcess = null;
     }
   } catch (err) {
     console.error("Kill error:", err);

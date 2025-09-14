@@ -21,9 +21,10 @@
     "build:service-workers": "esbuild src/lib/modbus/ModbusPollerWorker.ts --bundle --platform=node --target=node18 --external:serialport --external:@serialport/* --outfile=dist-service/ModbusPollerWorker.js",
     "obfuscate-service": "node scripts/obfuscate-service.js service_bundle.js ModbusPollerWorker.js",
     "build:service": "yarn prepare-serial-modules && yarn simplify-serial-modules && yarn build:service-main && yarn build:service-workers && yarn obfuscate-service",
+    "build:license-server": "node license-server/build-go.js",
     "build:electron": "tsc -p electron/tsconfig.json",
     "electron-dev": "tsc -p electron/tsconfig.json && cross-env NODE_ENV=development concurrently --kill-others \"cross-env IS_PACKAGED=false yarn service\" \"yarn dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron-build": "yarn build:service && yarn next build && yarn build:electron",
+    "electron-build": "yarn build:service && yarn build:license-server && yarn next build && yarn build:electron",
     "electron-start": "electron electron-dist/main.js",
     "electron:package:mac": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --mac",
     "electron:package:win": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --win",
@@ -156,6 +157,10 @@
       {
         "from": ".next/static",
         "to": "app/next-standalone/.next/static"
+      },
+      {
+        "from": "license-server/license-server.exe",
+        "to": "app/license-server.exe"
       }
     ],
     "directories": {
