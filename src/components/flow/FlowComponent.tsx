@@ -1505,7 +1505,7 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                             if (!reactFlowInstance.current) return;
                             const zoom = reactFlowInstance.current.getZoom();
                             // Normalize the deltaY value and apply a very small multiplier for fine-grained control
-                            const zoomIncrement = event.deltaY * -0.00001;
+                            const zoomIncrement = event.deltaY * -0.0001;
                             const newZoom = zoom + zoomIncrement;
                             
                             reactFlowInstance.current.zoomTo(newZoom);
