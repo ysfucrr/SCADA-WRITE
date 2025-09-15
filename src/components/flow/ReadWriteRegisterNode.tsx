@@ -178,11 +178,13 @@ const ReadWriteRegisterNode = memo((node: NodeProps<ReadWriteRegisterNodeData>) 
   const validateWriteValue = (value: string): boolean => {
     if (!value.trim()) return false;
 
-    if (dataType === 'boolean') {
-      const lowerValue = value.toLowerCase();
-      return ['0', '1', 'true', 'false', 'on', 'off'].includes(lowerValue);
+    // Eğer kontrol tipi 'boolean' ise, herhangi bir sayısal değeri geçerli kabul et.
+    // Artık sadece '0', '1' gibi değerlerle kısıtlı değil.
+    if (controlType === 'boolean') {
+        return !isNaN(parseFloat(value));
     }
 
+    // Diğer kontrol tipleri için mevcut doğrulama devam etsin.
     const numValue = parseFloat(value);
     if (isNaN(numValue)) return false;
 
@@ -219,17 +221,21 @@ const ReadWriteRegisterNode = memo((node: NodeProps<ReadWriteRegisterNodeData>) 
       // Ters formül uygula: Raw Value = (User Value - Offset) ÷ Scale
       let processedValue: number;
       
-      if (dataType === 'boolean') {
-        const lowerValue = writeValue.toLowerCase();
-        processedValue = ['1', 'true', 'on'].includes(lowerValue) ? 1 : 0;
+      // Boolean toggle artık onValue/offValue'dan gelen herhangi bir sayıyı gönderebilir.
+      const userValue = parseFloat(writeValue);
+
+      // Eğer kontrol tipi 'boolean' ise, değeri doğrudan kullan.
+      // Diğer durumlarda endüstriyel formülü uygula.
+      if (controlType === 'boolean') {
+        processedValue = userValue;
       } else {
-        const userValue = parseFloat(writeValue);
-        // Endüstriyel formül: (User Value - Offset) ÷ Scale
+        // Endüstriyel formül: (Kullanıcı Değeri - Ofset) / Ölçek
         processedValue = (userValue - (offsetValue || 0)) / (scale || 1);
-        // Integer register'lar için yuvarlama
-        if (dataType.includes('int')) {
-          processedValue = Math.round(processedValue);
-        }
+      }
+      
+      // Tüm int türleri için (boolean kontrolü dahil) sonucu yuvarla.
+      if (dataType.includes('int')) {
+        processedValue = Math.round(processedValue);
       }
 
       const writeData = {
@@ -552,11 +558,88 @@ const ReadWriteRegisterNode = memo((node: NodeProps<ReadWriteRegisterNodeData>) 
                   onClick={() => {
                     if (!writePermission || isWriting) return;
                     
-                    // Toggle logic: Eğer şu anki değer ON ise OFF yap, değilse ON yap
-                    const currentIsOn = writeValue === onValue.toString();
-                    const newValue = currentIsOn ? offValue.toString() : onValue.toString();
+                    // Toggle logic: mevcut değer onValue'ya eşitse offValue'ya, değilse onValue'ya geç
+                    const currentValStr = writeValue.toString();
+                    const onValStr = onValue !== undefined ? onValue.toString() : '';
+                    const offValStr = offValue !== undefined ? offValue.toString() : '';
+                    
+                    // Eğer mevcut değer `onValue` ise bir sonraki değer `offValue` olur.
+                    // Eğer değilse (başlangıç durumu veya `offValue` durumu), bir sonraki değer `onValue` olur.
+                    const newValue = currentValStr === onValStr ? offValStr : onValStr;
+                    
                     setWriteValue(newValue);
-                    setTimeout(() => handleWrite(), 100);
+                    
+                    // handleWrite'ı bir sonraki event döngüsünde çağırarak,
+                    // state güncellemesinin tamamlanmasını ve doğru değerin gönderilmesini sağla
+                    setTimeout(async () => {
+                      // Doğrudan handleWrite'ın içindeki mantığı burada kullanalım
+                      // state güncellemesi hemen yansımayabileceğinden, 'newValue' kullanıyoruz.
+                      if (!writePermission) {
+                        showToast('Write permission is disabled for this register', 'error');
+                        return;
+                      }
+    
+                      setIsWriting(true);
+                      try {
+                        const valueToSend = parseFloat(newValue);
+                        if (isNaN(valueToSend)) {
+                            throw new Error("Invalid number for boolean toggle");
+                        }
+    
+                        let processedValue: number = valueToSend;
+                        
+                        if (dataType.includes('int')) {
+                            processedValue = Math.round(processedValue);
+                        }
+    
+                        const writeData = {
+                          analyzerId,
+                          address,
+                          value: processedValue,
+                          dataType,
+                          byteOrder,
+                          bit: dataType === 'boolean' ? bit : undefined,
+                        };
+    
+                        backendLogger.info(`[FRONTEND] Boolean Toggle Write: Label=${label}`, "ReadWriteRegisterNode", {
+                          userValue: newValue,
+                          processedValue,
+                          writeData,
+                        });
+    
+                        await writeRegister(writeData);
+    
+                        backendLogger.info(`[FRONTEND] Write operation completed successfully`, "ReadWriteRegisterNode", writeData);
+                        showToast('Write operation successful', 'success');
+                        
+                        // Son yazılan değeri veritabanına kaydet
+                        try {
+                          await fetch(`/api/registers/${node.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ writeValue: processedValue }),
+                          });
+                          backendLogger.info(`[FRONTEND] Persisted writeValue ${processedValue} for register ${node.id}`, "ReadWriteRegisterNode");
+                        } catch (dbError) {
+                          backendLogger.error(`[FRONTEND] Failed to persist writeValue for register ${node.id}`, "ReadWriteRegisterNode", { error: dbError });
+                        }
+    
+                        setMode('read'); // Yazma sonrası okuma moduna dön
+    
+                      } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : 'Write operation failed';
+                        backendLogger.error(`[FRONTEND] Write operation failed: ${errorMessage}`, "ReadWriteRegisterNode", {
+                          analyzerId,
+                          address,
+                          value: newValue,
+                          error: errorMessage
+                        });
+                        showToast(errorMessage, 'error');
+                      } finally {
+                        setIsWriting(false);
+                        // Değeri tetiklenen yeni değerde bırak
+                      }
+                    }, 100);
                   }}
                   className={`w-full h-full flex items-center justify-center cursor-pointer ${
                     !writePermission || isWriting

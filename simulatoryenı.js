@@ -92,6 +92,22 @@ const vector = {
   getInputRegister: (_, __, cb) => cb({ modbusErrorCode: 0x01 }),
   getCoil: (_, __, cb) => cb({ modbusErrorCode: 0x01 }),
   getDiscreteInput: (_, __, cb) => cb({ modbusErrorCode: 0x01 }),
+  setRegister(addr, value, unitID, callback) {
+    if (unitID === 1 && addr === 1280) {
+      console.log(
+        `[Sim] Yazma isteği alındı: Slave ID=${unitID}, Adres=${addr}, Değer=${value} (int16)`
+      );
+      // Gelen değeri 16-bit integer olarak Buffer'a yaz
+      const realAddr = (unitID - 1) * DEVICE_OFFSET + addr;
+      if (realAddr < 0 || realAddr >= TOTAL_REGISTERS) {
+        return callback({ modbusErrorCode: 0x02 }); // Illegal Data Address
+      }
+      holdingRegisters.writeInt16BE(value, realAddr * 2);
+    }
+    // Diğer tüm yazma isteklerini şimdilik yok sayabiliriz veya loglayabiliriz.
+    // Başarılı yanıt gönder
+    callback();
+  },
 };
 
 // ────── MODBUS TCP SUNUCUSUNU BAŞLAT ──────
