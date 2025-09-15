@@ -481,17 +481,19 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
                     backendLogger.info(`[FRONTEND] Write operation completed successfully`, "WriteRegisterNode", writeData);
                     showToast('Write operation successful', 'success');
                     
-                    // Son yazılan değeri veritabanına kaydet
-                    try {
-                      await fetch(`/api/registers/${node.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ writeValue: processedValue }),
-                      });
-                      backendLogger.info(`[FRONTEND] Persisted writeValue ${processedValue} for register ${node.id}`, "WriteRegisterNode");
-                    } catch (dbError) {
-                      backendLogger.error(`[FRONTEND] Failed to persist writeValue for register ${node.id}`, "WriteRegisterNode", { error: dbError });
-                      // Kullanıcıya bu hatayı göstermeye gerek yok, ana işlem başarılı oldu.
+                    // Son yazılan değeri veritabanına kaydet (eğer geçerliyse)
+                    if (processedValue !== undefined && !isNaN(processedValue)) {
+                      try {
+                        await fetch(`/api/registers/${node.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ writeValue: processedValue }),
+                        });
+                        backendLogger.info(`[FRONTEND] Persisted writeValue ${processedValue} for register ${node.id}`, "WriteRegisterNode");
+                      } catch (dbError) {
+                        backendLogger.error(`[FRONTEND] Failed to persist writeValue for register ${node.id}`, "WriteRegisterNode", { error: dbError });
+                        // Kullanıcıya bu hatayı göstermeye gerek yok, ana işlem başarılı oldu.
+                      }
                     }
 
                   } catch (error) {

@@ -612,16 +612,18 @@ const ReadWriteRegisterNode = memo((node: NodeProps<ReadWriteRegisterNodeData>) 
                         backendLogger.info(`[FRONTEND] Write operation completed successfully`, "ReadWriteRegisterNode", writeData);
                         showToast('Write operation successful', 'success');
                         
-                        // Son yazılan değeri veritabanına kaydet
-                        try {
-                          await fetch(`/api/registers/${node.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ writeValue: processedValue }),
-                          });
-                          backendLogger.info(`[FRONTEND] Persisted writeValue ${processedValue} for register ${node.id}`, "ReadWriteRegisterNode");
-                        } catch (dbError) {
-                          backendLogger.error(`[FRONTEND] Failed to persist writeValue for register ${node.id}`, "ReadWriteRegisterNode", { error: dbError });
+                        // Son yazılan değeri veritabanına kaydet (eğer geçerliyse)
+                        if (processedValue !== undefined && !isNaN(processedValue)) {
+                          try {
+                            await fetch(`/api/registers/${node.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ writeValue: processedValue }),
+                            });
+                            backendLogger.info(`[FRONTEND] Persisted writeValue ${processedValue} for register ${node.id}`, "ReadWriteRegisterNode");
+                          } catch (dbError) {
+                            backendLogger.error(`[FRONTEND] Failed to persist writeValue for register ${node.id}`, "ReadWriteRegisterNode", { error: dbError });
+                          }
                         }
     
                         setMode('read'); // Yazma sonrası okuma moduna dön
