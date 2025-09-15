@@ -87,9 +87,9 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
   const textRef = useRef<HTMLDivElement | null>(null);
   const { isAdmin } = useAuth()
 
-  // Increment/Decrement functions for numeric control with immediate write
+  // Increment/Decrement functions for numeric control
   const incrementValue = () => {
-    if (controlType !== 'numeric' || !writePermission || isWriting) return;
+    if (controlType !== 'numeric') return;
     
     const currentNum = parseFloat(writeValue) || 0;
     const step = stepValue || 1; // Kullanıcının belirlediği step değeri
@@ -101,19 +101,11 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
     
     // Step değerine göre ondalık basamak sayısını belirle
     const decimalPlaces = stepValue < 1 ? 2 : 0;
-    const newValueStr = newValue.toFixed(decimalPlaces);
-    
-    // Değeri güncelle ve anında yazma işlemini başlat
-    setWriteValue(newValueStr);
-    
-    // handleWrite'ı bir sonraki event döngüsünde çağırarak güncel değerin kullanılmasını sağla
-    setTimeout(() => {
-      handleWriteWithValue(newValueStr);
-    }, 0);
+    setWriteValue(newValue.toFixed(decimalPlaces));
   };
 
   const decrementValue = () => {
-    if (controlType !== 'numeric' || !writePermission || isWriting) return;
+    if (controlType !== 'numeric') return;
     
     const currentNum = parseFloat(writeValue) || 0;
     const step = stepValue || 1; // Kullanıcının belirlediği step değeri
@@ -125,15 +117,7 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
     
     // Step değerine göre ondalık basamak sayısını belirle
     const decimalPlaces = stepValue < 1 ? 2 : 0;
-    const newValueStr = newValue.toFixed(decimalPlaces);
-    
-    // Değeri güncelle ve anında yazma işlemini başlat
-    setWriteValue(newValueStr);
-    
-    // handleWrite'ı bir sonraki event döngüsünde çağırarak güncel değerin kullanılmasını sağla
-    setTimeout(() => {
-      handleWriteWithValue(newValueStr);
-    }, 0);
+    setWriteValue(newValue.toFixed(decimalPlaces));
   };
 
   // WebSocket hook'unu kullan
@@ -198,14 +182,14 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
     return true;
   };
 
-  // Handle write operation with specific value
-  const handleWriteWithValue = async (valueToWrite: string) => {
+  // Handle write operation
+  const handleWrite = async () => {
     if (!writePermission) {
       showToast('Write permission is disabled for this register', 'error');
       return;
     }
 
-    if (!validateWriteValue(valueToWrite)) {
+    if (!validateWriteValue(writeValue)) {
       let errorMsg = 'Invalid write value';
       if (minValue !== undefined && maxValue !== undefined) {
         errorMsg += ` (must be between ${minValue} and ${maxValue})`;
@@ -224,7 +208,7 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
       let processedValue: number;
       
       // Boolean toggle artık onValue/offValue'dan gelen herhangi bir sayıyı gönderebilir.
-      const userValue = parseFloat(valueToWrite);
+      const userValue = parseFloat(writeValue);
 
       // Eğer kontrol tipi 'boolean' ise, değeri doğrudan kullan.
       // Diğer durumlarda endüstriyel formülü uygula.
@@ -250,9 +234,9 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
       };
 
       backendLogger.info(`[FRONTEND] Write operation starting: Label=${label}, ControlType=${controlType}`, "WriteRegisterNode", {
-        userValue: valueToWrite,
+        userValue: writeValue,
         processedValue,
-        formula: `(${valueToWrite} - ${offsetValue || 0}) ÷ ${scale || 1} = ${processedValue}`,
+        formula: `(${writeValue} - ${offsetValue || 0}) ÷ ${scale || 1} = ${processedValue}`,
         writeData,
         minValue,
         maxValue,
@@ -266,39 +250,21 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
       backendLogger.info(`[FRONTEND] Write operation completed successfully`, "WriteRegisterNode", writeData);
       showToast('Write operation successful', 'success');
       
-      // Son başarılı değeri sakla ama resetleme
-      // setWriteValue(defaultWriteValue?.toString() || '');
-      
-      // Son yazılan değeri veritabanına kaydet
-      try {
-        await fetch(`/api/registers/${node.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ writeValue: processedValue }),
-        });
-        backendLogger.info(`[FRONTEND] Persisted writeValue ${processedValue} for register ${node.id}`, "WriteRegisterNode");
-      } catch (dbError) {
-        backendLogger.error(`[FRONTEND] Failed to persist writeValue for register ${node.id}`, "WriteRegisterNode", { error: dbError });
-        // Kullanıcıya bu hatayı göstermeye gerek yok, ana işlem başarılı oldu.
-      }
+      // Reset write value to default after successful write
+      setWriteValue(defaultWriteValue?.toString() || '');
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Write operation failed';
       backendLogger.error(`[FRONTEND] Write operation failed: ${errorMessage}`, "WriteRegisterNode", {
         analyzerId,
         address,
-        value: valueToWrite,
+        value: writeValue,
         error: errorMessage
       });
       showToast(errorMessage, 'error');
     } finally {
       setIsWriting(false);
     }
-  };
-  
-  // Orijinal handleWrite, şimdi handleWriteWithValue'yu çağırır
-  const handleWrite = async () => {
-    await handleWriteWithValue(writeValue);
   };
 
   // Font boyutu hesaplama fonksiyonu
@@ -433,7 +399,22 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
               </Button>
             </div>
             
-            {/* Write Button kaldırıldı */}
+            {/* Write Button - Alt kısım */}
+            <Button
+              onClick={handleWrite}
+              disabled={!writePermission || isWriting || !writeValue.trim()}
+              className="w-full h-12 text-base font-semibold"
+              size="sm"
+            >
+              {isWriting ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+              ) : (
+                <>
+                  <Send size={16} className="mr-2" />
+                  Write Value
+                </>
+              )}
+            </Button>
           </div>
         )}
 
