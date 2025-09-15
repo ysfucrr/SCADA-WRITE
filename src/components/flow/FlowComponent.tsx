@@ -147,7 +147,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                 }
             }
         }
-        setIsPanning(isAdmin);
+        setIsPanning(true); // Enable panning for all users
     }, [containerRef.current, isFullScreen, reactFlowInstance.current, isAdmin]);
     const saveFlowData = async (newBackgroundImage?: string | null, newOpacity?: number, newBackgroundColor?: string, clearBackground: boolean = false) => {
         if (!user || user.role != "admin") return;
@@ -1481,7 +1481,7 @@ const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node, nodes:
                                 }, 400); // Uzun bir süre siyah ekranı göster ama çok uzun değil
                             }
                         }}
-                        panOnDrag={isAdmin}
+                        panOnDrag={true}
                         panOnScroll={false}
                         zoomOnScroll={false}
                         zoomOnPinch={isAdmin}
