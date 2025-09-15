@@ -30,7 +30,8 @@ interface WriteRegisterNodeData {
   opacity?: number;
   analyzerId?: string | number;
   registerType: 'write' | 'readwrite';
-  writeValue?: number | string;
+  writeValue?: number | string; // Default value for input field
+  lastValue?: number | string;  // Last value written by user
   minValue?: number;
   maxValue?: number;
   writePermission?: boolean;
@@ -81,9 +82,25 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
   } = node.data;
 
   const [currentValue, setCurrentValue] = useState<string | number>('--');
-  const [writeValue, setWriteValue] = useState<string>(defaultWriteValue?.toString() || '');
+  const [writeValue, setWriteValue] = useState<string>('');
   const [isWriting, setIsWriting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Load persisted value from database when component mounts
+  useEffect(() => {
+    // Öncelikle lastValue kullanılır, varsa - bu kullanıcının son yazdığı değerdir
+    if (node.data.lastValue !== undefined) {
+      setWriteValue(node.data.lastValue.toString());
+    }
+    // Eğer lastValue yoksa, defaultWriteValue kullanılır (varsayılan değer)
+    else if (defaultWriteValue) {
+      setWriteValue(defaultWriteValue.toString());
+    }
+    // Hiçbiri yoksa boş string
+    else {
+      setWriteValue('');
+    }
+  }, [node.data.lastValue, defaultWriteValue]);
   const textRef = useRef<HTMLDivElement | null>(null);
   const { isAdmin } = useAuth()
 
@@ -250,8 +267,21 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
       backendLogger.info(`[FRONTEND] Write operation completed successfully`, "WriteRegisterNode", writeData);
       showToast('Write operation successful', 'success');
       
-      // Reset write value to default after successful write
-      setWriteValue(defaultWriteValue?.toString() || '');
+      // Save the last written value to the database
+      try {
+        await fetch(`/api/registers/${node.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lastValue: userValue }),
+        });
+        backendLogger.info(`[FRONTEND] Persisted lastValue ${userValue} for register ${node.id}`, "WriteRegisterNode");
+      } catch (dbError) {
+        backendLogger.error(`[FRONTEND] Failed to persist lastValue for register ${node.id}`, "WriteRegisterNode", { error: dbError });
+        // Don't show this error to user as the main operation was successful
+      }
+      
+      // Keep the written value in the input instead of resetting it
+      // This allows the user to see what was last written
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Write operation failed';
@@ -360,7 +390,7 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
             {/* Current Value Display - Üst kısım */}
             <div className="text-center">
               <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {writeValue || defaultWriteValue || '0'}
+                {writeValue || '0'}
               </span>
               {scaleUnit && <span className="text-sm text-gray-500 ml-2">{scaleUnit}</span>}
             </div>
@@ -487,9 +517,9 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
                         await fetch(`/api/registers/${node.id}`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ writeValue: processedValue }),
+                          body: JSON.stringify({ lastValue: processedValue }),
                         });
-                        backendLogger.info(`[FRONTEND] Persisted writeValue ${processedValue} for register ${node.id}`, "WriteRegisterNode");
+                        backendLogger.info(`[FRONTEND] Persisted lastValue ${processedValue} for register ${node.id}`, "WriteRegisterNode");
                       } catch (dbError) {
                         backendLogger.error(`[FRONTEND] Failed to persist writeValue for register ${node.id}`, "WriteRegisterNode", { error: dbError });
                         // Kullanıcıya bu hatayı göstermeye gerek yok, ana işlem başarılı oldu.

@@ -14,10 +14,15 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
   try {
     const { db } = await connectToDatabase();
-    const { writeValue } = await request.json();
+    const requestBody = await request.json();
+    const { writeValue, lastValue } = requestBody;
+    
+    // İstek hem writeValue hem de lastValue içerirse lastValue'yu tercih et
+    // Sadece writeValue varsa geriye dönük uyumluluk için onu kullan
+    const valueToUpdate = lastValue !== undefined ? lastValue : writeValue;
 
-    if (writeValue === undefined) {
-      return NextResponse.json({ error: 'writeValue is required in the request body' }, { status: 400 });
+    if (valueToUpdate === undefined) {
+      return NextResponse.json({ error: 'writeValue or lastValue is required in the request body' }, { status: 400 });
     }
 
     // `buildings` koleksiyonundaki bir `flowData` içindeki ilgili `node`'u bul ve güncelle.
@@ -26,7 +31,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const result = await db.collection('buildings').updateMany(
       { "flowData.nodes.id": registerId },
       {
-        $set: { "flowData.nodes.$[elem].data.writeValue": writeValue }
+        $set: {
+          "flowData.nodes.$[elem].data.lastValue": valueToUpdate
+          // writeValue artık güncellenmeyecek, sadece lastValue güncellenecek
+        }
       },
       {
         arrayFilters: [{ "elem.id": registerId }]
@@ -36,8 +44,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     // Katlar için de aynı işlemi yap.
     const floorResult = await db.collection('buildings').updateMany(
       { "floors.flowData.nodes.id": registerId },
-      { 
-          $set: { "floors.$[].flowData.nodes.$[elem].data.writeValue": writeValue }
+      {
+          $set: {
+            "floors.$[].flowData.nodes.$[elem].data.lastValue": valueToUpdate
+            // writeValue artık güncellenmeyecek, sadece lastValue güncellenecek
+          }
       },
       {
         arrayFilters: [{ "elem.id": registerId }]
@@ -47,8 +58,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     // Odalar için de aynı işlemi yap.
     const roomResult = await db.collection('buildings').updateMany(
       { "floors.rooms.flowData.nodes.id": registerId },
-      { 
-          $set: { "floors.$[].rooms.$[].flowData.nodes.$[elem].data.writeValue": writeValue }
+      {
+          $set: {
+            "floors.$[].rooms.$[].flowData.nodes.$[elem].data.lastValue": valueToUpdate
+            // writeValue artık güncellenmeyecek, sadece lastValue güncellenecek
+          }
       },
       {
         arrayFilters: [{ "elem.id": registerId }]
@@ -59,7 +73,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       backendLogger.warning(`Register with ID ${registerId} not found in any building, floor, or room to update.`, 'API/registers/[id]');
     }
 
-    backendLogger.info(`Successfully updated writeValue for register ${registerId} to ${writeValue}`, 'API/registers/[id]');
+    backendLogger.info(`Successfully updated lastValue for register ${registerId} to ${valueToUpdate}`, 'API/registers/[id]');
 
     return NextResponse.json({
       success: true,

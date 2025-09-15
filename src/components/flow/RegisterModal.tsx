@@ -388,7 +388,11 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setRegisterType(node.data.registerType || 'read');
 
       // Set write-specific values
-      setWriteValue(node.data.writeValue || '');
+      // writeValue değeri her zaman defaultWriteValue olarak kullanılmalı
+      // lastValue değeri ise kullanıcı arayüzündeki değer için kullanılmalı
+      
+      // writeValue değerini state'e yükle (bu değer default write value alanı için)
+      setWriteValue(node.data.writeValue !== undefined ? node.data.writeValue.toString() : '');
       setMinValue(node.data.minValue || '');
       setMaxValue(node.data.maxValue || '');
       setWritePermission(node.data.writePermission !== undefined ? node.data.writePermission : true);
@@ -556,7 +560,9 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         displayMode,
         registerType,
         // Write-specific data
-        writeValue: (registerType === 'write' || registerType === 'readwrite') ? writeValue : undefined,
+        writeValue: (registerType === 'write' || registerType === 'readwrite') ? writeValue : undefined, // writeValue input alanından alınır
+        lastValue: (registerType === 'write' || registerType === 'readwrite') ?
+                   (isEditMode ? node?.data?.lastValue : undefined) : undefined, // Düzenleme modunda lastValue korunmalı, yeni kayıtlarda boş
         minValue: (registerType === 'write' || registerType === 'readwrite') && minValue !== '' ? minValue : undefined,
         maxValue: (registerType === 'write' || registerType === 'readwrite') && maxValue !== '' ? maxValue : undefined,
         writePermission: (registerType === 'write' || registerType === 'readwrite') ? writePermission : undefined,
