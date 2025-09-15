@@ -11,6 +11,7 @@ import { Input } from '../ui/input';
 import Image from 'next/image';
 import { backendLogger } from '@/lib/logger/BackendLogger';
 import { useAuth } from '@/hooks/use-auth';
+import { NumericFormat } from "react-number-format";
 
 interface ReadWriteRegisterNodeData {
   style?: React.CSSProperties;
@@ -521,42 +522,47 @@ const ReadWriteRegisterNode = memo((node: NodeProps<ReadWriteRegisterNodeData>) 
         {mode === 'write' && (
           <div className="w-full p-2 border-t border-gray-300 bg-gray-50 dark:bg-gray-800 dark:border-gray-600">
             {controlType === 'numeric' && (
-              <>
+              <div className="space-y-3">
                 {/* Current Value Display */}
-                <div className="text-center mb-2">
-                  <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                <div className="text-center mb-1">
+                  <span className="text-xl font-bold text-green-600 dark:text-green-400">
                     {writeValue || '0'}
                   </span>
                   {scaleUnit && <span className="text-sm text-gray-500 ml-1">{scaleUnit}</span>}
                 </div>
                 
-                {/* Plus/Minus Controls */}
-                <div className="flex gap-2 items-center mb-2">
+                {/* Modern NumericFormat bileşeni ile kontrol */}
+                <div className="flex items-center gap-2 mb-2">
                   <Button
                     onClick={decrementValue}
                     disabled={!writePermission || isWriting || (minValue !== undefined && parseFloat(writeValue) <= minValue)}
-                    className="h-8 w-8 p-0 text-sm"
+                    className="h-9 w-9 p-0 rounded-full flex items-center justify-center"
                     size="sm"
                     variant="secondary"
                   >
                     <Minus size={14} />
                   </Button>
                   
-                  <Input
-                    type="number"
-                    value={writeValue}
-                    onChange={(e) => setWriteValue(e.target.value)}
-                    placeholder="Value"
-                    className="flex-1 h-8 text-sm text-center"
-                    disabled={!writePermission || isWriting}
-                    min={minValue}
-                    max={maxValue}
-                  />
+                  <div className="flex-1">
+                    <NumericFormat
+                      value={writeValue}
+                      onValueChange={(values) => {
+                        const { value } = values;
+                        setWriteValue(value);
+                      }}
+                      thousandSeparator={false}
+                      decimalScale={decimalPlaces}
+                      allowNegative={false}
+                      disabled={!writePermission || isWriting}
+                      placeholder="Value"
+                      className="w-full h-9 text-sm text-center font-bold rounded-md border border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                    />
+                  </div>
                   
                   <Button
                     onClick={incrementValue}
                     disabled={!writePermission || isWriting || (maxValue !== undefined && parseFloat(writeValue) >= maxValue)}
-                    className="h-8 w-8 p-0 text-sm"
+                    className="h-9 w-9 p-0 rounded-full flex items-center justify-center"
                     size="sm"
                     variant="secondary"
                   >
@@ -564,11 +570,17 @@ const ReadWriteRegisterNode = memo((node: NodeProps<ReadWriteRegisterNodeData>) 
                   </Button>
                 </div>
                 
+                {/* Min-Max değer gösterimi */}
+                <div className="flex justify-between text-xs text-gray-500 px-2 mb-2">
+                  <span>{minValue !== undefined ? minValue : 0}</span>
+                  <span>{maxValue !== undefined ? maxValue : 100}</span>
+                </div>
+                
                 {/* Write Button */}
                 <Button
                   onClick={handleWrite}
                   disabled={!writePermission || isWriting || !writeValue.trim()}
-                  className="w-full h-8 text-sm"
+                  className="w-full h-9 text-sm font-medium"
                   size="sm"
                 >
                   {isWriting ? (
@@ -580,7 +592,7 @@ const ReadWriteRegisterNode = memo((node: NodeProps<ReadWriteRegisterNodeData>) 
                     </>
                   )}
                 </Button>
-              </>
+              </div>
             )}
 
             {controlType === 'boolean' && (

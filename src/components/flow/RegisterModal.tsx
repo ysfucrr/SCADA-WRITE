@@ -1375,53 +1375,63 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                       {controlType === 'dropdown' && (
                         <div className="grid gap-2">
                           <Label>Dropdown Options</Label>
-                          <div className="space-y-2">
+                          <div className="space-y-3">
                             {dropdownOptions.map((option, index) => (
-                              <div key={index} className="flex gap-2 items-center">
-                                <Input
-                                  type="text"
-                                  value={option.label}
-                                  onChange={(e) => {
-                                    const newOptions = [...dropdownOptions];
-                                    newOptions[index].label = e.target.value;
-                                    setDropdownOptions(newOptions);
-                                  }}
-                                  placeholder="Option label"
-                                  className="flex-1 text-black dark:text-white"
-                                />
-                                <Input
-                                  type="text"
-                                  value={option.value}
-                                  onChange={(e) => {
-                                    const newOptions = [...dropdownOptions];
-                                    newOptions[index].value = e.target.value;
-                                    setDropdownOptions(newOptions);
-                                  }}
-                                  placeholder="Value"
-                                  className="w-24 text-black dark:text-white"
-                                />
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => {
-                                    const newOptions = dropdownOptions.filter((_, i) => i !== index);
-                                    setDropdownOptions(newOptions);
-                                  }}
-                                  disabled={dropdownOptions.length <= 1}
-                                >
-                                  Remove
-                                </Button>
+                              <div key={index} className="grid grid-cols-12 gap-3 items-center">
+                                <div className="col-span-6 md:col-span-7">
+                                  <Input
+                                    type="text"
+                                    value={option.label}
+                                    onChange={(e) => {
+                                      const newOptions = [...dropdownOptions];
+                                      newOptions[index].label = e.target.value;
+                                      setDropdownOptions(newOptions);
+                                    }}
+                                    placeholder="Option label"
+                                    className="w-full text-black dark:text-white"
+                                  />
+                                </div>
+                                <div className="col-span-4 md:col-span-3">
+                                  <Input
+                                    type="text"
+                                    value={option.value}
+                                    onChange={(e) => {
+                                      const newOptions = [...dropdownOptions];
+                                      newOptions[index].value = e.target.value;
+                                      setDropdownOptions(newOptions);
+                                    }}
+                                    placeholder="Value"
+                                    className="w-full text-black dark:text-white"
+                                  />
+                                </div>
+                                <div className="col-span-2">
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                      const newOptions = dropdownOptions.filter((_, i) => i !== index);
+                                      setDropdownOptions(newOptions);
+                                    }}
+                                    disabled={dropdownOptions.length <= 1}
+                                    className="w-full"
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
                               </div>
                             ))}
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                setDropdownOptions([...dropdownOptions, { label: `Option ${dropdownOptions.length + 1}`, value: dropdownOptions.length + 1 }]);
-                              }}
-                            >
-                              Add Option
-                            </Button>
+                            <div className="pt-2">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  setDropdownOptions([...dropdownOptions, { label: `Option ${dropdownOptions.length + 1}`, value: dropdownOptions.length + 1 }]);
+                                }}
+                                className="w-full sm:w-auto"
+                              >
+                                Add Option
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       )}

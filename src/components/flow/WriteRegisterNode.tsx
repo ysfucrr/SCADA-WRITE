@@ -9,6 +9,7 @@ import { useWebSocket } from '@/context/WebSocketContext';
 import { showToast } from '../ui/alert';
 import { Button } from '../ui/button/CustomButton';
 import { Input } from '../ui/input';
+import { NumericFormat } from "react-number-format";
 import { backendLogger } from '@/lib/logger/BackendLogger';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -378,7 +379,7 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
       )}
 
       <div
-        className="w-full h-full flex flex-col justify-center p-3 rounded-md"
+        className="w-full h-full flex flex-col justify-between p-0 rounded-md overflow-hidden"
         style={{
           backgroundColor: hexToRgba(backgroundColor, opacity! / 100),
           border: node.selected && isAdmin ? '6px solid #f00' : 'none',
@@ -386,54 +387,69 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
         }}
       >
         {controlType === 'numeric' && (
-          <div className="flex flex-col h-full justify-center space-y-3">
-            {/* Current Value Display - Üst kısım */}
-            <div className="text-center">
-              <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {writeValue || '0'}
-              </span>
-              {scaleUnit && <span className="text-sm text-gray-500 ml-2">{scaleUnit}</span>}
+          <>
+            {/* Büyük değer gösterimi - Üst bölüm */}
+            <div className="flex-1 flex items-center justify-center pt-5">
+              <div className="text-center">
+                <span className="text-4xl font-bold text-blue-600 dark:text-blue-400">
+                  {writeValue || '0'}
+                </span>
+                {scaleUnit && <span className="text-sm text-gray-500 ml-2">{scaleUnit}</span>}
+              </div>
             </div>
             
-            {/* Plus/Minus Controls - Orta kısım */}
-            <div className="flex gap-3 items-center">
-              <Button
-                onClick={decrementValue}
-                disabled={!writePermission || isWriting || (minValue !== undefined && parseFloat(writeValue) <= minValue)}
-                className="h-12 w-12 p-0 text-lg"
-                size="sm"
-                variant="secondary"
-              >
-                <Minus size={20} />
-              </Button>
+            {/* Modern NumericFormat bileşeni - Orta bölüm */}
+            <div className="px-4 mb-4">
+              <div className="flex items-center">
+                <Button
+                  onClick={decrementValue}
+                  disabled={!writePermission || isWriting || (minValue !== undefined && parseFloat(writeValue) <= minValue)}
+                  className="h-10 w-10 p-0 rounded-full flex items-center justify-center"
+                  size="sm"
+                  variant="secondary"
+                >
+                  <Minus size={16} />
+                </Button>
+                
+                <div className="flex-1 mx-2">
+                  <NumericFormat
+                    value={writeValue}
+                    onValueChange={(values) => {
+                      const { value } = values;
+                      setWriteValue(value);
+                    }}
+                    thousandSeparator={false}
+                    decimalScale={decimalPlaces}
+                    allowNegative={false}
+                    disabled={!writePermission || isWriting}
+                    placeholder="Value"
+                    className="w-full h-10 text-lg text-center font-bold rounded-md border border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                  />
+                </div>
+                
+                <Button
+                  onClick={incrementValue}
+                  disabled={!writePermission || isWriting || (maxValue !== undefined && parseFloat(writeValue) >= maxValue)}
+                  className="h-10 w-10 p-0 rounded-full flex items-center justify-center"
+                  size="sm"
+                  variant="secondary"
+                >
+                  <Plus size={16} />
+                </Button>
+              </div>
               
-              <Input
-                type="number"
-                value={writeValue}
-                onChange={(e) => setWriteValue(e.target.value)}
-                placeholder="Value"
-                className="flex-1 h-12 text-lg text-center font-bold"
-                disabled={!writePermission || isWriting}
-                min={minValue}
-                max={maxValue}
-              />
-              
-              <Button
-                onClick={incrementValue}
-                disabled={!writePermission || isWriting || (maxValue !== undefined && parseFloat(writeValue) >= maxValue)}
-                className="h-12 w-12 p-0 text-lg"
-                size="sm"
-                variant="secondary"
-              >
-                <Plus size={20} />
-              </Button>
+              {/* Min-Max değer gösterimi */}
+              <div className="flex justify-between text-xs text-gray-500 mt-1 px-2">
+                <span>{minValue !== undefined ? minValue : 0}</span>
+                <span>{maxValue !== undefined ? maxValue : 100}</span>
+              </div>
             </div>
             
-            {/* Write Button - Alt kısım */}
+            {/* Write Button - Alt kısım (tam genişlik) */}
             <Button
               onClick={handleWrite}
               disabled={!writePermission || isWriting || !writeValue.trim()}
-              className="w-full h-12 text-base font-semibold"
+              className="w-full py-3 text-base font-semibold rounded-none border-t"
               size="sm"
             >
               {isWriting ? (
@@ -445,7 +461,7 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
                 </>
               )}
             </Button>
-          </div>
+          </>
         )}
 
         {controlType === 'boolean' && (
