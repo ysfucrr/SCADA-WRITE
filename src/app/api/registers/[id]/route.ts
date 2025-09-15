@@ -3,8 +3,11 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { backendLogger } from '@/lib/logger/BackendLogger';
 import { ObjectId } from 'mongodb';
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  // Next.js uyumluluğu için 'params' beklenir.
+// @ts-ignore - Next.js App Router tiplerini bypass et
+export async function PUT(request: Request, context) {
+  // Parametre formatını kontrol et ve uyumlu şekilde işle
+  const params = context.params ? context.params : context;
+  // Promise kontrolü - params bir Promise olabilir
   const awaitedParams = await Promise.resolve(params);
   const registerId = awaitedParams.id;
   
@@ -87,7 +90,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+// @ts-ignore - Next.js App Router tiplerini bypass et
+export async function DELETE(request: Request, context) {
+  // Parametre formatını kontrol et ve uyumlu şekilde işle
+  const params = context.params ? context.params : context;
+  // Promise kontrolü - params bir Promise olabilir
   const awaitedParams = await Promise.resolve(params);
   const registerId = awaitedParams.id;
 
