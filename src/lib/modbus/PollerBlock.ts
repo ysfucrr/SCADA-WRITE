@@ -26,6 +26,12 @@ export class PollerBlock {
      * Blok içindeki register'ları decode eder
      */
     decodeRegisters(words: number[]): void {
+        // Eğer cihaz meşgulse veya bir okuma hatası oluştuysa, 'words' boş gelebilir.
+        // Bu durumda herhangi bir işlem yapmadan bloğu atla.
+        if (!words || words.length === 0) {
+            return;
+        }
+
         // Her register için detaylı log ekleyerek decode işlemi yap
         this.registers.forEach((register) => {
             try {

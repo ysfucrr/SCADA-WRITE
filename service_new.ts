@@ -250,7 +250,13 @@ io.on('connection', (socket: Socket) => {
       backendLogger.info(`WebSocket write request: Analyzer=${analyzerId}, Address=${address}, Value=${processedValue}`, "SocketIO");
 
       // Write işlemi yap
-      await modbusPoller.writeRegister(analyzerId, address, processedValue);
+      await modbusPoller.writeRegister({
+        analyzerId,
+        address,
+        value: processedValue,
+        isDisruptive: data.isDisruptive,
+        coolDownMs: data.coolDownMs
+      });
       
       // Başarı bildirimi
       socket.emit('write-success', {
@@ -304,7 +310,13 @@ io.on('connection', (socket: Socket) => {
       backendLogger.info(`WebSocket write multiple request: Analyzer=${analyzerId}, Address=${address}, Values=[${processedValues.join(',')}]`, "SocketIO");
 
       // Write multiple işlemi yap
-      await modbusPoller.writeMultipleRegisters(analyzerId, address, processedValues);
+      await modbusPoller.writeMultipleRegisters({
+        analyzerId,
+        address,
+        values: processedValues,
+        isDisruptive: data.isDisruptive,
+        coolDownMs: data.coolDownMs
+      });
       
       // Başarı bildirimi
       socket.emit('write-multiple-success', {

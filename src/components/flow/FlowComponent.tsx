@@ -201,7 +201,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                     throw new Error('Failed to save flow data');
                 }
                 setNodesLoaded(true)
-                showToast('Room data saved successfully', 'success');
+
             } else if (floor) {
                 console.log("trying to save floor")
                 const response = await fetch(`/api/units/${building}/floors`, {
@@ -225,7 +225,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                     throw new Error('Failed to save flow data');
                 }
                 setNodesLoaded(true)
-                showToast('Floor data saved successfully', 'success');
+                
             } else {
                 //console.log("trying to save building")
                 console.log({
@@ -262,7 +262,7 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
                     }
                 }
                 setNodesLoaded(true)
-                showToast('Building data saved successfully', 'success');
+               
             }
 
         } catch (error) {

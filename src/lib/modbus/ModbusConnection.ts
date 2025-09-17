@@ -50,6 +50,7 @@ export abstract class ModbusConnection extends EventEmitter {
     connectionId: string;
     client: ExtendedModbusRTU | null = null;
     queue: PQueue | null = null;
+    protected writeLockQueue: PQueue | null = null; // Yazma işlemleri için özel kilit kuyruğu
     isConnected: boolean = false;
     isShuttingDown: boolean = false;
     retryCount: number = 0;
@@ -360,6 +361,11 @@ export abstract class ModbusConnection extends EventEmitter {
             this.queue = null;
             backendLogger.debug(`[Graceful Shutdown] Queue for ${this.connectionId} has been destroyed.`, "ModbusConnection");
         }
+        if (this.writeLockQueue) {
+            this.writeLockQueue.pause();
+            this.writeLockQueue.clear();
+            this.writeLockQueue = null;
+        }
 
         try {
             if (this.client) {
@@ -470,8 +476,8 @@ export abstract class ModbusConnection extends EventEmitter {
             if (err.message && err.message.includes("Modbus exception 6")) {
                 backendLogger.debug(`Slave device busy (${slaveId}:${startAddr}). Silently skipping.`, "ModbusConnection", { connectionId: this.connectionId });
                 // Hata fırlatmayarak PollingEngine'in 5 saniye beklemesini engelle.
-                // Ancak döngünün devam etmesi için reddedilmiş bir promise döndür.
-                return Promise.reject(new Error("Slave device busy"));
+                // Ancak döngünün devam etmesi için boş bir dizi döndürerek hatayı sessizce geçiştir.
+                return [];
             }
 
             // NİHAİ ÇÖZÜM: Hata yakalandığında, bunun bir kapatma sürecinin parçası olup olmadığını kontrol et.
@@ -495,162 +501,98 @@ export abstract class ModbusConnection extends EventEmitter {
      * Modbus üzerinden tek register yazar (Function Code 06)
      */
     async writeHoldingRegister(slaveId: number, address: number, value: number, timeoutMs: number): Promise<void> {
-        // Force shutdown kontrolü
-        if (!this.queue) {
-            backendLogger.warning(`[Force Shutdown] writeHoldingRegister on ${this.connectionId} cancelled: Queue has been destroyed.`, "ModbusConnection");
-            throw new Error("Queue has been destroyed during connection shutdown.");
+        if (!this.queue || !this.writeLockQueue || !this.client || !this.isConnected) {
+            throw new Error("Connection or queue not initialized.");
         }
 
-        if (!this.client || !this.isConnected) {
-            throw new Error("Connection is not established");
-        }
+        // Yazma işlemlerini kendi aralarında serileştirmek için writeLockQueue kullanılır.
+        return this.writeLockQueue.add(async () => {
+            const startTime = Date.now();
+            backendLogger.info(`[LOCK-LOG] Acquired exclusive lock for WRITE to address ${address}`, "ModbusConnection");
+            
+            try {
+                // Mevcut tüm okuma/yazma görevlerinin tamamlanmasını bekle.
+                backendLogger.info(`[LOCK-LOG] Waiting for main queue to become idle before writing to ${address}...`, "ModbusConnection", { pending: this.queue!.pending, size: this.queue!.size });
+                await this.queue!.onIdle();
+                backendLogger.info(`[LOCK-LOG] Main queue is now idle. Executing exclusive WRITE to ${address}`, "ModbusConnection");
 
-        const startTime = Date.now();
-
-        try {
-            // İşlemi kuyruğa ekle
-            const result = await this.queue.add(
-                async () => {
-                    // Force shutdown kontrolü
-                    if (this.isShuttingDown) {
-                        backendLogger.debug(`[Force Shutdown] Write operation cancelled for ${this.connectionId} because connection is shutting down.`, "ModbusConnection");
-                        throw new Error("Connection is shutting down, operation cancelled.");
-                    }
-
-                    if (!this.client || !this.isConnected) {
-                        throw new Error("Connection lost");
-                    }
-
-                    // TCP bağlantılar için slave ID thread safety
-                    if (this instanceof ModbusTcpConnection) {
-                        await this.acquireSlaveIdLock();
-                    }
-
+                // Kuyruk boşaldı, şimdi yazma işlemini tek başına yap.
+                // Hala ana kuyruğu kullanıyoruz ki RTT ve timeout gibi mekanizmalar çalışsın.
+                await this.queue!.add(async () => {
+                    if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
+                    if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
+                    
                     try {
                         this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                        
-                        // Akıllı timeout
                         const smartTimeout = this.calculateSmartTimeout(timeoutMs);
                         this.client.setTimeout(smartTimeout);
-
                         return this.client.writeRegister(address, value);
                     } finally {
-                        // TCP bağlantılar için slave ID lock'unu serbest bırak
-                        if (this instanceof ModbusTcpConnection) {
-                            this.releaseSlaveIdLock();
-                        }
+                        if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
                     }
-                },
-                {
-                    // Yazma işlemleri için yüksek öncelik
-                    priority: 10,
-                    timeout: this.calculateSmartTimeout(timeoutMs) + 1000
-                }
-            );
+                }, { priority: 10 });
+                
+                const elapsed = Date.now() - startTime;
+                this.updateRTT(elapsed);
+                this.timeoutStrikes = 0;
+                backendLogger.info(`Write successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Value:${value}`, "ModbusConnection");
 
-            // RTT hesapla ve güncelle
-            const elapsed = Date.now() - startTime;
-            this.updateRTT(elapsed);
-            
-            // Başarılı yazma, timeout sayacını sıfırlar
-            this.timeoutStrikes = 0;
-
-            backendLogger.info(`Write successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Value:${value}`, "ModbusConnection");
-            
-        } catch (err: any) {
-            // Shutdown kontrolü
-            if (this.isShuttingDown || !this.queue) {
-                const newErr = new Error(`Write operation cancelled during shutdown for ${this.connectionId}.`);
-                return Promise.reject(newErr);
+            } catch (err: any) {
+                const elapsed = Date.now() - startTime;
+                backendLogger.warning(`Exclusive Write error (${slaveId}:${address}=${value}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+                this.handleWriteError(err);
+                throw err;
+            } finally {
+                backendLogger.info(`[LOCK-LOG] Releasing exclusive lock for WRITE to ${address}`, "ModbusConnection");
             }
-
-            const elapsed = Date.now() - startTime;
-            backendLogger.warning(`Write error (${slaveId}:${address}=${value}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
-            
-            this.handleWriteError(err);
-            throw err;
-        }
+        });
     }
 
     /**
      * Modbus üzerinden çoklu register yazar (Function Code 16)
      */
     async writeHoldingRegisters(slaveId: number, address: number, values: number[], timeoutMs: number): Promise<void> {
-        // Force shutdown kontrolü
-        if (!this.queue) {
-            backendLogger.warning(`[Force Shutdown] writeHoldingRegisters on ${this.connectionId} cancelled: Queue has been destroyed.`, "ModbusConnection");
-            throw new Error("Queue has been destroyed during connection shutdown.");
+        if (!this.queue || !this.writeLockQueue || !this.client || !this.isConnected) {
+            throw new Error("Connection or queue not initialized.");
         }
 
-        if (!this.client || !this.isConnected) {
-            throw new Error("Connection is not established");
-        }
+        return this.writeLockQueue.add(async () => {
+            const startTime = Date.now();
+            backendLogger.info(`[LOCK-LOG] Acquired exclusive lock for MULTI-WRITE to address ${address}`, "ModbusConnection");
 
-        const startTime = Date.now();
+            try {
+                backendLogger.info(`[LOCK-LOG] Waiting for main queue to become idle before multi-writing to ${address}...`, "ModbusConnection", { pending: this.queue!.pending, size: this.queue!.size });
+                await this.queue!.onIdle();
+                backendLogger.info(`[LOCK-LOG] Main queue is now idle. Executing exclusive MULTI-WRITE to ${address}`, "ModbusConnection");
 
-        try {
-            // İşlemi kuyruğa ekle
-            const result = await this.queue.add(
-                async () => {
-                    // Force shutdown kontrolü
-                    if (this.isShuttingDown) {
-                        backendLogger.debug(`[Force Shutdown] Write multiple operation cancelled for ${this.connectionId} because connection is shutting down.`, "ModbusConnection");
-                        throw new Error("Connection is shutting down, operation cancelled.");
-                    }
-
-                    if (!this.client || !this.isConnected) {
-                        throw new Error("Connection lost");
-                    }
-
-                    // TCP bağlantılar için slave ID thread safety
-                    if (this instanceof ModbusTcpConnection) {
-                        await this.acquireSlaveIdLock();
-                    }
+                await this.queue!.add(async () => {
+                    if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
+                    if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
 
                     try {
                         this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                        
-                        // Akıllı timeout
                         const smartTimeout = this.calculateSmartTimeout(timeoutMs);
                         this.client.setTimeout(smartTimeout);
-
                         return this.client.writeRegisters(address, values);
                     } finally {
-                        // TCP bağlantılar için slave ID lock'unu serbest bırak
-                        if (this instanceof ModbusTcpConnection) {
-                            this.releaseSlaveIdLock();
-                        }
+                        if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
                     }
-                },
-                {
-                    // Çoklu yazma işlemleri için yüksek öncelik
-                    priority: 10,
-                    timeout: this.calculateSmartTimeout(timeoutMs) + 1000
-                }
-            );
+                }, { priority: 10 });
+                
+                const elapsed = Date.now() - startTime;
+                this.updateRTT(elapsed);
+                this.timeoutStrikes = 0;
+                backendLogger.info(`Write multiple successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Values:[${values.join(',')}]`, "ModbusConnection");
 
-            // RTT hesapla ve güncelle
-            const elapsed = Date.now() - startTime;
-            this.updateRTT(elapsed);
-            
-            // Başarılı yazma, timeout sayacını sıfırlar
-            this.timeoutStrikes = 0;
-
-            backendLogger.info(`Write multiple successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Values:[${values.join(',')}]`, "ModbusConnection");
-            
-        } catch (err: any) {
-            // Shutdown kontrolü
-            if (this.isShuttingDown || !this.queue) {
-                const newErr = new Error(`Write multiple operation cancelled during shutdown for ${this.connectionId}.`);
-                return Promise.reject(newErr);
+            } catch (err: any) {
+                const elapsed = Date.now() - startTime;
+                backendLogger.warning(`Exclusive Multi-Write error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+                this.handleWriteError(err);
+                throw err;
+            } finally {
+                backendLogger.info(`[LOCK-LOG] Releasing exclusive lock for MULTI-WRITE to ${address}`, "ModbusConnection");
             }
-
-            const elapsed = Date.now() - startTime;
-            backendLogger.warning(`Write multiple error (${slaveId}:${address}=[${values.join(',')}]): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
-            
-            this.handleWriteError(err);
-            throw err;
-        }
+        });
     }
 
     /**
@@ -955,6 +897,7 @@ export class ModbusTcpConnection extends ModbusConnection {
                     throwOnTimeout: true,
                     carryoverConcurrencyCount: true
                 });
+                this.writeLockQueue = new PQueue({ concurrency: 1 });
             }
             
             // Kuyruk olaylarını dinle
