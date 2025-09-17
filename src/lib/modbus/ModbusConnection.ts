@@ -447,8 +447,8 @@ export abstract class ModbusConnection extends EventEmitter {
                     }
                 },
                 {
-                    // Priority değeri - daha küçük adresler daha öncelikli olabilir
-                    priority: Math.max(1, 10 - Math.min(9, Math.floor(startAddr / 1000))),
+                    // Okuma işlemleri için düşük öncelik
+                    priority: 1,
                     // Akıllı queue timeout - UI değeri + buffer (yüksek RTT için artırıldı)
                     timeout: this.calculateSmartTimeout(timeoutMs) + 1000
                 }
@@ -466,6 +466,14 @@ export abstract class ModbusConnection extends EventEmitter {
             }
             throw new Error("Invalid response from Modbus device");
         } catch (err: any) {
+            // "Slave device busy" hatasını sessizce yönet
+            if (err.message && err.message.includes("Modbus exception 6")) {
+                backendLogger.debug(`Slave device busy (${slaveId}:${startAddr}). Silently skipping.`, "ModbusConnection", { connectionId: this.connectionId });
+                // Hata fırlatmayarak PollingEngine'in 5 saniye beklemesini engelle.
+                // Ancak döngünün devam etmesi için reddedilmiş bir promise döndür.
+                return Promise.reject(new Error("Slave device busy"));
+            }
+
             // NİHAİ ÇÖZÜM: Hata yakalandığında, bunun bir kapatma sürecinin parçası olup olmadığını kontrol et.
             if (this.isShuttingDown || !this.queue) {
                 // Eğer bağlantı kapatılıyorsa, bu hata (örn: Timeout) beklenen bir sonuçtur.
@@ -534,7 +542,8 @@ export abstract class ModbusConnection extends EventEmitter {
                     }
                 },
                 {
-                    priority: Math.max(1, 10 - Math.min(9, Math.floor(address / 1000))),
+                    // Yazma işlemleri için yüksek öncelik
+                    priority: 10,
                     timeout: this.calculateSmartTimeout(timeoutMs) + 1000
                 }
             );
@@ -614,7 +623,8 @@ export abstract class ModbusConnection extends EventEmitter {
                     }
                 },
                 {
-                    priority: Math.max(1, 10 - Math.min(9, Math.floor(address / 1000))),
+                    // Çoklu yazma işlemleri için yüksek öncelik
+                    priority: 10,
                     timeout: this.calculateSmartTimeout(timeoutMs) + 1000
                 }
             );
