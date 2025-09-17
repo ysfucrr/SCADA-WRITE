@@ -617,7 +617,8 @@ export class ModbusPoller extends EventEmitter {
     /**
      * Register yazma işlemi - analyzer ID'ye göre doğru connection'ı bulur ve yazar
      */
-    public async writeRegister(analyzerId: string, address: number, value: number): Promise<void> {
+    public async writeRegister(writeData: { analyzerId: string, address: number, value: number, isDisruptive?: boolean, coolDownMs?: number }): Promise<void> {
+        const { analyzerId, address, value, isDisruptive, coolDownMs } = writeData;
         try {
             // Analyzer'ı bul
             const analyzer = await this.findAnalyzerById(analyzerId);
@@ -634,7 +635,7 @@ export class ModbusPoller extends EventEmitter {
                 }
 
                 const worker = this.workers[workerIndex];
-                
+
                 // Worker'a write komutu gönder
                 return new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
@@ -656,7 +657,7 @@ export class ModbusPoller extends EventEmitter {
 
                     const requestId = `write_${Date.now()}_${Math.random()}`;
                     worker.on('message', messageHandler);
-                    
+
                     worker.postMessage({
                         type: 'WRITE_REGISTER',
                         payload: {
@@ -664,7 +665,9 @@ export class ModbusPoller extends EventEmitter {
                             analyzerId,
                             address,
                             value,
-                            timeout: analyzer.timeoutMs || 5000
+                            timeout: analyzer.timeoutMs || 5000,
+                            isDisruptive,
+                            coolDownMs,
                         }
                     });
                 });
@@ -675,6 +678,7 @@ export class ModbusPoller extends EventEmitter {
                     throw new Error('SerialPoller not available');
                 }
 
+                // Not: SerialPoller için isDisruptive özelliği şu an implemente edilmemiştir.
                 return this.serialPoller.writeRegister(analyzerId, address, value);
             } else {
                 throw new Error(`Unsupported connection type: ${analyzer.connType}`);
@@ -727,7 +731,8 @@ export class ModbusPoller extends EventEmitter {
     /**
      * Çoklu register yazma işlemi - analyzer ID'ye göre doğru connection'ı bulur ve yazar
      */
-    public async writeMultipleRegisters(analyzerId: string, address: number, values: number[]): Promise<void> {
+    public async writeMultipleRegisters(writeData: { analyzerId: string, address: number, values: number[], isDisruptive?: boolean, coolDownMs?: number }): Promise<void> {
+        const { analyzerId, address, values, isDisruptive, coolDownMs } = writeData;
         try {
             // Analyzer'ı bul
             const analyzer = await this.findAnalyzerById(analyzerId);
@@ -774,7 +779,9 @@ export class ModbusPoller extends EventEmitter {
                             analyzerId,
                             address,
                             values,
-                            timeout: analyzer.timeoutMs || 5000
+                            timeout: analyzer.timeoutMs || 5000,
+                            isDisruptive,
+                            coolDownMs,
                         }
                     });
                 });

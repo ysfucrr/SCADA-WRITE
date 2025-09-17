@@ -75,7 +75,11 @@ parentPort.on('message', async (message: { type: string, payload: any }) => {
         case 'WRITE_REGISTER':
             if (payload.analyzerId && payload.address !== undefined && payload.value !== undefined) {
                 try {
-                    await engine.writeRegister(payload.analyzerId, payload.address, payload.value, payload.timeout || 5000);
+                    // isDisruptive ve coolDownMs payload'dan engine'e aktarılıyor
+                    await engine.writeRegister(payload.analyzerId, payload.address, payload.value, payload.timeout || 5000, {
+                        isDisruptive: payload.isDisruptive,
+                        coolDownMs: payload.coolDownMs,
+                    });
                     parentPort?.postMessage({
                         type: 'WRITE_COMPLETED',
                         payload: {
@@ -109,7 +113,11 @@ parentPort.on('message', async (message: { type: string, payload: any }) => {
         case 'WRITE_MULTIPLE_REGISTERS':
             if (payload.analyzerId && payload.address !== undefined && Array.isArray(payload.values)) {
                 try {
-                    await engine.writeMultipleRegisters(payload.analyzerId, payload.address, payload.values, payload.timeout || 5000);
+                    // isDisruptive ve coolDownMs payload'dan engine'e aktarılıyor
+                    await engine.writeMultipleRegisters(payload.analyzerId, payload.address, payload.values, payload.timeout || 5000, {
+                        isDisruptive: payload.isDisruptive,
+                        coolDownMs: payload.coolDownMs,
+                    });
                     parentPort?.postMessage({
                         type: 'WRITE_MULTIPLE_COMPLETED',
                         payload: {

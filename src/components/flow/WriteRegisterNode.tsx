@@ -47,6 +47,10 @@ interface WriteRegisterNodeData {
   writeOffIcon?: string;
   onEdit?: () => void;
   onDelete?: () => void;
+
+  // Akıllı bekleme
+  isDisruptive?: boolean;
+  coolDownMs?: number;
 }
 
 const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
@@ -249,6 +253,9 @@ const WriteRegisterNode = memo((node: NodeProps<WriteRegisterNodeData>) => {
         dataType,
         byteOrder,
         bit: dataType === 'boolean' ? bit : undefined,
+        // Akıllı bekleme ayarlarını ekle
+        isDisruptive: node.data.isDisruptive,
+        coolDownMs: node.data.coolDownMs,
       };
 
       backendLogger.info(`[FRONTEND] Write operation starting: Label=${label}, ControlType=${controlType}`, "WriteRegisterNode", {

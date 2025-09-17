@@ -109,6 +109,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     { label: 'Option 1', value: 1 },
     { label: 'Option 2', value: 2 }
   ]);
+  const [isDisruptive, setIsDisruptive] = useState<boolean>(false);
+  const [coolDownMs, setCoolDownMs] = useState<number>(3000);
 
   // Icon states for boolean register
   const [onIcon, setOnIcon] = useState<string>(node?.data?.onIcon || '');
@@ -406,6 +408,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setOnValue(node.data.onValue || 1);
       setOffValue(node.data.offValue || 0);
       setDropdownOptions(node.data.dropdownOptions || [{ label: 'Option 1', value: 1 }, { label: 'Option 2', value: 2 }]);
+      setIsDisruptive(node.data.isDisruptive || false);
+      setCoolDownMs(node.data.coolDownMs || 3000);
 
       // Set write icon values
       if (node.data.writeOnIcon) {
@@ -566,6 +570,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         minValue: (registerType === 'write' || registerType === 'readwrite') && minValue !== '' ? minValue : undefined,
         maxValue: (registerType === 'write' || registerType === 'readwrite') && maxValue !== '' ? maxValue : undefined,
         writePermission: (registerType === 'write' || registerType === 'readwrite') ? writePermission : undefined,
+        isDisruptive: (registerType === 'write' || registerType === 'readwrite') ? isDisruptive : undefined,
+        coolDownMs: (registerType === 'write' || registerType === 'readwrite') && isDisruptive ? coolDownMs : undefined,
         readAddress: registerType === 'readwrite' ? readAddress : undefined,
         controlType: (registerType === 'write' || registerType === 'readwrite') ? controlType : undefined,
         stepValue: (registerType === 'write' || registerType === 'readwrite') && controlType === 'numeric' ? stepValue : undefined,
@@ -616,6 +622,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setOnValue(1);
     setOffValue(0);
     setDropdownOptions([{ label: 'Option 1', value: 1 }, { label: 'Option 2', value: 2 }]);
+    setIsDisruptive(false);
+    setCoolDownMs(3000);
     resetIcons(); // Reset icons
     onClose();
   };
@@ -1506,6 +1514,38 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                         <Typography className="text-sm text-gray-500">
                           When disabled, this register will be read-only even if it&apos;s configured as writable
                         </Typography>
+                      </div>
+
+                      {/* Disruptive Command Settings */}
+                      <div className="grid gap-2 mt-4 p-4 border border-yellow-500 rounded-md bg-yellow-50 dark:bg-gray-800">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id="isDisruptive"
+                            checked={isDisruptive}
+                            onChange={(e) => setIsDisruptive(e.target.checked)}
+                            className="rounded border-gray-300 text-yellow-600 shadow-sm focus:border-yellow-300 focus:ring focus:ring-yellow-200 focus:ring-opacity-50"
+                          />
+                          <Label htmlFor="isDisruptive" className="text-yellow-800 dark:text-yellow-300">
+                            Disruptive Command (Pauses Polling)
+                          </Label>
+                        </div>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">
+                          Enable this if this write command makes the device temporarily unresponsive.
+                        </Typography>
+                        {isDisruptive && (
+                          <div className="grid gap-2 mt-2">
+                            <Label htmlFor="coolDownMs">Cool-down Duration (ms)</Label>
+                            <Input
+                              id="coolDownMs"
+                              type="number"
+                              value={coolDownMs}
+                              onChange={(e) => setCoolDownMs(Number(e.target.value))}
+                              placeholder="e.g., 3000"
+                              className="text-black dark:text-white"
+                            />
+                          </div>
+                        )}
                       </div>
              </div>
            </div>
