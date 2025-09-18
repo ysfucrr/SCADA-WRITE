@@ -12,6 +12,9 @@ const MIN_TIMEOUT_MS = 500;  // Minimum timeout 500ms
 const MAX_TIMEOUT_MS = 60000; // Maximum timeout 60 saniye
 const MIN_WORKERS = 1;      // Minimum eşzamanlı işlem sayısı
 const MAX_WORKERS = 64;     // Maximum eşzamanlı işlem sayısı
+const PRE_WRITE_DELAY_MS = 500;  // Default delay before writing (500ms)
+const POST_WRITE_DELAY_MS = 1000; // Default delay after writing (1000ms)
+const MAX_WRITE_RETRIES = 3;     // Maximum number of retries for busy devices
 
 // ────────── Tip Tanımlamaları ──────────
 interface ExtendedModbusRTU {
@@ -117,6 +120,13 @@ export abstract class ModbusConnection extends EventEmitter {
     constructor(connectionId: string) {
         super();
         this.connectionId = connectionId;
+    }
+
+    /**
+     * Utility sleep function for delays
+     */
+    protected async sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**
@@ -500,15 +510,32 @@ export abstract class ModbusConnection extends EventEmitter {
     /**
      * Modbus üzerinden tek register yazar (Function Code 06)
      */
-    async writeHoldingRegister(slaveId: number, address: number, value: number, timeoutMs: number): Promise<void> {
+    async writeHoldingRegister(
+        slaveId: number,
+        address: number,
+        value: number,
+        timeoutMs: number,
+        options?: {
+            preWriteDelayMs?: number;
+            postWriteDelayMs?: number;
+            maxRetries?: number;
+        }
+    ): Promise<void> {
         if (!this.queue || !this.writeLockQueue || !this.client || !this.isConnected) {
             throw new Error("Connection or queue not initialized.");
         }
+
+        // Set default values for options
+        const preWriteDelayMs = options?.preWriteDelayMs !== undefined ? options.preWriteDelayMs : PRE_WRITE_DELAY_MS;
+        const postWriteDelayMs = options?.postWriteDelayMs !== undefined ? options.postWriteDelayMs : POST_WRITE_DELAY_MS;
+        const maxRetries = options?.maxRetries !== undefined ? options.maxRetries : MAX_WRITE_RETRIES;
 
         // Yazma işlemlerini kendi aralarında serileştirmek için writeLockQueue kullanılır.
         return this.writeLockQueue.add(async () => {
             const startTime = Date.now();
             backendLogger.info(`[LOCK-LOG] Acquired exclusive lock for WRITE to address ${address}`, "ModbusConnection");
+            
+            let retryCount = 0;
             
             try {
                 // Mevcut tüm okuma/yazma görevlerinin tamamlanmasını bekle.
@@ -516,30 +543,97 @@ export abstract class ModbusConnection extends EventEmitter {
                 await this.queue!.onIdle();
                 backendLogger.info(`[LOCK-LOG] Main queue is now idle. Executing exclusive WRITE to ${address}`, "ModbusConnection");
 
-                // Kuyruk boşaldı, şimdi yazma işlemini tek başına yap.
-                // Hala ana kuyruğu kullanıyoruz ki RTT ve timeout gibi mekanizmalar çalışsın.
-                await this.queue!.add(async () => {
-                    if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
-                    if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
-                    
+                // Add pre-write delay to allow device to prepare for the write operation
+                if (preWriteDelayMs > 0) {
+                    backendLogger.debug(`Adding pre-write delay of ${preWriteDelayMs}ms before writing to address ${address}`, "ModbusConnection");
+                    await this.sleep(preWriteDelayMs);
+                }
+
+                // Retry loop for Slave Device Busy errors
+                while (true) {
                     try {
-                        this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                        const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                        this.client.setTimeout(smartTimeout);
-                        return this.client.writeRegister(address, value);
-                    } finally {
-                        if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
+                        // Kuyruk boşaldı, şimdi yazma işlemini tek başına yap.
+                        // Hala ana kuyruğu kullanıyoruz ki RTT ve timeout gibi mekanizmalar çalışsın.
+                        await this.queue!.add(async () => {
+                            if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
+                            if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
+                            
+                            try {
+                                this.client.setID(Math.max(1, Math.min(255, slaveId)));
+                                const smartTimeout = this.calculateSmartTimeout(timeoutMs);
+                                this.client.setTimeout(smartTimeout);
+                                return this.client.writeRegister(address, value);
+                            } finally {
+                                if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
+                            }
+                        }, { priority: 10 });
+                        
+                        // Write operation succeeded, break the retry loop
+                        break;
+                    } catch (err: any) {
+                        // Check if it's a "Slave Device Busy" error
+                        if (err.message && err.message.includes("Modbus exception 6")) {
+                            retryCount++;
+                            
+                            if (retryCount <= maxRetries) {
+                                // Calculate backoff time with jitter to avoid thundering herd
+                                const baseDelay = 500 * Math.pow(2, retryCount - 1);
+                                const jitter = Math.random() * 300;
+                                const retryDelay = Math.floor(baseDelay + jitter);
+                                
+                                backendLogger.warning(
+                                    `Slave device busy at address ${address}. Retry ${retryCount}/${maxRetries} after ${retryDelay}ms delay.`,
+                                    "ModbusConnection",
+                                    { connectionId: this.connectionId, slaveId, address }
+                                );
+                                
+                                // Wait before retrying
+                                await this.sleep(retryDelay);
+                            } else {
+                                // Max retries reached, re-throw the error
+                                backendLogger.error(
+                                    `Max retries (${maxRetries}) reached for writing to busy device at address ${address}.`,
+                                    "ModbusConnection",
+                                    { connectionId: this.connectionId, slaveId, address }
+                                );
+                                throw err;
+                            }
+                        } else {
+                            // Not a Slave Device Busy error, re-throw immediately
+                            throw err;
+                        }
                     }
-                }, { priority: 10 });
+                }
                 
+                // Add post-write delay to allow device to process the write operation
+                if (postWriteDelayMs > 0) {
+                    backendLogger.debug(`Adding post-write delay of ${postWriteDelayMs}ms after writing to address ${address}`, "ModbusConnection");
+                    await this.sleep(postWriteDelayMs);
+                }
+
                 const elapsed = Date.now() - startTime;
                 this.updateRTT(elapsed);
                 this.timeoutStrikes = 0;
-                backendLogger.info(`Write successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Value:${value}`, "ModbusConnection");
+                
+                if (retryCount > 0) {
+                    backendLogger.info(
+                        `Write successful after ${retryCount} retries: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Value:${value}`,
+                        "ModbusConnection"
+                    );
+                } else {
+                    backendLogger.info(
+                        `Write successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Value:${value}`,
+                        "ModbusConnection"
+                    );
+                }
 
             } catch (err: any) {
                 const elapsed = Date.now() - startTime;
-                backendLogger.warning(`Exclusive Write error (${slaveId}:${address}=${value}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+                backendLogger.warning(
+                    `Exclusive Write error (${slaveId}:${address}=${value}): ${err.message} (took ${elapsed}ms)`,
+                    "ModbusConnection",
+                    { connectionId: this.connectionId }
+                );
                 this.handleWriteError(err);
                 throw err;
             } finally {
@@ -551,42 +645,126 @@ export abstract class ModbusConnection extends EventEmitter {
     /**
      * Modbus üzerinden çoklu register yazar (Function Code 16)
      */
-    async writeHoldingRegisters(slaveId: number, address: number, values: number[], timeoutMs: number): Promise<void> {
+    async writeHoldingRegisters(
+        slaveId: number,
+        address: number,
+        values: number[],
+        timeoutMs: number,
+        options?: {
+            preWriteDelayMs?: number;
+            postWriteDelayMs?: number;
+            maxRetries?: number;
+        }
+    ): Promise<void> {
         if (!this.queue || !this.writeLockQueue || !this.client || !this.isConnected) {
             throw new Error("Connection or queue not initialized.");
         }
 
+        // Set default values for options
+        const preWriteDelayMs = options?.preWriteDelayMs !== undefined ? options.preWriteDelayMs : PRE_WRITE_DELAY_MS;
+        const postWriteDelayMs = options?.postWriteDelayMs !== undefined ? options.postWriteDelayMs : POST_WRITE_DELAY_MS;
+        const maxRetries = options?.maxRetries !== undefined ? options.maxRetries : MAX_WRITE_RETRIES;
+
         return this.writeLockQueue.add(async () => {
             const startTime = Date.now();
             backendLogger.info(`[LOCK-LOG] Acquired exclusive lock for MULTI-WRITE to address ${address}`, "ModbusConnection");
+            
+            let retryCount = 0;
 
             try {
                 backendLogger.info(`[LOCK-LOG] Waiting for main queue to become idle before multi-writing to ${address}...`, "ModbusConnection", { pending: this.queue!.pending, size: this.queue!.size });
                 await this.queue!.onIdle();
                 backendLogger.info(`[LOCK-LOG] Main queue is now idle. Executing exclusive MULTI-WRITE to ${address}`, "ModbusConnection");
 
-                await this.queue!.add(async () => {
-                    if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
-                    if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
+                // Add pre-write delay to allow device to prepare for the write operation
+                if (preWriteDelayMs > 0) {
+                    backendLogger.debug(`Adding pre-write delay of ${preWriteDelayMs}ms before multi-writing to address ${address}`, "ModbusConnection");
+                    await this.sleep(preWriteDelayMs);
+                }
 
+                // Retry loop for Slave Device Busy errors
+                while (true) {
                     try {
-                        this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                        const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                        this.client.setTimeout(smartTimeout);
-                        return this.client.writeRegisters(address, values);
-                    } finally {
-                        if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
+                        await this.queue!.add(async () => {
+                            if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
+                            if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
+
+                            try {
+                                this.client.setID(Math.max(1, Math.min(255, slaveId)));
+                                const smartTimeout = this.calculateSmartTimeout(timeoutMs);
+                                this.client.setTimeout(smartTimeout);
+                                return this.client.writeRegisters(address, values);
+                            } finally {
+                                if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
+                            }
+                        }, { priority: 10 });
+                        
+                        // Write operation succeeded, break the retry loop
+                        break;
+                    } catch (err: any) {
+                        // Check if it's a "Slave Device Busy" error
+                        if (err.message && err.message.includes("Modbus exception 6")) {
+                            retryCount++;
+                            
+                            if (retryCount <= maxRetries) {
+                                // Calculate backoff time with jitter to avoid thundering herd
+                                const baseDelay = 500 * Math.pow(2, retryCount - 1);
+                                const jitter = Math.random() * 300;
+                                const retryDelay = Math.floor(baseDelay + jitter);
+                                
+                                backendLogger.warning(
+                                    `Slave device busy at address ${address}. Retry ${retryCount}/${maxRetries} for multi-write after ${retryDelay}ms delay.`,
+                                    "ModbusConnection",
+                                    { connectionId: this.connectionId, slaveId, address }
+                                );
+                                
+                                // Wait before retrying
+                                await this.sleep(retryDelay);
+                            } else {
+                                // Max retries reached, re-throw the error
+                                backendLogger.error(
+                                    `Max retries (${maxRetries}) reached for multi-writing to busy device at address ${address}.`,
+                                    "ModbusConnection",
+                                    { connectionId: this.connectionId, slaveId, address }
+                                );
+                                throw err;
+                            }
+                        } else {
+                            // Not a Slave Device Busy error, re-throw immediately
+                            throw err;
+                        }
                     }
-                }, { priority: 10 });
+                }
+
+                // Add post-write delay to allow device to process the write operation
+                if (postWriteDelayMs > 0) {
+                    backendLogger.debug(`Adding post-write delay of ${postWriteDelayMs}ms after multi-writing to address ${address}`, "ModbusConnection");
+                    await this.sleep(postWriteDelayMs);
+                }
                 
                 const elapsed = Date.now() - startTime;
                 this.updateRTT(elapsed);
                 this.timeoutStrikes = 0;
-                backendLogger.info(`Write multiple successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Values:[${values.join(',')}]`, "ModbusConnection");
+                
+                if (retryCount > 0) {
+                    backendLogger.info(
+                        `Write multiple successful after ${retryCount} retries: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Values:[${values.join(',')}]`,
+                        "ModbusConnection"
+                    );
+                } else {
+                    backendLogger.info(
+                        `Write multiple successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Values:[${values.join(',')}]`,
+                        "ModbusConnection"
+                    );
+                }
 
             } catch (err: any) {
                 const elapsed = Date.now() - startTime;
-                backendLogger.warning(`Exclusive Multi-Write error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+                backendLogger.warning(
+                    `Exclusive Multi-Write error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`,
+                    "ModbusConnection",
+                    { connectionId: this.connectionId }
+                );
                 this.handleWriteError(err);
                 throw err;
             } finally {
