@@ -3,12 +3,10 @@
 import { memo } from 'react';
 import { NodeProps } from 'reactflow';
 import RegisterNode from './RegisterNode';
-import WriteRegisterNode from './WriteRegisterNode';
-import ReadWriteRegisterNode from './ReadWriteRegisterNode';
 
 // Union type for all possible register node data
 type AllRegisterNodeData = {
-  registerType?: 'read' | 'write' | 'readwrite';
+  registerType?: 'read';
   label: string;
   address: number;
   dataType: string;
@@ -41,15 +39,7 @@ type AllRegisterNodeData = {
 const RegisterNodeFactory = memo((props: NodeProps<AllRegisterNodeData>) => {
   const { registerType = 'read' } = props.data;
 
-  switch (registerType) {
-    case 'write':
-      return <WriteRegisterNode {...(props as any)} />;
-    case 'readwrite':
-      return <ReadWriteRegisterNode {...(props as any)} />;
-    case 'read':
-    default:
-      return <RegisterNode {...(props as any)} />;
-  }
+  return <RegisterNode {...(props as any)} />;
 });
 
 RegisterNodeFactory.displayName = 'RegisterNodeFactory';

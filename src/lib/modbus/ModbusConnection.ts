@@ -27,10 +27,6 @@ interface ExtendedModbusRTU {
     readInputRegisters: (address: number, length: number) => Promise<{ data: number[]; buffer: Buffer }>;
     readCoils: (address: number, length: number) => Promise<{ data: boolean[]; buffer: Buffer }>;
     readDiscreteInputs: (address: number, length: number) => Promise<{ data: boolean[]; buffer: Buffer }>;
-    writeRegister: (address: number, value: number) => Promise<any>;
-    writeRegisters: (address: number, values: number[] | Buffer) => Promise<any>;
-    writeCoil: (address: number, value: boolean) => Promise<any>;
-    writeCoils: (address: number, values: boolean[]) => Promise<any>;
     close: (callback: (err?: Error) => void) => void;
     isOpen?: boolean;
 }
@@ -52,7 +48,6 @@ export abstract class ModbusConnection extends EventEmitter {
     connectionId: string;
     client: ExtendedModbusRTU | null = null;
     queue: PQueue | null = null;
-    protected writeLockQueue: PQueue | null = null; // Yazma işlemleri için özel kilit kuyruğu
     isConnected: boolean = false;
     isShuttingDown: boolean = false;
     retryCount: number = 0;
@@ -89,11 +84,6 @@ export abstract class ModbusConnection extends EventEmitter {
     private loggedOnce: Set<string> = new Set(); // Tekrar eden logları önlemek için
     
     // Device-level state tracking (queue değil, sadece state!)
-    private deviceStates: Map<number, {
-        isWriting: boolean;
-        pendingWrites: number;
-        lastActivity: number;
-    }> = new Map();
 
     /**
      * TCP bağlantılar için slave ID lock'unu alır
@@ -135,84 +125,9 @@ export abstract class ModbusConnection extends EventEmitter {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
     
-    /**
-     * Cihaz state'ini al veya oluştur
-     */
-    private getDeviceState(slaveId: number) {
-        let deviceState = this.deviceStates.get(slaveId);
-        
-        if (!deviceState) {
-            deviceState = {
-                isWriting: false,
-                pendingWrites: 0,
-                lastActivity: Date.now()
-            };
-            
-            this.deviceStates.set(slaveId, deviceState);
-            backendLogger.debug(`Created state tracking for device ${slaveId}`, "ModbusConnection");
-        }
-        
-        deviceState.lastActivity = Date.now();
-        return deviceState;
-    }
     
-    /**
-     * Cihaz için write lock al
-     */
-    private async acquireDeviceWriteLock(slaveId: number): Promise<void> {
-        const state = this.getDeviceState(slaveId);
-        state.isWriting = true;
-        state.pendingWrites++;
-        backendLogger.debug(
-            `Device ${slaveId} write lock acquired, pending: ${state.pendingWrites}`,
-            "ModbusConnection"
-        );
-    }
     
-    /**
-     * Cihaz için write lock serbest bırak
-     */
-    private releaseDeviceWriteLock(slaveId: number): void {
-        const state = this.getDeviceState(slaveId);
-        if (state.pendingWrites > 0) {
-            state.pendingWrites--;
-        }
-        
-        if (state.pendingWrites === 0) {
-            state.isWriting = false;
-        }
-        
-        backendLogger.debug(
-            `Device ${slaveId} write lock released, remaining: ${state.pendingWrites}`,
-            "ModbusConnection"
-        );
-    }
     
-    /**
-     * Read için smart wait - sadece ilgili cihaz write yapıyorsa bekle
-     */
-    private async waitForDeviceWrite(slaveId: number, maxWaitMs: number = 5000): Promise<void> {
-        const state = this.getDeviceState(slaveId);
-        
-        if (state.isWriting || state.pendingWrites > 0) {
-            backendLogger.debug(
-                `Device ${slaveId} has ${state.pendingWrites} pending writes, read waits`,
-                "ModbusConnection"
-            );
-            
-            const startWait = Date.now();
-            while (state.isWriting || state.pendingWrites > 0) {
-                if (Date.now() - startWait >= maxWaitMs) {
-                    backendLogger.warning(
-                        `Read timeout waiting for device ${slaveId} write`,
-                        "ModbusConnection"
-                    );
-                    break;
-                }
-                await this.sleep(100);
-            }
-        }
-    }
 
     /**
      * Akıllı timeout hesaplama - UI değeri + RTT tabanlı minimum koruma
@@ -456,11 +371,6 @@ export abstract class ModbusConnection extends EventEmitter {
             this.queue = null;
             backendLogger.debug(`[Graceful Shutdown] Queue for ${this.connectionId} has been destroyed.`, "ModbusConnection");
         }
-        if (this.writeLockQueue) {
-            this.writeLockQueue.pause();
-            this.writeLockQueue.clear();
-            this.writeLockQueue = null;
-        }
 
         try {
             if (this.client) {
@@ -506,12 +416,7 @@ export abstract class ModbusConnection extends EventEmitter {
             throw new Error("Connection is not established");
         }
         
-        // Smart coordination: Bu cihaza write yapılıyor mu kontrol et
-        await this.waitForDeviceWrite(slaveId, 5000);
-        
-        // Priority hesapla: Write varsa düşük öncelik
-        const deviceState = this.getDeviceState(slaveId);
-        const readPriority = deviceState.isWriting ? -10 : 0;
+        const readPriority = 0;
 
         const startTime = Date.now();
         
@@ -600,228 +505,8 @@ export abstract class ModbusConnection extends EventEmitter {
         }
     }
 
-    /**
-     * IMPROVED: Modbus üzerinden tek register yazar
-     * Sadece ilgili cihazın read'lerini durdurur, diğer cihazlar devam eder
-     */
-    async writeHoldingRegister(
-        slaveId: number,
-        address: number,
-        value: number,
-        timeoutMs: number,
-        options?: {
-            preWriteDelayMs?: number;
-            postWriteDelayMs?: number;
-            priority?: number;
-        }
-    ): Promise<void> {
-        if (!this.queue || !this.writeLockQueue || !this.client || !this.isConnected) {
-            throw new Error("Connection or queue not initialized.");
-        }
 
-        // Set default values for options
-        const preWriteDelayMs = options?.preWriteDelayMs !== undefined ? options.preWriteDelayMs : PRE_WRITE_DELAY_MS;
-        const postWriteDelayMs = options?.postWriteDelayMs !== undefined ? options.postWriteDelayMs : POST_WRITE_DELAY_MS;
-        const writePriority = options?.priority ?? 100; // Yüksek öncelik
-        
-        // ÖNCE: Bu cihaz için write lock al
-        await this.acquireDeviceWriteLock(slaveId);
 
-        // Yazma işlemlerini kendi aralarında serileştirmek için writeLockQueue kullanılır.
-        return this.writeLockQueue.add(async () => {
-            const startTime = Date.now();
-            backendLogger.info(`[LOCK-LOG] Acquired exclusive lock for WRITE to address ${address}`, "ModbusConnection");
-            
-            // Retry sayacı artık kullanılmıyor
-            
-            try {
-                // IMPROVED: Ana queue'da sadece bu cihazın işlemlerini kontrol et
-                // NOT: Artık ayrı device queue yok, ana queue'yu kullanıyoruz ama akıllıca!
-                const deviceState = this.getDeviceState(slaveId);
-                
-                // Eğer bu cihaza aktif read işlemi varsa, onların bitmesini bekle
-                // Bu, write işlemi sırasında data consistency sağlar
-                // Ama DIĞER cihazlar etkilenmez!
-                
-                backendLogger.info(
-                    `[IMPROVED-LOCK] Device ${slaveId} write starting, other devices continue working!`,
-                    "ModbusConnection"
-                );
-
-                // Add pre-write delay to allow device to prepare for the write operation
-                if (preWriteDelayMs > 0) {
-                    backendLogger.debug(`Adding pre-write delay of ${preWriteDelayMs}ms before writing to address ${address}`, "ModbusConnection");
-                    await this.sleep(preWriteDelayMs);
-                }
-
-                // Yazma işlemini tek seferde yap
-                try {
-                    // Kuyruk boşaldı, şimdi yazma işlemini tek başına yap.
-                    // Hala ana kuyruğu kullanıyoruz ki RTT ve timeout gibi mekanizmalar çalışsın.
-                    await this.queue!.add(async () => {
-                        if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
-                        if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
-                        
-                        try {
-                            this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                            const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                            this.client.setTimeout(smartTimeout);
-                            return this.client.writeRegister(address, value);
-                        } finally {
-                            if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
-                        }
-                    }, { priority: writePriority }); // Yüksek öncelik
-                } catch (err: any) {
-                    // Hatayı direkt olarak fırlat, retry mekanizması yok
-                    throw err;
-                }
-                
-                // Add post-write delay to allow device to process the write operation
-                if (postWriteDelayMs > 0) {
-                    backendLogger.debug(`Adding post-write delay of ${postWriteDelayMs}ms after writing to address ${address}`, "ModbusConnection");
-                    await this.sleep(postWriteDelayMs);
-                }
-
-                const elapsed = Date.now() - startTime;
-                this.updateRTT(elapsed);
-                this.timeoutStrikes = 0;
-                
-                backendLogger.info(
-                    `Write successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Value:${value}`,
-                    "ModbusConnection"
-                );
-
-            } catch (err: any) {
-                const elapsed = Date.now() - startTime;
-                backendLogger.warning(
-                    `Exclusive Write error (${slaveId}:${address}=${value}): ${err.message} (took ${elapsed}ms)`,
-                    "ModbusConnection",
-                    { connectionId: this.connectionId }
-                );
-                this.handleWriteError(err);
-                throw err;
-            } finally {
-                // Write lock'u serbest bırak
-                this.releaseDeviceWriteLock(slaveId);
-                
-                backendLogger.info(
-                    `[IMPROVED-LOCK] Released write lock for device ${slaveId}, reads can resume`,
-                    "ModbusConnection"
-                );
-            }
-        }, { priority: writePriority }); // WriteLockQueue için de yüksek öncelik
-    }
-
-    /**
-     * IMPROVED: Modbus üzerinden çoklu register yazar
-     * Sadece ilgili cihazın read'lerini durdurur, diğer cihazlar devam eder
-     */
-    async writeHoldingRegisters(
-        slaveId: number,
-        address: number,
-        values: number[],
-        timeoutMs: number,
-        options?: {
-            preWriteDelayMs?: number;
-            postWriteDelayMs?: number;
-            priority?: number;
-        }
-    ): Promise<void> {
-        if (!this.queue || !this.writeLockQueue || !this.client || !this.isConnected) {
-            throw new Error("Connection or queue not initialized.");
-        }
-
-        // Set default values for options
-        const preWriteDelayMs = options?.preWriteDelayMs !== undefined ? options.preWriteDelayMs : PRE_WRITE_DELAY_MS;
-        const postWriteDelayMs = options?.postWriteDelayMs !== undefined ? options.postWriteDelayMs : POST_WRITE_DELAY_MS;
-        // maxRetries artık kullanılmıyor
-        const writePriority = options?.priority ?? 100; // Yüksek öncelik
-        
-        // ÖNCE: Bu cihaz için write lock al
-        await this.acquireDeviceWriteLock(slaveId);
-
-        return this.writeLockQueue.add(async () => {
-            const startTime = Date.now();
-            backendLogger.info(`[LOCK-LOG] Acquired exclusive lock for MULTI-WRITE to address ${address}`, "ModbusConnection");
-
-            try {
-                // IMPROVED: Ana queue'da sadece bu cihazın işlemlerini kontrol et
-                const deviceState = this.getDeviceState(slaveId);
-                
-                backendLogger.info(
-                    `[IMPROVED-LOCK] Device ${slaveId} multi-write starting, other devices continue working!`,
-                    "ModbusConnection"
-                );
-
-                // Add pre-write delay to allow device to prepare for the write operation
-                if (preWriteDelayMs > 0) {
-                    backendLogger.debug(`Adding pre-write delay of ${preWriteDelayMs}ms before multi-writing to address ${address}`, "ModbusConnection");
-                    await this.sleep(preWriteDelayMs);
-                }
-
-                // Yazma işlemini tek seferde yap
-                try {
-                    await this.queue!.add(async () => {
-                        if (!this.client || !this.isConnected) throw new Error("Connection lost during exclusive write");
-                        if (this instanceof ModbusTcpConnection) await this.acquireSlaveIdLock();
-
-                        try {
-                            this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                            const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                            this.client.setTimeout(smartTimeout);
-                            return this.client.writeRegisters(address, values);
-                        } finally {
-                            if (this instanceof ModbusTcpConnection) this.releaseSlaveIdLock();
-                        }
-                    }, { priority: writePriority }); // Yüksek öncelik
-                } catch (err: any) {
-                    // Hatayı direkt olarak fırlat, retry mekanizması yok
-                    throw err;
-                }
-
-                // Add post-write delay to allow device to process the write operation
-                if (postWriteDelayMs > 0) {
-                    backendLogger.debug(`Adding post-write delay of ${postWriteDelayMs}ms after multi-writing to address ${address}`, "ModbusConnection");
-                    await this.sleep(postWriteDelayMs);
-                }
-                
-                const elapsed = Date.now() - startTime;
-                this.updateRTT(elapsed);
-                this.timeoutStrikes = 0;
-                
-                backendLogger.info(
-                    `Write multiple successful: ${this.connectionId} - Slave:${slaveId}, Addr:${address}, Values:[${values.join(',')}]`,
-                    "ModbusConnection"
-                );
-
-            } catch (err: any) {
-                const elapsed = Date.now() - startTime;
-                backendLogger.warning(
-                    `Exclusive Multi-Write error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`,
-                    "ModbusConnection",
-                    { connectionId: this.connectionId }
-                );
-                this.handleWriteError(err);
-                throw err;
-            } finally {
-                // Write lock'u serbest bırak
-                this.releaseDeviceWriteLock(slaveId);
-                
-                backendLogger.info(
-                    `[IMPROVED-LOCK] Released multi-write lock for device ${slaveId}, reads can resume`,
-                    "ModbusConnection"
-                );
-            }
-        }, { priority: writePriority }); // WriteLockQueue için de yüksek öncelik
-    }
-
-    /**
-     * Yazma hatalarını işler
-     */
-    protected handleWriteError(err: any): void {
-        // Yazma hatalarını alt sınıflar işleyecek
-        this.emit('writeError', err);
-    }
 
     /**
      * RTT değerini günceller ve gerekirse concurrency'yi ayarlar
@@ -1117,7 +802,6 @@ export class ModbusTcpConnection extends ModbusConnection {
                     throwOnTimeout: true,
                     carryoverConcurrencyCount: true
                 });
-                this.writeLockQueue = new PQueue({ concurrency: 1 });
             }
             
             // Kuyruk olaylarını dinle
@@ -1220,39 +904,4 @@ export class ModbusTcpConnection extends ModbusConnection {
         }
     }
 
-    /**
-     * Yazma hatalarını işler (TCP için)
-     */
-    protected handleWriteError(err: any): void {
-        super.handleWriteError(err);
-
-        // TCP seviyesinde gerçekten kopma mı var?
-        const MAX_TIMEOUT_STRIKES = 5; // Eşik değeri
-        const isTimeoutError = err.message.includes("timed out") || err.name === 'TimeoutError';
-
-        // Gerçek bir TCP bağlantı hatası ise hemen yeniden başlat
-        const isTcpError =
-            err.message.includes("Port Not Open") ||
-            err.code === "ECONNRESET" ||
-            err.code === "EHOSTUNREACH" ||
-            err.code === "ENETUNREACH";
-
-        if (isTcpError) {
-            backendLogger.warning(`${this.connectionId} connection lost due to TCP error during write (${err.message}), forcing reconnect…`, "ModbusConnection");
-            this.handleConnectionLoss();
-            return;
-        }
-
-        // Eğer hata bir timeout ise, sayaç mekanizmasını uygula
-        if (isTimeoutError) {
-            this.timeoutStrikes++;
-            backendLogger.warning(`${this.connectionId} write request timed out. Strike ${this.timeoutStrikes}/${MAX_TIMEOUT_STRIKES}.`, "ModbusConnection");
-
-            if (this.timeoutStrikes >= MAX_TIMEOUT_STRIKES) {
-                backendLogger.error(`${this.connectionId} has reached max timeout strikes during write. Assuming connection is unhealthy and forcing reconnect.`, "ModbusConnection");
-                this.handleConnectionLoss();
-                this.timeoutStrikes = 0; // Döngüyü sıfırla
-            }
-        }
-    }
 }

@@ -553,49 +553,5 @@ export class SerialPoller extends EventEmitter {
         }
     }
 
-    public async writeRegister(analyzerId: string, address: number, value: number): Promise<void> {
-        try {
-            const analyzer = this.analyzers.get(analyzerId);
-            if (!analyzer) {
-                throw new Error(`Serial analyzer not found: ${analyzerId}`);
-            }
 
-            const connection = await this.ensureConnection(analyzer);
-            if (!connection) {
-                throw new Error(`Serial connection not available for analyzer: ${analyzerId}`);
-            }
-
-            await connection.writeHoldingRegister(analyzer.slaveId, address, value, analyzer.timeoutMs);
-            
-            backendLogger.info(`Serial write successful: Analyzer=${analyzerId}, Address=${address}, Value=${value}`, "SerialPoller");
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            backendLogger.error(`Serial write failed: ${errorMessage}`, "SerialPoller", { analyzerId, address, value });
-            throw error;
-        }
-    }
-
-    public async writeMultipleRegisters(analyzerId: string, address: number, values: number[]): Promise<void> {
-        try {
-            const analyzer = this.analyzers.get(analyzerId);
-            if (!analyzer) {
-                throw new Error(`Serial analyzer not found: ${analyzerId}`);
-            }
-
-            const connection = await this.ensureConnection(analyzer);
-            if (!connection) {
-                throw new Error(`Serial connection not available for analyzer: ${analyzerId}`);
-            }
-
-            await connection.writeHoldingRegisters(analyzer.slaveId, address, values, analyzer.timeoutMs);
-            
-            backendLogger.info(`Serial write multiple successful: Analyzer=${analyzerId}, Address=${address}, Values=[${values.join(',')}]`, "SerialPoller");
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            backendLogger.error(`Serial write multiple failed: ${errorMessage}`, "SerialPoller", { analyzerId, address, values });
-            throw error;
-        }
-    }
 }

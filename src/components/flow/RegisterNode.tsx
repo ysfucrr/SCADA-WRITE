@@ -20,6 +20,7 @@ interface RegisterNodeData {
   font: number;
   byteOrder?: string;
   bit?: number;
+  decimalPlaces?: number;
   backgroundColor?: string;
   textColor?: string;
   opacity?: number;
@@ -49,7 +50,7 @@ interface RegisterNodeData {
         setValue(registerValue === 1 || registerValue === true ? 'ON' : 'OFF');
       } else if (typeof registerValue === 'number') {
         // Ondalık sayılar için 2 basamak göster
-        setValue(registerValue.toFixed(2));
+        setValue(registerValue.toFixed(node.data.decimalPlaces || 2));
       } else {
         setValue(registerValue);
       }

@@ -124,8 +124,6 @@ interface ExtendedModbusRTU {
   setTimeout(timeout: number): void;
   setID(id: number): void;
   readHoldingRegisters(address: number, quantity: number): Promise<any>;
-  writeRegister(address: number, value: number): Promise<any>;
-  writeRegisters(address: number, values: number[]): Promise<any>;
   close(callback: () => void): void;
 }
 
@@ -418,120 +416,6 @@ export class ModbusSerialConnection extends ModbusConnection {
             this.handleReadError(err);
             throw err;
         }
-    }
-
-    /**
-     * Writes a single holding register via Modbus - optimized for Serial
-     */
-    async writeHoldingRegister(slaveId: number, address: number, value: number, timeoutMs: number): Promise<void> {
-        
-        if (!this.client || !this.isConnected) {
-            backendLogger.error(`[SERIAL] Connection not established: client=${!!this.client}, isConnected=${this.isConnected}`, "SerialConnection");
-            throw new Error("Connection is not established");
-        }
-
-        if (!this.queue) {
-            backendLogger.error(`[SERIAL] Queue not initialized`, "SerialConnection");
-            throw new Error("Queue is not initialized");
-        }
-
-        const startTime = Date.now();
-
-        try {
-            await this.queue.add(
-                async () => {
-                    if (!this.client || !this.isConnected) {
-                        throw new Error("Connection lost");
-                    }
-
-                    // Simple and clean for Serial
-                    this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                    
-                    // Smart timeout
-                    const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                    this.client.setTimeout(smartTimeout);
-
-                    return this.client.writeRegister(address, value);
-                },
-                {
-                    priority: Math.max(1, 10 - Math.min(9, Math.floor(address / 1000))),
-                    timeout: this.calculateSmartTimeout(timeoutMs) + 500
-                }
-            );
-
-            const elapsed = Date.now() - startTime;
-            this.updateRTT(elapsed);
-
-            // Successful write, reset timeout counter
-            this.timeoutStrikes = 0;
-
-        } catch (err: unknown) {
-            const elapsed = Date.now() - startTime;
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            // Kısıtlamayı kaldır: Her türlü yazma hatasını detaylarıyla logla.
-            backendLogger.warning(`Write error on ${this.connectionId} (Slave: ${slaveId}, Address: ${address}=${value}): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection");
-            
-            this.handleWriteError(err);
-            throw err;
-        }
-    }
-
-    /**
-     * Writes multiple holding registers via Modbus - optimized for Serial
-     */
-    async writeHoldingRegisters(slaveId: number, address: number, values: number[], timeoutMs: number): Promise<void> {
-        
-        if (!this.client || !this.isConnected) {
-            throw new Error("Connection is not established");
-        }
-
-        if (!this.queue) {
-            throw new Error("Queue is not initialized");
-        }
-
-        const startTime = Date.now();
-
-        try {
-            await this.queue.add(
-                async () => {
-                    if (!this.client || !this.isConnected) {
-                        throw new Error("Connection lost");
-                    }
-
-                    this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                    
-                    const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                    this.client.setTimeout(smartTimeout);
-
-                    return this.client.writeRegisters(address, values);
-                },
-                {
-                    priority: Math.max(1, 10 - Math.min(9, Math.floor(address / 1000))),
-                    timeout: this.calculateSmartTimeout(timeoutMs) + 500
-                }
-            );
-
-            const elapsed = Date.now() - startTime;
-            this.updateRTT(elapsed);
-            this.timeoutStrikes = 0;
-
-        } catch (err: unknown) {
-            const elapsed = Date.now() - startTime;
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            // Kısıtlamayı kaldır: Her türlü çoklu yazma hatasını detaylarıyla logla.
-            backendLogger.warning(`Write multiple error on ${this.connectionId} (Slave: ${slaveId}, Address: ${address}=[${values.join(',')}]): ${errorMessage} (took ${elapsed}ms)`, "SerialConnection");
-            
-            this.handleWriteError(err);
-            throw err;
-        }
-    }
-
-    /**
-     * Handles write errors (for Serial)
-     */
-    protected handleWriteError(err: any): void {
-        super.handleWriteError(err);
-        // Simple error handling - no timeout strike mechanism
     }
     
     /**

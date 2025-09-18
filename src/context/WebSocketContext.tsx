@@ -28,19 +28,6 @@ interface WebSocketContextType {
     dataType: string;
     bit?: number;
   }, callback: (value: any) => void) => void;
-  writeRegister: (data: {
-    analyzerId: string | number;
-    address: number;
-    value: number | string | boolean;
-    dataType?: string;
-    byteOrder?: string;
-    bit?: number;
-  }) => Promise<void>;
-  writeMultipleRegisters: (data: {
-    analyzerId: string | number;
-    address: number;
-    values: (number | string)[];
-  }) => Promise<void>;
   isConnected: boolean;
 }
 
@@ -49,8 +36,6 @@ const WebSocketContext = createContext<WebSocketContextType>({
   connectionState: 'disconnected',
   watchRegister: () => {},
   unwatchRegister: () => {},
-  writeRegister: async () => {},
-  writeMultipleRegisters: async () => {},
   isConnected: false,
 });
 
@@ -217,106 +202,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const writeRegister = useCallback(async (data: {
-    analyzerId: string | number;
-    address: number;
-    value: number | string | boolean;
-    dataType?: string;
-    byteOrder?: string;
-    bit?: number;
-  }) => {
-    return new Promise<void>((resolve, reject) => {
-      if (!socketInstance || !socketInstance.connected) {
-        reject(new Error('WebSocket not connected'));
-        return;
-      }
 
-      const requestId = `write_${Date.now()}_${Math.random()}`;
-      const timeout = setTimeout(() => {
-        if (socketInstance) {
-          socketInstance.off('write-success');
-          socketInstance.off('write-error');
-        }
-        reject(new Error('Write operation timeout'));
-      }, 10000);
-
-      const successHandler = (response: any) => {
-        if (response.requestId === requestId) {
-          clearTimeout(timeout);
-          if (socketInstance) {
-            socketInstance.off('write-success', successHandler);
-            socketInstance.off('write-error', errorHandler);
-          }
-          resolve();
-        }
-      };
-
-      const errorHandler = (response: any) => {
-        if (response.requestId === requestId) {
-          clearTimeout(timeout);
-          if (socketInstance) {
-            socketInstance.off('write-success', successHandler);
-            socketInstance.off('write-error', errorHandler);
-          }
-          reject(new Error(response.error || 'Write operation failed'));
-        }
-      };
-
-      socketInstance.on('write-success', successHandler);
-      socketInstance.on('write-error', errorHandler);
-
-      socketInstance.emit('write-register', { ...data, requestId });
-    });
-  }, []);
-
-  const writeMultipleRegisters = useCallback(async (data: {
-    analyzerId: string | number;
-    address: number;
-    values: (number | string)[];
-  }) => {
-    return new Promise<void>((resolve, reject) => {
-      if (!socketInstance || !socketInstance.connected) {
-        reject(new Error('WebSocket not connected'));
-        return;
-      }
-
-      const requestId = `write_multiple_${Date.now()}_${Math.random()}`;
-      const timeout = setTimeout(() => {
-        if (socketInstance) {
-          socketInstance.off('write-multiple-success');
-          socketInstance.off('write-multiple-error');
-        }
-        reject(new Error('Write multiple operation timeout'));
-      }, 15000);
-
-      const successHandler = (response: any) => {
-        if (response.requestId === requestId) {
-          clearTimeout(timeout);
-          if (socketInstance) {
-            socketInstance.off('write-multiple-success', successHandler);
-            socketInstance.off('write-multiple-error', errorHandler);
-          }
-          resolve();
-        }
-      };
-
-      const errorHandler = (response: any) => {
-        if (response.requestId === requestId) {
-          clearTimeout(timeout);
-          if (socketInstance) {
-            socketInstance.off('write-multiple-success', successHandler);
-            socketInstance.off('write-multiple-error', errorHandler);
-          }
-          reject(new Error(response.error || 'Write multiple operation failed'));
-        }
-      };
-
-      socketInstance.on('write-multiple-success', successHandler);
-      socketInstance.on('write-multiple-error', errorHandler);
-
-      socketInstance.emit('write-multiple-registers', { ...data, requestId });
-    });
-  }, []);
   
   return (
     <WebSocketContext.Provider
@@ -325,8 +211,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         connectionState,
         watchRegister,
         unwatchRegister,
-        writeRegister,
-        writeMultipleRegisters,
         isConnected,
       }}
     >

@@ -16,6 +16,7 @@ export interface RegisterConfig {
     dataType: string;
     byteOrder: string;
     scale: number;
+    offset: number;
     bit: number;
     size: number;
     parentId: string;
@@ -37,6 +38,7 @@ export class Register {
     dataType: string;
     byteOrder: string;
     scale: number;
+    offset: number;
     bit: number;
     size: number;
     parentId: string;
@@ -67,6 +69,7 @@ export class Register {
         this.dataType = config.dataType;
         this.byteOrder = config.byteOrder;
         this.scale = config.scale;
+        this.offset = config.offset || 0;
         this.bit = config.bit;
         this.size = config.size;
         this.parentId = config.parentId;
@@ -95,11 +98,9 @@ export class Register {
 
         // Sayısal değer ise ölçeklendir
         if (typeof this.value === 'number') {
-            const unitValue = Number(this.unit) || 1;
-            const rawValue = unitValue !== 0 ? this.value / unitValue : this.value;
-            //console.log(`[REGISTER-GETVALUE] Sayısal değer ölçeklendi: ${this.value} -> ${rawValue}`);
-            // İki ondalığa yuvarla
-            return Number(rawValue.toFixed(2));
+            // Apply the formula: (Raw Value + Offset) * Scale
+            const scaledValue = (this.value + this.offset) * this.scale;
+            return Number(scaledValue.toFixed(2));
         }
         
         //console.log(`[REGISTER-GETVALUE] Ham değer döndürülüyor: ${this.value}`);
@@ -169,7 +170,7 @@ export class Register {
                     const rawValue = orderedBuffer.readUInt16BE(registerOffset * 2);
                     //console.log(`[REGISTER-DECODE] Boolean decode: id=${this.id}, addr=${this.addr}+${registerOffset}, raw=${rawValue}, bit=${bitInWord}, totalBit=${bit}`);
                     
-                    value = ((rawValue >> bitInWord) & 1) * scale;
+                    value = (((rawValue >> bitInWord) & 1) + this.offset) * scale;
                     //console.log(`[REGISTER-DECODE] Boolean decode sonucu: value=${value}`);
                 } else {
                     /* 16-bit için byte sırası */
@@ -180,10 +181,10 @@ export class Register {
                     }
 
                     switch (this.dataType) {
-                        case "int8": value = Buffer.from([raw & 0xff]).readInt8(0) * scale; break;
-                        case "uint8": value = Buffer.from([raw & 0xff]).readUInt8(0) * scale; break;
-                        case "int16": value = b16.readInt16BE(0) * scale; break;
-                        case "uint16": value = b16.readUInt16BE(0) * scale; break;
+                        case "int8": value = (Buffer.from([raw & 0xff]).readInt8(0) + this.offset) * scale; break;
+                        case "uint8": value = (Buffer.from([raw & 0xff]).readUInt8(0) + this.offset) * scale; break;
+                        case "int16": value = (b16.readInt16BE(0) + this.offset) * scale; break;
+                        case "uint16": value = (b16.readUInt16BE(0) + this.offset) * scale; break;
                     }
                 }
             }
@@ -209,9 +210,9 @@ export class Register {
                 else if (this.byteOrder === "CDAB") b32.swap32();
                 else if (this.byteOrder === "DCBA") { b32.swap32(); b32.swap16(); }
 
-                if (this.dataType === "float32") value = b32.readFloatBE(0) * scale;
-                else if (this.dataType === "uint32") value = b32.readUInt32BE(0) * scale;
-                else value = b32.readInt32BE(0) * scale; // int32
+                if (this.dataType === "float32") value = (b32.readFloatBE(0) + this.offset) * scale;
+                else if (this.dataType === "uint32") value = (b32.readUInt32BE(0) + this.offset) * scale;
+                else value = (b32.readInt32BE(0) + this.offset) * scale; // int32
             }
             /* ---------- 64-bit ---------- */
             else if (
@@ -237,7 +238,7 @@ export class Register {
                 else if (this.byteOrder === "DCBA") { b64.swap32(); b64.swap16(); }
                 // Note: No native swap64, manual implementation would be needed.
 
-                if (this.dataType === "float64") value = b64.readDoubleBE(0) * scale;
+                if (this.dataType === "float64") value = (b64.readDoubleBE(0) + this.offset) * scale;
                 else {
                     const big = this.dataType === "uint64"
                         ? b64.readBigUInt64BE(0)
@@ -246,7 +247,7 @@ export class Register {
                     /* JS'te güvenli aralık aşılırsa BigInt olarak bırakın */
                     const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
                     const num = (big > maxSafe || big < -maxSafe) ? big : Number(big);
-                    value = (typeof num === "number" ? num : Number(num)) * scale;
+                    value = ((typeof num === "number" ? num : Number(num)) + this.offset) * scale;
                 }
             }
             /* ---------- String ---------- */
@@ -269,7 +270,7 @@ export class Register {
             /* Fallback = ham 16-bit */
             else {
                 backendLogger.warning(`Unknown data type: ${this.dataType}, using raw 16-bit value`, "Register");
-                value = words[i] * scale;
+                value = (words[i] + this.offset) * scale;
             }
         } catch (err: any) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error';

@@ -36,7 +36,6 @@ export class PollingEngine extends EventEmitter {
     private reconnectTimers: Map<string, NodeJS.Timeout> = new Map(); // Gateway ID -> Timer
     private reconnectingConnections: Set<string> = new Set(); // Yeniden bağlanma sürecindeki bağlantılar
     private connectionMismatchLogged: Set<string> = new Set(); // Connection mismatch loglarını takip etmek için
-    private coolDownTimers: Map<string, NodeJS.Timeout> = new Map(); // "write" sonrası bekleme (cool-down) zamanlayıcıları
 
     constructor() {
         super();
@@ -723,50 +722,6 @@ export class PollingEngine extends EventEmitter {
         return register ? register.getValue(null) : null;
     }
     
-    /**
-     * Belirli bir paralel bağlantıdaki tüm analizörler için polling'i geçici olarak durdurur.
-     * @param pooledConnectionId Duraklatılacak bağlantının kimliği (ip:port:index)
-     * @param durationMs Duraklatma süresi (ms)
-     */
-    private pausePollingForConnection(pooledConnectionId: string, durationMs: number): void {
-        if (this.coolDownTimers.has(pooledConnectionId)) {
-            // Bu spesifik bağlantı zaten bir soğuma periyodunda.
-            return;
-        }
-
-        const affectedAnalyzers: AnalyzerSettings[] = [];
-        this.analyzers.forEach(analyzer => {
-            const analyzerConnectionId = `${analyzer.getConnectionId()}:${this.analyzerToConnectionIndex.get(analyzer.id) || 0}`;
-            if (analyzerConnectionId === pooledConnectionId) {
-                affectedAnalyzers.push(analyzer);
-            }
-        });
-
-        if (affectedAnalyzers.length === 0) {
-            return;
-        }
-
-        backendLogger.info(`Pausing polling on connection ${pooledConnectionId} for ${durationMs}ms due to a disruptive write command.`, "PollingEngine");
-
-        // Etkilenen tüm analizörlerin mevcut zamanlayıcılarını durdur.
-        affectedAnalyzers.forEach(analyzer => {
-            const timer = this.pollingTimers.get(analyzer.id);
-            if (timer) {
-                clearTimeout(timer);
-                this.pollingTimers.delete(analyzer.id);
-            }
-        });
-
-        const coolDownTimer = setTimeout(() => {
-            backendLogger.info(`Resuming polling on connection ${pooledConnectionId} after cool-down period.`, "PollingEngine");
-            affectedAnalyzers.forEach(analyzer => {
-                this.startPolling(analyzer);
-            });
-            this.coolDownTimers.delete(pooledConnectionId);
-        }, durationMs);
-
-        this.coolDownTimers.set(pooledConnectionId, coolDownTimer);
-    }
 
     private countDevicesForPooledConnection(pooledConnectionId: string): number {
         const activeAnalyzerIds = new Set<string>();
@@ -886,73 +841,5 @@ export class PollingEngine extends EventEmitter {
         });
     }
 
-    /**
-     * Register yazma işlemi - TCP analyzer için
-     */
-    public async writeRegister(analyzerId: string, address: number, value: number, timeout: number = 5000, options?: { isDisruptive?: boolean, coolDownMs?: number }): Promise<void> {
-        try {
-            const analyzer = this.analyzers.get(analyzerId);
-            if (!analyzer) {
-                throw new Error(`Analyzer not found: ${analyzerId}`);
-            }
 
-            const connection = await this.ensureConnection(analyzer);
-            if (!connection) {
-                throw new Error(`Connection not available for analyzer: ${analyzerId}`);
-            }
-
-            // Write işlemi yap
-            await connection.writeHoldingRegister(analyzer.slaveId, address, value, timeout);
-            
-            backendLogger.info(`TCP write successful: Analyzer=${analyzerId}, Address=${address}, Value=${value}`, "PollingEngine");
-
-            // Akıllı bekleme (cool-down) mantığı
-            if (options?.isDisruptive) {
-                const connectionIndex = this.analyzerToConnectionIndex.get(analyzerId) || 0;
-                const pooledConnectionId = `${analyzer.getConnectionId()}:${connectionIndex}`;
-                const duration = options.coolDownMs || 3000; // Varsayılan 3 saniye
-                this.pausePollingForConnection(pooledConnectionId, duration);
-            }
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            backendLogger.error(`TCP write failed: ${errorMessage}`, "PollingEngine", { analyzerId, address, value });
-            throw error;
-        }
-    }
-
-    /**
-     * Çoklu register yazma işlemi - TCP analyzer için
-     */
-    public async writeMultipleRegisters(analyzerId: string, address: number, values: number[], timeout: number = 5000, options?: { isDisruptive?: boolean, coolDownMs?: number }): Promise<void> {
-        try {
-            const analyzer = this.analyzers.get(analyzerId);
-            if (!analyzer) {
-                throw new Error(`Analyzer not found: ${analyzerId}`);
-            }
-
-            const connection = await this.ensureConnection(analyzer);
-            if (!connection) {
-                throw new Error(`Connection not available for analyzer: ${analyzerId}`);
-            }
-
-            // Write multiple işlemi yap
-            await connection.writeHoldingRegisters(analyzer.slaveId, address, values, timeout);
-            
-            backendLogger.info(`TCP write multiple successful: Analyzer=${analyzerId}, Address=${address}, Values=[${values.join(',')}]`, "PollingEngine");
-
-            // Akıllı bekleme (cool-down) mantığı
-            if (options?.isDisruptive) {
-                const connectionIndex = this.analyzerToConnectionIndex.get(analyzerId) || 0;
-                const pooledConnectionId = `${analyzer.getConnectionId()}:${connectionIndex}`;
-                const duration = options.coolDownMs || 3000; // Varsayılan 3 saniye
-                this.pausePollingForConnection(pooledConnectionId, duration);
-            }
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            backendLogger.error(`TCP write multiple failed: ${errorMessage}`, "PollingEngine", { analyzerId, address, values });
-            throw error;
-        }
-    }
 }
