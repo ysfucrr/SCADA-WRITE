@@ -615,6 +615,57 @@ export class ModbusPoller extends EventEmitter {
     }
 
 
+    public async handleWriteRequest(registerId: string, value: number): Promise<void> {
+        const register = this.allKnownRegisters.get(registerId);
+        if (!register) {
+            backendLogger.error(`Write request failed: Register ${registerId} not found in orchestrator cache.`, "ModbusPoller");
+            throw new Error(`Register with ID ${registerId} not found.`);
+        }
+
+        const analyzerId = register.analyzerId;
+        const analyzerInfo = await this.findAnalyzerById(analyzerId);
+
+        if (!analyzerInfo) {
+            backendLogger.error(`Write request failed: Analyzer ${analyzerId} for register ${registerId} not found.`, "ModbusPoller");
+            throw new Error(`Analyzer with ID ${analyzerId} not found.`);
+        }
+
+        const payload = {
+            registerId,
+            value,
+            analyzerId,
+            slaveId: analyzerInfo.slaveId,
+            address: register.address,
+            timeoutMs: analyzerInfo.timeoutMs,
+            // Ters dönüşüm için gerekli bilgiler
+            scale: register.scale,
+            offset: register.offset,
+            dataType: register.dataType
+        };
+
+        if (analyzerInfo.connType === 'serial') {
+            if (this.serialPoller) {
+                backendLogger.info(`Forwarding write request to SerialPoller for analyzer ${analyzerId}`, "ModbusPoller");
+                await this.serialPoller.handleWriteRequest(payload);
+            } else {
+                backendLogger.error("SerialPoller is not initialized. Cannot handle write request.", "ModbusPoller");
+                throw new Error("SerialPoller is not available.");
+            }
+        } else { // TCP
+            const workerIndex = this.analyzerToWorker.get(analyzerId);
+            if (workerIndex === undefined) {
+                backendLogger.error(`Cannot handle write request. TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
+                throw new Error(`TCP Analyzer ${analyzerId} is not assigned to a worker.`);
+            }
+            const worker = this.workers[workerIndex];
+            backendLogger.info(`Forwarding write request to worker ${workerIndex} for analyzer ${analyzerId}`, "ModbusPoller");
+            worker.postMessage({
+                type: 'WRITE_REGISTER',
+                payload: payload
+            });
+        }
+    }
+
     /**
      * Analyzer ID'ye göre analyzer bilgilerini bulur
      */

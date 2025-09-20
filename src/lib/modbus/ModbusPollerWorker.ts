@@ -72,6 +72,15 @@ parentPort.on('message', async (message: { type: string, payload: any }) => {
             }
             break;
 
+        case 'WRITE_REGISTER':
+            if (payload) {
+                engine.handleWriteRequest(payload).catch(error => {
+                    backendLogger.error('Write request failed in worker', 'Worker', { error: error.message, payload });
+                });
+            } else {
+                backendLogger.warning("WRITE_REGISTER command received without payload.", "Worker");
+            }
+            break;
 
         default:
             backendLogger.warning(`Worker received unknown message type: ${type}`, "Worker");

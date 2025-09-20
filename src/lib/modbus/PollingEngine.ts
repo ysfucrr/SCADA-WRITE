@@ -842,4 +842,48 @@ export class PollingEngine extends EventEmitter {
     }
 
 
+    public async handleWriteRequest(payload: {
+        registerId: string;
+        value: number;
+        analyzerId: string;
+        slaveId: number;
+        address: number;
+        timeoutMs: number;
+        scale: number;
+        offset: number;
+    }): Promise<void> {
+        const { analyzerId, slaveId, address, value, timeoutMs, scale, offset } = payload;
+        const analyzer = this.analyzers.get(analyzerId);
+
+        if (!analyzer) {
+            backendLogger.error(`TCP write failed: Analyzer ${analyzerId} not found in PollingEngine.`, "PollingEngine");
+            throw new Error(`Analyzer ${analyzerId} not found.`);
+        }
+
+        const connection = analyzer.connection;
+        if (!connection || !connection.isConnected) {
+            backendLogger.error(`TCP write failed: Connection for analyzer ${analyzerId} is not available.`, "PollingEngine");
+            throw new Error(`Connection for ${analyzer.getConnectionId()} is not available.`);
+        }
+
+        try {
+            // Değeri cihaza yazmadan önce ters dönüşüm uygula
+            const rawValue = Math.round((value / (scale || 1)) - (offset || 0));
+
+            backendLogger.info(`Executing TCP write for ${analyzer.name}: addr=${address}, rawValue=${rawValue} (from ${value})`, "PollingEngine");
+            
+            await connection.writeHoldingRegister(slaveId, address, rawValue, timeoutMs);
+            
+            backendLogger.info(`TCP write successful for analyzer ${analyzer.name}`, "PollingEngine");
+
+            // Optional: After a successful write, you might want to trigger an immediate read
+            // to update the state in the UI instantly. This can be done by calling
+            // pollNextBlockForAnalyzer or a similar method.
+            // this.pollNextBlockForAnalyzer(analyzer, connection, this.analyzerPollState.get(analyzer.id)!.pollVersion);
+
+        } catch (error) {
+            backendLogger.error(`TCP write failed for analyzer ${analyzer.name}`, "PollingEngine", { error: (error as Error).message });
+            throw error; // Propagate error to the worker
+        }
+    }
 }

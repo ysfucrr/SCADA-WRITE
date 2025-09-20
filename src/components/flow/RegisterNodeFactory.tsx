@@ -6,7 +6,7 @@ import RegisterNode from './RegisterNode';
 
 // Union type for all possible register node data
 type AllRegisterNodeData = {
-  registerType?: 'read';
+  registerType?: 'read' | 'write' | 'readwrite';
   label: string;
   address: number;
   dataType: string;

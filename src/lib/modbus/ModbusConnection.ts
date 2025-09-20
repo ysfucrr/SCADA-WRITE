@@ -27,6 +27,8 @@ interface ExtendedModbusRTU {
     readInputRegisters: (address: number, length: number) => Promise<{ data: number[]; buffer: Buffer }>;
     readCoils: (address: number, length: number) => Promise<{ data: boolean[]; buffer: Buffer }>;
     readDiscreteInputs: (address: number, length: number) => Promise<{ data: boolean[]; buffer: Buffer }>;
+    writeRegister: (address: number, value: number) => Promise<any>;
+    writeRegisters: (address: number, values: number[]) => Promise<any>;
     close: (callback: (err?: Error) => void) => void;
     isOpen?: boolean;
 }
@@ -506,6 +508,135 @@ export abstract class ModbusConnection extends EventEmitter {
     }
 
 
+    /**
+     * Modbus üzerinden tek bir register'a yazar (FC06)
+     */
+    async writeHoldingRegister(slaveId: number, address: number, value: number, timeoutMs: number): Promise<void> {
+        if (!this.queue) {
+            backendLogger.warning(`[Force Shutdown] writeHoldingRegister on ${this.connectionId} cancelled: Queue has been destroyed.`, "ModbusConnection");
+            throw new Error("Queue has been destroyed during connection shutdown.");
+        }
+
+        if (!this.client || !this.isConnected) {
+            throw new Error("Connection is not established");
+        }
+
+        const writePriority = 10; // Yazma işlemlerine yüksek öncelik ver
+        const startTime = Date.now();
+
+        try {
+            await this.queue.add(
+                async () => {
+                    if (this.isShuttingDown) {
+                        throw new Error("Connection is shutting down, operation cancelled.");
+                    }
+                    if (!this.client || !this.isConnected) {
+                        throw new Error("Connection lost");
+                    }
+
+                    if (this instanceof ModbusTcpConnection) {
+                        await this.acquireSlaveIdLock();
+                    }
+
+                    try {
+                        this.client.setID(Math.max(1, Math.min(255, slaveId)));
+                        const smartTimeout = this.calculateSmartTimeout(timeoutMs);
+                        this.client.setTimeout(smartTimeout);
+
+                        // Gerekirse yazma öncesi bekleme
+                        await this.sleep(PRE_WRITE_DELAY_MS); 
+                        
+                        const response = await this.client.writeRegister(address, value);
+
+                        // Gerekirse yazma sonrası bekleme
+                        await this.sleep(POST_WRITE_DELAY_MS); 
+
+                        return response;
+                    } finally {
+                        if (this instanceof ModbusTcpConnection) {
+                            this.releaseSlaveIdLock();
+                        }
+                    }
+                },
+                {
+                    priority: writePriority,
+                    timeout: this.calculateSmartTimeout(timeoutMs) + 2000 // Timeout için ek buffer
+                }
+            );
+
+            const elapsed = Date.now() - startTime;
+            backendLogger.info(`Write success (${slaveId}:${address} value: ${value}) (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+
+        } catch (err: any) {
+            const elapsed = Date.now() - startTime;
+            backendLogger.error(`Write error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+            this.handleReadError(err); // Hata yönetimini şimdilik readError ile yapalım
+            throw err;
+        }
+    }
+
+    /**
+     * Modbus üzerinden birden çok register'a yazar (FC16)
+     */
+    async writeHoldingRegisters(slaveId: number, address: number, values: number[], timeoutMs: number): Promise<void> {
+        if (!this.queue) {
+            backendLogger.warning(`[Force Shutdown] writeHoldingRegisters on ${this.connectionId} cancelled: Queue has been destroyed.`, "ModbusConnection");
+            throw new Error("Queue has been destroyed during connection shutdown.");
+        }
+
+        if (!this.client || !this.isConnected) {
+            throw new Error("Connection is not established");
+        }
+
+        const writePriority = 10;
+        const startTime = Date.now();
+
+        try {
+            await this.queue.add(
+                async () => {
+                    if (this.isShuttingDown) {
+                        throw new Error("Connection is shutting down, operation cancelled.");
+                    }
+                    if (!this.client || !this.isConnected) {
+                        throw new Error("Connection lost");
+                    }
+
+                    if (this instanceof ModbusTcpConnection) {
+                        await this.acquireSlaveIdLock();
+                    }
+
+                    try {
+                        this.client.setID(Math.max(1, Math.min(255, slaveId)));
+                        const smartTimeout = this.calculateSmartTimeout(timeoutMs);
+                        this.client.setTimeout(smartTimeout);
+                        
+                        await this.sleep(PRE_WRITE_DELAY_MS);
+                        const response = await this.client.writeRegisters(address, values);
+                        await this.sleep(POST_WRITE_DELAY_MS);
+                        
+                        return response;
+                    } finally {
+                        if (this instanceof ModbusTcpConnection) {
+                            this.releaseSlaveIdLock();
+                        }
+                    }
+                },
+                {
+                    priority: writePriority,
+                    timeout: this.calculateSmartTimeout(timeoutMs) + 2000
+                }
+            );
+
+            const elapsed = Date.now() - startTime;
+            backendLogger.info(`Write multiple success (${slaveId}:${address} count: ${values.length}) (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+
+        } catch (err: any) {
+            const elapsed = Date.now() - startTime;
+            backendLogger.error(`Write multiple error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+            this.handleReadError(err);
+            throw err;
+        }
+    }
 
 
     /**

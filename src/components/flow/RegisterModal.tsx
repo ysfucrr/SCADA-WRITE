@@ -58,7 +58,7 @@ const fontFamilies = [
 
 const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = false, onClose, onConfirm, node }) => {
   // Register type selection
-  const [registerType, setRegisterType] = useState<'read'>('read');
+  const [registerType, setRegisterType] = useState<'read' | 'write'>('read');
   
   // Register values
   const [displayMode, setDisplayMode] = useState<'digit' | 'graph'>('digit');
@@ -93,6 +93,26 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
   // File input references
   const onIconInputRef = useRef<HTMLInputElement>(null);
   const offIconInputRef = useRef<HTMLInputElement>(null);
+  
+  // Simplified state for write options
+  const [controlType, setControlType] = useState<'dropdown'>('dropdown');
+  const [dropdownOptions, setDropdownOptions] = useState<{ label: string, value: string }[]>([]);
+
+  const handleAddDropdownOption = () => {
+    setDropdownOptions([...dropdownOptions, { label: '', value: '' }]);
+  };
+
+  const handleRemoveDropdownOption = (index: number) => {
+    const newOptions = [...dropdownOptions];
+    newOptions.splice(index, 1);
+    setDropdownOptions(newOptions);
+  };
+
+  const handleDropdownOptionChange = (index: number, field: 'label' | 'value', val: string) => {
+    const newOptions = [...dropdownOptions];
+    newOptions[index][field] = val;
+    setDropdownOptions(newOptions);
+  };
 
   const fetchAnalyzers = async () => {
     try {
@@ -288,6 +308,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
 
       // Set register type from node data
       setRegisterType(node.data.registerType || 'read');
+      setControlType(node.data.controlType || 'dropdown');
+      setDropdownOptions(node.data.dropdownOptions || []);
       setOffsetValue(node.data.offsetValue || 0);
       setDecimalPlaces(node.data.decimalPlaces || 2);
 
@@ -322,6 +344,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setFontFamily('Seven Segment');
       setOffsetValue(0);
       setDecimalPlaces(2);
+      setControlType('dropdown');
+      setDropdownOptions([]);
       resetIcons(); // Reset icons
     }
   }, [isOpen, node]);
@@ -414,10 +438,12 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         displayMode,
         registerType,
         offsetValue: offsetValue !== 0 ? offsetValue : undefined,
+        controlType: registerType === 'write' ? controlType : undefined,
+        dropdownOptions: registerType === 'write' ? dropdownOptions : undefined,
         decimalPlaces: decimalPlaces !== 2 ? decimalPlaces : undefined,
         // Add icons for boolean register (read)
-        onIcon: dataType === 'boolean' ? onIcon : undefined,
-        offIcon: dataType === 'boolean' ? offIcon : undefined,
+        onIcon: registerType === 'read' &&dataType === 'boolean' ? onIcon : undefined,
+        offIcon: registerType === 'read' && dataType === 'boolean' ? offIcon : undefined,
       },
     };
     //console.log("register data:", registerData);
@@ -440,6 +466,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setFontFamily('Seven Segment');
     setOffsetValue(0);
     setDecimalPlaces(2);
+    setControlType('dropdown');
+    setDropdownOptions([]);
     resetIcons(); // Reset icons
     onClose();
   };
@@ -494,6 +522,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setHeight(80);
     setOffsetValue(0);
     setDecimalPlaces(2);
+    setControlType('dropdown');
+    setDropdownOptions([]);
     resetIcons(); // Reset icons
     onClose();
   };
@@ -533,10 +563,11 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                 <select
                   id="registerType"
                   value={registerType}
-                  onChange={(e) => setRegisterType(e.target.value as 'read')}
+                  onChange={(e) => setRegisterType(e.target.value as 'read' | 'write')}
                   className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
                 >
-                  <option value="read">Read Holding Register</option>
+                  <option value="read">Read Register</option>
+                  <option value="write">Write Register</option>
                 </select>
               </div>
 
@@ -658,9 +689,62 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
               )}
             </div>
           </div>
+          
+          {registerType === 'write' && (
+            <div className="mt-6">
+              <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+                Write Settings
+              </Typography>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="controlType">Control Type</Label>
+                  <select
+                    id="controlType"
+                    value={controlType}
+                    onChange={(e) => setControlType(e.target.value as 'dropdown')}
+                    className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs"
+                  >
+                    <option value="dropdown">Dropdown</option>
+                  </select>
+                </div>
+              </div>
+              
+              {controlType === 'dropdown' && (
+                <div className="mt-4">
+                  <Label>Dropdown Options</Label>
+                  <div className="flex flex-col gap-2 mt-2">
+                    {dropdownOptions.map((option, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          placeholder="Option Label (e.g., 'On')"
+                          value={option.label}
+                          onChange={(e) => handleDropdownOptionChange(index, 'label', e.target.value)}
+                          className="text-black dark:text-white"
+                        />
+                        <Input
+                          type="text"
+                          placeholder="Value (e.g., '1')"
+                          value={option.value}
+                          onChange={(e) => handleDropdownOptionChange(index, 'value', e.target.value)}
+                          className="text-black dark:text-white"
+                        />
+                        <Button variant="error" size="sm" onClick={() => handleRemoveDropdownOption(index)}>
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                    <Button variant="secondary" onClick={handleAddDropdownOption} className="mt-2">
+                      Add Option
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Boolean Icons Section - show only for boolean data type */}
-          {dataType === 'boolean' && (
+          {/* Boolean Icons Section - show only for read-only boolean */}
+          {registerType === 'read' && dataType === 'boolean' && (
             <div className="mt-6">
               <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
                 Boolean Icons

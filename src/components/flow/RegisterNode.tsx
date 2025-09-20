@@ -1,13 +1,15 @@
 "use client";
 
-import { Edit, Trash2 } from 'lucide-react';
-import { memo, useEffect, useRef, useState } from 'react';
+import { Edit, Trash2, Send } from 'lucide-react';
+import { memo, useEffect, useRef, useState, Fragment } from 'react';
 import { NodeProps, NodeToolbar, Position } from 'reactflow';
 import '@/styles/seven-segment.css';
 import { useWebSocket } from '@/context/WebSocketContext';
 import RegisterGraphComponent from './RegisterGraphComponent_new';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/use-auth';
+import { Menu, Transition } from '@headlessui/react';
+import { ChevronDownIcon } from '@heroicons/react/20/solid';
 
 interface RegisterNodeData {
   style?: React.CSSProperties;
@@ -24,16 +26,18 @@ interface RegisterNodeData {
   backgroundColor?: string;
   textColor?: string;
   opacity?: number;
-  analyzerId?: string | number; // Analizör ID'si string veya number olabilir
+  analyzerId?: string | number;
   displayMode?: 'digit' | 'graph';
-  onIcon?: string; // Boolean register için ON ikonu
-  offIcon?: string; // Boolean register için OFF ikonu
+  registerType?: 'read' | 'write';
+  dropdownOptions?: { label: string, value: string }[];
+  onIcon?: string; 
+  offIcon?: string;
   onEdit?: () => void;
   onDelete?: () => void;
 }
 
  const RegisterNode = memo((node: NodeProps<RegisterNodeData>) => {
-  const { label, address, dataType, fontFamily, scale, scaleUnit, font = 1, byteOrder, backgroundColor = '#000000', textColor = '#ffffff', opacity, bit, analyzerId = '1', displayMode = 'digit', onIcon, offIcon } = node.data;
+  const { label, address, dataType, fontFamily, scale, scaleUnit, font = 1, byteOrder, backgroundColor = '#000000', textColor = '#ffffff', opacity, bit, analyzerId = '1', displayMode = 'digit', registerType = 'read', dropdownOptions, onIcon, offIcon } = node.data;
   const [value, setValue] = useState<string | number>('--' );
   const [isLoading, setIsLoading] = useState(true);
   const textRef = useRef<HTMLDivElement | null>(null);
@@ -41,7 +45,15 @@ interface RegisterNodeData {
   const { isAdmin } = useAuth()
 
   // WebSocket hook'unu kullan
-  const { watchRegister, unwatchRegister, isConnected } = useWebSocket();
+  const { watchRegister, unwatchRegister, writeRegister, isConnected } = useWebSocket();
+
+  const handleWrite = async (writeValue: number) => {
+    try {
+        await writeRegister(node.id, writeValue);
+    } catch (error) {
+        console.error("Write operation failed", error);
+    }
+  };
 
   // Register değerini formatla
   const formatValue = (registerValue: any) => {
@@ -62,6 +74,11 @@ interface RegisterNodeData {
 
   // WebSocket ile register izlemeyi başlat
   useEffect(() => {
+    if (registerType === 'write') {
+      setIsLoading(false);
+      setValue(label);
+      return;
+    }
     // Bağlantı yoksa bekle
     if (!isConnected) {
       setIsLoading(true);
@@ -83,17 +100,12 @@ interface RegisterNodeData {
       bit
     };
 
-    //console.log(`[REGISTERNODE] Register izleme başlatılıyor:`, register);
-    //console.log(`[REGISTERNODE] FormatValue callback:`, formatValue);
-
     watchRegister(register, formatValue);
-    //console.log(`[REGISTERNODE] WatchRegister çağrısı tamamlandı`);
-
-    // Component unmount olduğunda izlemeyi durdur
+    
     return () => {
       unwatchRegister(register, formatValue);
     };
-  }, [address, dataType, scale, byteOrder, bit, analyzerId, isConnected, watchRegister, unwatchRegister]);
+  }, [address, dataType, scale, byteOrder, bit, analyzerId, isConnected, watchRegister, unwatchRegister, registerType]);
 
   // Font boyutu hesaplama fonksiyonu
   const calculateFontSize = (element: HTMLDivElement, textValue: string | number) => {
@@ -103,14 +115,11 @@ interface RegisterNodeData {
       const parentHeight = parentElement.clientHeight * 0.9;
 
       const v = typeof textValue === "number" ? textValue.toFixed(2) : textValue.toString();
-      // Genişlik ve yüksekliğe göre güvenli bir font boyutu hesapla
-      const widthRatio = parentWidth / (v.length * 20); // Karakter başına yaklaşık 20px
-      const heightRatio = parentHeight / 40; // Yükseklik için yaklaşık 40px
+      const widthRatio = parentWidth / (v.length * 20); 
+      const heightRatio = parentHeight / 40;
 
-      // İki orandan küçük olanı seç (taşmayı önlemek için)
       const ratio = Math.min(widthRatio, heightRatio);
 
-      // Font boyutunu güncelle (minimum 12px, maksimum 200px)
       const fontSize = Math.max(12, Math.floor(ratio * 40));
       element.style.fontSize = `${fontSize}px`;
     }
@@ -131,20 +140,19 @@ interface RegisterNodeData {
       }
     });
 
-    // Normal register için observer ekle
-    if (textRef.current && dataType !== 'boolean') {
-      resizeObserver.observe(textRef.current);
-    }
-
-    // Boolean register için observer ekle
-    if (booleanTextRef.current && dataType === 'boolean') {
-      resizeObserver.observe(booleanTextRef.current);
+    if (registerType === 'read') {
+        if (textRef.current && dataType !== 'boolean') {
+            resizeObserver.observe(textRef.current);
+        }
+        if (booleanTextRef.current && dataType === 'boolean') {
+            resizeObserver.observe(booleanTextRef.current);
+        }
     }
 
     return () => {
       resizeObserver.disconnect();
     };
-  }, [value, dataType]);
+  }, [value, dataType, registerType]);
 
 
 
@@ -158,7 +166,7 @@ interface RegisterNodeData {
 
 
   return (
-    <div className="register-node relative group w-full h-full" style={{ ...(node as any).style }}>
+    <div className="register-node relative group w-full h-full" style={{ ...(node as any).style, overflow: 'visible' }}>
       {isAdmin && (
         <NodeToolbar isVisible={node.selected} position={Position.Top}>
           <div className="h-6 flex flex-row items-center gap-2">
@@ -189,33 +197,60 @@ interface RegisterNodeData {
           </div>
         </NodeToolbar>
       )}
-      {/* Resize için NodeResizer */}
-      {/* <NodeResizer
-       color="#ff0071"
-        isVisible={node.selected}
-        minWidth={200}
-        minHeight={100}
-        keepAspectRatio={false}
-        handleStyle={{
-          width: '16px',
-          height: '16px',
-          borderRadius: '50%',
-          backgroundColor: '#ff0071',
-          border: '1px solid #ddd',
-          cursor: 'resize',
-          zIndex: 9999
-        }}
-      /> */}
-
+      
       <div className=" w-full h-full flex items-center justify-center relative text-center"
         style={{
-          ...(displayMode === 'digit' && { backgroundColor: hexToRgba(backgroundColor, opacity! / 100) }),
+          ...(displayMode === 'digit' && registerType !== 'write' && { backgroundColor: hexToRgba(backgroundColor, opacity! / 100) }),
           border: node.selected && isAdmin ? '6px solid #f00' : 'none',
           borderRadius: '5px',
         }}
       >
-        {displayMode === 'digit' ? (
-          // Boolean register ve ikonlar varsa ikon göster, yoksa normal text göster
+        {registerType === 'write' ? (
+          <div className="flex flex-col w-full h-full"
+            style={{ backgroundColor: hexToRgba(backgroundColor, opacity! / 100) }}>
+            <div className="text-center p-2 w-full">
+              <span className="text-lg font-bold" style={{ color: textColor, fontFamily: fontFamily }}>
+                {label}
+              </span>
+            </div>
+            
+            <div className="flex-grow flex flex-col items-center justify-center px-4 w-full">
+              <select
+                id="registerValueSelect"
+                className="w-full text-base rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 px-4 py-3 mb-4"
+                style={{
+                  minWidth: "90%",
+                  maxWidth: "100%"
+                }}
+              >
+                <option value="">Select value...</option>
+                {(dropdownOptions || []).map((option, index) => (
+                  <option key={index} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              
+              <button
+                onClick={() => {
+                  const selectElement = document.getElementById('registerValueSelect') as HTMLSelectElement;
+                  if (selectElement && selectElement.value) {
+                    handleWrite(Number(selectElement.value));
+                    selectElement.value = ""; // Reset selection after write
+                  }
+                }}
+                className="w-full text-base font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors duration-200 flex items-center justify-center px-4 py-3"
+                style={{
+                  minWidth: "90%",
+                  maxWidth: "100%"
+                }}
+              >
+                <Send size={16} className="mr-2" />
+                Write Selected
+              </button>
+            </div>
+          </div>
+        ) : displayMode === 'digit' ? (
           dataType === 'boolean' && (onIcon || offIcon) ? (
             <div className="w-full h-full flex items-center justify-center p-2">
               {isLoading ? (
@@ -223,7 +258,6 @@ interface RegisterNodeData {
                   {isConnected ? '... ' + scaleUnit : '-- ' + scaleUnit}
                 </div>
               ) : (
-                // Boolean değerine göre ikon göster - ON durumları: true, 1, 'ON', 'on', 'true', '1'
                 ((value as any) === true || value === 1 || value === 'ON' || value === 'on' || value === 'true' || value === '1') ? (
                   onIcon ? (
                     <Image
@@ -274,7 +308,6 @@ interface RegisterNodeData {
               )}
             </div>
           ) : (
-            // Normal text gösterimi
             <div
               ref={textRef}
               className=" w-full h-full flex items-center justify-center"
@@ -292,7 +325,7 @@ interface RegisterNodeData {
                 margin: "auto"
               }}
             >
-              {isLoading ? (isConnected ? '... ' + scaleUnit : '-- ' + scaleUnit) : typeof value === 'number' ? value.toFixed(2) + ' ' + scaleUnit : value + ' ' + scaleUnit}
+              {isLoading ? (isConnected ? '... ' + scaleUnit : '-- ' + scaleUnit) : typeof value === 'number' ? value + ' ' + scaleUnit : value + ' ' + scaleUnit}
             </div>
           )
         ) : (
@@ -314,36 +347,6 @@ interface RegisterNodeData {
             />
           </div>
         )}
-
-        {/* Düzenleme butonları */}
-        {/* <div className=" h-[5%] absolute top-1 right-1 rounded m-1 flex justify-between items-center z-10">
-          <div className="h-full absolute right-0 top-4 bottom-0  flex flex-row items-center">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                node.data.onEdit?.();
-              }}
-              className="hidden group-hover:flex z-50 mr-2 p-1 bg-warning-500 hover:bg-warning-600 text-white rounded-md items-center justify-center"
-              style={{ height: '100%', aspectRatio: '1/1', minWidth: '56px', minHeight: '56px' }}
-            >
-              <Edit size={"100%"} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                node.data.onDelete?.();
-              }}
-              className="hidden group-hover:flex z-50 mr-2 p-1 bg-error-500 hover:bg-error-600 text-white rounded-md items-center justify-center"
-              style={{ height: '100%', aspectRatio: '1/1', minWidth: '56px', minHeight: '56px' }}
-            >
-              <Trash2 size={"100%"} />
-            </button>
-          </div>
-        </div> */}
       </div>
     </div>
   );

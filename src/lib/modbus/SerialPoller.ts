@@ -554,4 +554,44 @@ export class SerialPoller extends EventEmitter {
     }
 
 
+    public async handleWriteRequest(payload: {
+        registerId: string;
+        value: number;
+        analyzerId: string;
+        slaveId: number;
+        address: number;
+        timeoutMs: number;
+        scale: number;
+        offset: number;
+    }): Promise<void> {
+        const { analyzerId, slaveId, address, value, timeoutMs, scale, offset } = payload;
+        const analyzer = this.analyzers.get(analyzerId);
+
+        if (!analyzer) {
+            backendLogger.error(`Serial write failed: Analyzer ${analyzerId} not found in SerialPoller.`, "SerialPoller");
+            throw new Error(`Analyzer ${analyzerId} not found.`);
+        }
+
+        const connection = this.connections.get(analyzer.getConnectionId());
+        if (!connection || !connection.isConnected) {
+            backendLogger.error(`Serial write failed: Connection for analyzer ${analyzerId} is not available.`, "SerialPoller");
+            throw new Error(`Connection for ${analyzer.getConnectionId()} is not available.`);
+        }
+
+        try {
+            // Değeri cihaza yazmadan önce ters dönüşüm uygula
+            const rawValue = Math.round((value / (scale || 1)) - (offset || 0));
+
+            backendLogger.info(`Executing serial write for ${analyzer.name}: addr=${address}, rawValue=${rawValue} (from ${value})`, "SerialPoller");
+            
+            // Tek bir register yazmak için `writeHoldingRegister` kullanıyoruz.
+            await (connection as ModbusSerialConnection).writeHoldingRegister(slaveId, address, rawValue, timeoutMs);
+            
+            backendLogger.info(`Serial write successful for analyzer ${analyzer.name}`, "SerialPoller");
+
+        } catch (error) {
+            backendLogger.error(`Serial write failed for analyzer ${analyzer.name}`, "SerialPoller", { error: (error as Error).message });
+            throw error; // Hatanın yukarıya bildirilmesi için tekrar fırlat
+        }
+    }
 }

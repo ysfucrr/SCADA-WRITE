@@ -28,6 +28,7 @@ interface WebSocketContextType {
     dataType: string;
     bit?: number;
   }, callback: (value: any) => void) => void;
+  writeRegister: (registerId: string, value: number) => Promise<any>;
   isConnected: boolean;
 }
 
@@ -36,6 +37,7 @@ const WebSocketContext = createContext<WebSocketContextType>({
   connectionState: 'disconnected',
   watchRegister: () => {},
   unwatchRegister: () => {},
+  writeRegister: async () => {},
   isConnected: false,
 });
 
@@ -202,6 +204,32 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const writeRegister = useCallback(async (registerId: string, value: number) => {
+    try {
+      const response = await fetch('/api/registers/write', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ registerId, value }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to send write request');
+      }
+
+      const result = await response.json();
+      showToast('Write command sent successfully!', 'success');
+      return result;
+
+    } catch (error) {
+      console.error('[WebSocketContext] Write Register Error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+      showToast(`Write failed: ${errorMessage}`, 'error');
+      throw error;
+    }
+  }, []);
 
   
   return (
@@ -211,6 +239,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         connectionState,
         watchRegister,
         unwatchRegister,
+        writeRegister,
         isConnected,
       }}
     >

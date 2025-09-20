@@ -46,6 +46,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { connectToDatabase } from "./src/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { setServerSocket } from './src/lib/socket-io-server';
 export const modbusPoller = new ModbusPoller();
 const trendLoggerInstance = new TrendLoggerService();
 
@@ -70,6 +71,8 @@ const io = new SocketIOServer(server, {
   path: '/socket.io/',
   pingTimeout: 60000
 });
+
+setServerSocket(io); // Make the socket instance globally available
 
 const logNamespace = io.of('/logs');
 backendLogger.setSocketIO(logNamespace);
@@ -257,10 +260,52 @@ server.listen(Number(port), '0.0.0.0', () => {
     alertManager.listenForUpdates(modbusPoller);
     fileLogger.info("AlertManager is listening for updates.", "Server");
 
+    // Yazma isteklerini dinlemeye başla
+    setupWriteRequestListener();
+
   } catch (err) {
       fileLogger.error("An error occurred during service initialization.", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
   }
 });
+
+const setupWriteRequestListener = async () => {
+    try {
+        const { db } = await connectToDatabase();
+        const changeStream = db.collection('write_requests').watch([
+            { $match: { operationType: 'insert' } }
+        ]);
+
+        changeStream.on('change', async (change) => {
+            if (change.operationType === 'insert') {
+                const { registerId, value } = change.fullDocument;
+                try {
+                    backendLogger.info('New write request detected from database', 'DBWatcher', { registerId, value });
+                    await modbusPoller.handleWriteRequest(registerId, value);
+                    // Başarılı işlemden sonra isteği silebilir veya durumunu güncelleyebiliriz.
+                    await db.collection('write_requests').deleteOne({ _id: change.documentKey._id });
+                } catch (error) {
+                    backendLogger.error('Failed to handle write request from DB', 'DBWatcher', { error: (error as Error).message, docId: change.documentKey._id });
+                    // Hatalı işlemde isteğin durumunu güncelleyebiliriz.
+                    await db.collection('write_requests').updateOne({ _id: change.documentKey._id }, { $set: { status: 'failed', error: (error as Error).message } });
+                }
+            }
+        });
+
+        changeStream.on('error', (err) => {
+            backendLogger.error(`Write request change stream error: ${err.message}`, "DBWatcher");
+            // Bir süre sonra yeniden bağlanmayı dene
+            setTimeout(setupWriteRequestListener, 5000);
+        });
+
+        backendLogger.info('Successfully set up write request listener on the database.', "DBWatcher");
+
+    } catch (err) {
+        backendLogger.error(`Failed to set up write request listener: ${(err as Error).message}`, "DBWatcher");
+        // Bir süre sonra yeniden bağlanmayı dene
+        setTimeout(setupWriteRequestListener, 5000);
+    }
+};
+
 
 // COM portlarını temizleme fonksiyonu
 const forceCloseAllComPorts = (reason: string) => {
