@@ -402,52 +402,6 @@ export abstract class ModbusConnection extends EventEmitter {
         }
     }
 
-    /**
-     * Write işlemleri için ayrı queue sistemi - Device busy hatalarını önler
-     */
-    private writeQueue: PQueue | null = null;
-    private writeConcurrency: number = 1; // Write işlemleri için düşük concurrency
-
-    /**
-     * Write queue'sunu başlatır
-     */
-    private initializeWriteQueue(): void {
-        if (this.writeQueue) {
-            backendLogger.debug(`Write queue already exists for ${this.connectionId}`, "ModbusConnection");
-            return;
-        }
-
-        this.writeQueue = new PQueue({
-            concurrency: this.writeConcurrency,
-            autoStart: true,
-            throwOnTimeout: true,
-            carryoverConcurrencyCount: true
-        });
-
-        // Write queue event'lerini dinle
-        this.writeQueue.on("idle", () => {
-            setTimeout(() => {
-                if (this.writeQueue && this.writeQueue.size === 0 && this.writeQueue.pending === 0) {
-                    this.writeQueue.clear();
-                    backendLogger.debug(`Write queue cleared for ${this.connectionId} (idle state)`, "ModbusConnection");
-                }
-            }, 1000);
-        });
-
-        this.writeQueue.on("error", (err: any) => {
-            backendLogger.error(`${this.connectionId} write queue error: ${err.message}`, "ModbusConnection");
-        });
-
-        this.writeQueue.on("add", () => {
-            backendLogger.debug(`Write operation added to queue for ${this.connectionId}. Queue size: ${this.writeQueue?.size}, Pending: ${this.writeQueue?.pending}`, "ModbusConnection");
-        });
-
-        this.writeQueue.on("next", () => {
-            backendLogger.debug(`Write operation started for ${this.connectionId}. Queue size: ${this.writeQueue?.size}, Pending: ${this.writeQueue?.pending}`, "ModbusConnection");
-        });
-
-        backendLogger.info(`✅ Write queue initialized for ${this.connectionId} with concurrency: ${this.writeConcurrency}`, "ModbusConnection");
-    }
 
     /**
      * IMPROVED: Modbus üzerinden register okur - Smart coordination ile
@@ -466,7 +420,6 @@ export abstract class ModbusConnection extends EventEmitter {
         }
 
         const readPriority = 0;
-        backendLogger.debug(`📖 READ OPERATION: Starting read operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity}) - Priority: ${readPriority}`, "ModbusConnection");
 
         const startTime = Date.now();
 
@@ -477,10 +430,8 @@ export abstract class ModbusConnection extends EventEmitter {
 
         try {
             // İşlemi kuyruğa ekle
-            backendLogger.debug(`📖 READ QUEUE: Adding read operation to MAIN QUEUE for ${this.connectionId} - Priority: ${readPriority}`, "ModbusConnection");
             const result = await this.queue.add(
                 async () => {
-                    backendLogger.debug(`📖 READ EXEC: Starting read operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
 
                     // FORCE SHUTDOWN KONTROLÜ: Eğer bağlantı kapatılma sürecindeyse,
                     // bu görevi hemen iptal et ve timeout beklemesini engelle.
@@ -505,7 +456,6 @@ export abstract class ModbusConnection extends EventEmitter {
                         const smartTimeout = this.calculateSmartTimeout(timeoutMs);
                         this.client.setTimeout(smartTimeout);
 
-                        backendLogger.debug(`📖 READ MODBUS: Executing Modbus read for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
                         return this.client.readHoldingRegisters(startAddr, quantity);
                     } finally {
                         // TCP bağlantılar için slave ID lock'unu serbest bırak
@@ -594,18 +544,16 @@ export abstract class ModbusConnection extends EventEmitter {
      * Device busy hatalarını yakalayıp sessizce yöneten write metodu
      */
     async writeHoldingRegisterWithRetry(slaveId: number, address: number, value: number, timeoutMs: number, maxRetries: number = 3): Promise<void> {
-        this.initializeWriteQueue();
-
-        if (!this.writeQueue) {
-            throw new Error("Write queue not initialized");
+        if (!this.queue) {
+            throw new Error("Main queue not initialized");
         }
 
         const startTime = Date.now();
         backendLogger.debug(`✏️ WRITE OPERATION: Starting write operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value}) - Priority: 10`, "ModbusConnection");
 
         try {
-            backendLogger.debug(`✏️ WRITE QUEUE: Adding write operation to WRITE QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
-            await this.writeQueue.add(
+            backendLogger.debug(`✏️ WRITE QUEUE: Adding write operation to MAIN QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
+            await this.queue.add(
                 async () => {
                     backendLogger.debug(`✏️ WRITE EXEC: Starting write operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value})`, "ModbusConnection");
                     let lastError: any = null;
@@ -713,18 +661,16 @@ export abstract class ModbusConnection extends EventEmitter {
      * Modbus üzerinden birden çok register'a yazar (FC16) - Device busy koruması ile
      */
     async writeHoldingRegistersWithRetry(slaveId: number, address: number, values: number[], timeoutMs: number, maxRetries: number = 3): Promise<void> {
-        this.initializeWriteQueue();
-
-        if (!this.writeQueue) {
-            throw new Error("Write queue not initialized");
+        if (!this.queue) {
+            throw new Error("Main queue not initialized");
         }
 
         const startTime = Date.now();
         backendLogger.debug(`✏️ WRITE MULTIPLE: Starting write multiple operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length}) - Priority: 10`, "ModbusConnection");
 
         try {
-            backendLogger.debug(`✏️ WRITE MULTIPLE QUEUE: Adding write multiple operation to WRITE QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
-            await this.writeQueue.add(
+            backendLogger.debug(`✏️ WRITE MULTIPLE QUEUE: Adding write multiple operation to MAIN QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
+            await this.queue.add(
                 async () => {
                     backendLogger.debug(`✏️ WRITE MULTIPLE EXEC: Starting write multiple execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length})`, "ModbusConnection");
                     let lastError: any = null;
