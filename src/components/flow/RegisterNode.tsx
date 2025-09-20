@@ -74,12 +74,14 @@ interface RegisterNodeData {
 
   // WebSocket ile register izlemeyi başlat
   useEffect(() => {
+    // Yazma tipi register'lar için hiçbir watch işlemi yapma ve hemen çık.
     if (registerType === 'write') {
       setIsLoading(false);
       setValue(label);
       return;
     }
-    // Bağlantı yoksa bekle
+
+    // Bağlantı yoksa, polling'i başlatma ve durumu beklemede olarak ayarla.
     if (!isConnected) {
       setIsLoading(true);
       setValue('--');
@@ -88,7 +90,7 @@ interface RegisterNodeData {
 
     setIsLoading(true);
 
-    // Register izlemeyi başlat ve değer değişimlerini dinle
+    // Sadece 'read' tipi register'lar için izlemeyi başlat.
     const register = {
       registerId: node.id,
       analyzerId: analyzerId,
@@ -97,15 +99,17 @@ interface RegisterNodeData {
       scale,
       scaleUnit,
       byteOrder,
-      bit
+      bit,
+      registerType
     };
 
     watchRegister(register, formatValue);
     
+    // Component unmount olduğunda izlemeyi bırak.
     return () => {
       unwatchRegister(register, formatValue);
     };
-  }, [address, dataType, scale, byteOrder, bit, analyzerId, isConnected, watchRegister, unwatchRegister, registerType]);
+  }, [address, dataType, scale, byteOrder, bit, analyzerId, isConnected, watchRegister, unwatchRegister, registerType, label, node.id]);
 
   // Font boyutu hesaplama fonksiyonu
   const calculateFontSize = (element: HTMLDivElement, textValue: string | number) => {

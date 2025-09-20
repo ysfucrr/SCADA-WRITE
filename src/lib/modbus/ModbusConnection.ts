@@ -403,6 +403,53 @@ export abstract class ModbusConnection extends EventEmitter {
     }
 
     /**
+     * Write işlemleri için ayrı queue sistemi - Device busy hatalarını önler
+     */
+    private writeQueue: PQueue | null = null;
+    private writeConcurrency: number = 1; // Write işlemleri için düşük concurrency
+
+    /**
+     * Write queue'sunu başlatır
+     */
+    private initializeWriteQueue(): void {
+        if (this.writeQueue) {
+            backendLogger.debug(`Write queue already exists for ${this.connectionId}`, "ModbusConnection");
+            return;
+        }
+
+        this.writeQueue = new PQueue({
+            concurrency: this.writeConcurrency,
+            autoStart: true,
+            throwOnTimeout: true,
+            carryoverConcurrencyCount: true
+        });
+
+        // Write queue event'lerini dinle
+        this.writeQueue.on("idle", () => {
+            setTimeout(() => {
+                if (this.writeQueue && this.writeQueue.size === 0 && this.writeQueue.pending === 0) {
+                    this.writeQueue.clear();
+                    backendLogger.debug(`Write queue cleared for ${this.connectionId} (idle state)`, "ModbusConnection");
+                }
+            }, 1000);
+        });
+
+        this.writeQueue.on("error", (err: any) => {
+            backendLogger.error(`${this.connectionId} write queue error: ${err.message}`, "ModbusConnection");
+        });
+
+        this.writeQueue.on("add", () => {
+            backendLogger.debug(`Write operation added to queue for ${this.connectionId}. Queue size: ${this.writeQueue?.size}, Pending: ${this.writeQueue?.pending}`, "ModbusConnection");
+        });
+
+        this.writeQueue.on("next", () => {
+            backendLogger.debug(`Write operation started for ${this.connectionId}. Queue size: ${this.writeQueue?.size}, Pending: ${this.writeQueue?.pending}`, "ModbusConnection");
+        });
+
+        backendLogger.info(`✅ Write queue initialized for ${this.connectionId} with concurrency: ${this.writeConcurrency}`, "ModbusConnection");
+    }
+
+    /**
      * IMPROVED: Modbus üzerinden register okur - Smart coordination ile
      * Sadece ilgili cihaz write yapıyorsa bekler, diğer cihazlar etkilenmez
      */
@@ -417,11 +464,12 @@ export abstract class ModbusConnection extends EventEmitter {
         if (!this.client || !this.isConnected) {
             throw new Error("Connection is not established");
         }
-        
+
         const readPriority = 0;
+        backendLogger.debug(`📖 READ OPERATION: Starting read operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity}) - Priority: ${readPriority}`, "ModbusConnection");
 
         const startTime = Date.now();
-        
+
         // Polling zamanı güncelle (min 100ms)
         if (timeoutMs > 100) {
             this.pollMs = timeoutMs;
@@ -429,8 +477,11 @@ export abstract class ModbusConnection extends EventEmitter {
 
         try {
             // İşlemi kuyruğa ekle
+            backendLogger.debug(`📖 READ QUEUE: Adding read operation to MAIN QUEUE for ${this.connectionId} - Priority: ${readPriority}`, "ModbusConnection");
             const result = await this.queue.add(
                 async () => {
+                    backendLogger.debug(`📖 READ EXEC: Starting read operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
+
                     // FORCE SHUTDOWN KONTROLÜ: Eğer bağlantı kapatılma sürecindeyse,
                     // bu görevi hemen iptal et ve timeout beklemesini engelle.
                     if (this.isShuttingDown) {
@@ -449,11 +500,12 @@ export abstract class ModbusConnection extends EventEmitter {
 
                     try {
                         this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                        
+
                         // Akıllı timeout - UI değeri + RTT tabanlı koruma
                         const smartTimeout = this.calculateSmartTimeout(timeoutMs);
                         this.client.setTimeout(smartTimeout);
 
+                        backendLogger.debug(`📖 READ MODBUS: Executing Modbus read for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
                         return this.client.readHoldingRegisters(startAddr, quantity);
                     } finally {
                         // TCP bağlantılar için slave ID lock'unu serbest bırak
@@ -482,11 +534,23 @@ export abstract class ModbusConnection extends EventEmitter {
             }
             throw new Error("Invalid response from Modbus device");
         } catch (err: any) {
-            // "Slave device busy" hatasını sessizce yönet
+            // "Slave device busy" hatasını sessizce yönet - read işlemlerini kesintiye uğratma
             if (err.message && err.message.includes("Modbus exception 6")) {
-                backendLogger.debug(`Slave device busy (${slaveId}:${startAddr}). Silently skipping.`, "ModbusConnection", { connectionId: this.connectionId });
+                backendLogger.debug(`⚠️ READ DEVICE BUSY: Slave device busy (${slaveId}:${startAddr}). Silently skipping read operation.`, "ModbusConnection", { connectionId: this.connectionId });
                 // Hata fırlatmayarak PollingEngine'in 5 saniye beklemesini engelle.
                 // Ancak döngünün devam etmesi için boş bir dizi döndürerek hatayı sessizce geçiştir.
+                return [];
+            }
+
+            // Diğer device busy benzeri hataları da sessizce yönet
+            const isDeviceBusy = err.message && (
+                err.message.includes("Slave device busy") ||
+                err.message.includes("device busy") ||
+                err.message.includes("busy")
+            );
+
+            if (isDeviceBusy) {
+                backendLogger.debug(`⚠️ READ DEVICE BUSY: Device busy detected during read (${slaveId}:${startAddr}). Silently skipping.`, "ModbusConnection", { connectionId: this.connectionId });
                 return [];
             }
 
@@ -500,8 +564,18 @@ export abstract class ModbusConnection extends EventEmitter {
             }
 
             const elapsed = Date.now() - startTime;
-            backendLogger.warning(`Read error (${slaveId}:${startAddr}x${quantity}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
-            
+
+            // Kritik hatalar için error, diğerleri için warning
+            if (err.message && (
+                err.message.includes("Port Not Open") ||
+                err.message.includes("Connection lost") ||
+                err.message.includes("ECONNRESET")
+            )) {
+                backendLogger.error(`Critical read error (${slaveId}:${startAddr}x${quantity}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+            } else {
+                backendLogger.warning(`Read error (${slaveId}:${startAddr}x${quantity}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+            }
+
             this.handleReadError(err);
             throw err;
         }
@@ -509,133 +583,258 @@ export abstract class ModbusConnection extends EventEmitter {
 
 
     /**
-     * Modbus üzerinden tek bir register'a yazar (FC06)
+     * Modbus üzerinden tek bir register'a yazar (FC06) - Device busy koruması ile
      */
     async writeHoldingRegister(slaveId: number, address: number, value: number, timeoutMs: number): Promise<void> {
-        if (!this.queue) {
-            backendLogger.warning(`[Force Shutdown] writeHoldingRegister on ${this.connectionId} cancelled: Queue has been destroyed.`, "ModbusConnection");
-            throw new Error("Queue has been destroyed during connection shutdown.");
-        }
-
-        if (!this.client || !this.isConnected) {
-            throw new Error("Connection is not established");
-        }
-
-        const writePriority = 10; // Yazma işlemlerine yüksek öncelik ver
-        const startTime = Date.now();
-
-        try {
-            await this.queue.add(
-                async () => {
-                    if (this.isShuttingDown) {
-                        throw new Error("Connection is shutting down, operation cancelled.");
-                    }
-                    if (!this.client || !this.isConnected) {
-                        throw new Error("Connection lost");
-                    }
-
-                    if (this instanceof ModbusTcpConnection) {
-                        await this.acquireSlaveIdLock();
-                    }
-
-                    try {
-                        this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                        const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                        this.client.setTimeout(smartTimeout);
-
-                        // Gerekirse yazma öncesi bekleme
-                        await this.sleep(PRE_WRITE_DELAY_MS); 
-                        
-                        const response = await this.client.writeRegister(address, value);
-
-                        // Gerekirse yazma sonrası bekleme
-                        await this.sleep(POST_WRITE_DELAY_MS); 
-
-                        return response;
-                    } finally {
-                        if (this instanceof ModbusTcpConnection) {
-                            this.releaseSlaveIdLock();
-                        }
-                    }
-                },
-                {
-                    priority: writePriority,
-                    timeout: this.calculateSmartTimeout(timeoutMs) + 2000 // Timeout için ek buffer
-                }
-            );
-
-            const elapsed = Date.now() - startTime;
-            backendLogger.info(`Write success (${slaveId}:${address} value: ${value}) (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
-
-        } catch (err: any) {
-            const elapsed = Date.now() - startTime;
-            backendLogger.error(`Write error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
-            this.handleReadError(err); // Hata yönetimini şimdilik readError ile yapalım
-            throw err;
-        }
+        return this.writeHoldingRegisterWithRetry(slaveId, address, value, timeoutMs);
     }
 
+
     /**
-     * Modbus üzerinden birden çok register'a yazar (FC16)
+     * Device busy hatalarını yakalayıp sessizce yöneten write metodu
      */
-    async writeHoldingRegisters(slaveId: number, address: number, values: number[], timeoutMs: number): Promise<void> {
-        if (!this.queue) {
-            backendLogger.warning(`[Force Shutdown] writeHoldingRegisters on ${this.connectionId} cancelled: Queue has been destroyed.`, "ModbusConnection");
-            throw new Error("Queue has been destroyed during connection shutdown.");
+    async writeHoldingRegisterWithRetry(slaveId: number, address: number, value: number, timeoutMs: number, maxRetries: number = 3): Promise<void> {
+        this.initializeWriteQueue();
+
+        if (!this.writeQueue) {
+            throw new Error("Write queue not initialized");
         }
 
-        if (!this.client || !this.isConnected) {
-            throw new Error("Connection is not established");
-        }
-
-        const writePriority = 10;
         const startTime = Date.now();
+        backendLogger.debug(`✏️ WRITE OPERATION: Starting write operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value}) - Priority: 10`, "ModbusConnection");
 
         try {
-            await this.queue.add(
+            backendLogger.debug(`✏️ WRITE QUEUE: Adding write operation to WRITE QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
+            await this.writeQueue.add(
                 async () => {
-                    if (this.isShuttingDown) {
-                        throw new Error("Connection is shutting down, operation cancelled.");
-                    }
-                    if (!this.client || !this.isConnected) {
-                        throw new Error("Connection lost");
-                    }
+                    backendLogger.debug(`✏️ WRITE EXEC: Starting write operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value})`, "ModbusConnection");
+                    let lastError: any = null;
 
-                    if (this instanceof ModbusTcpConnection) {
-                        await this.acquireSlaveIdLock();
-                    }
+                    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                        try {
+                            if (this.isShuttingDown) {
+                                throw new Error("Connection is shutting down, operation cancelled.");
+                            }
 
-                    try {
-                        this.client.setID(Math.max(1, Math.min(255, slaveId)));
-                        const smartTimeout = this.calculateSmartTimeout(timeoutMs);
-                        this.client.setTimeout(smartTimeout);
-                        
-                        await this.sleep(PRE_WRITE_DELAY_MS);
-                        const response = await this.client.writeRegisters(address, values);
-                        await this.sleep(POST_WRITE_DELAY_MS);
-                        
-                        return response;
-                    } finally {
-                        if (this instanceof ModbusTcpConnection) {
-                            this.releaseSlaveIdLock();
+                            if (!this.client || !this.isConnected) {
+                                throw new Error("Connection lost");
+                            }
+
+                            if (this instanceof ModbusTcpConnection) {
+                                await this.acquireSlaveIdLock();
+                            }
+
+                            try {
+                                this.client.setID(Math.max(1, Math.min(255, slaveId)));
+                                const smartTimeout = this.calculateSmartTimeout(timeoutMs);
+                                this.client.setTimeout(smartTimeout);
+
+                                // Write öncesi kısa bekleme
+                                await this.sleep(100);
+
+                                backendLogger.debug(`✏️ WRITE MODBUS: Executing Modbus write for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value})`, "ModbusConnection");
+                                const response = await this.client.writeRegister(address, value);
+
+                                // Write sonrası bekleme
+                                await this.sleep(200);
+
+                                return response;
+                            } finally {
+                                if (this instanceof ModbusTcpConnection) {
+                                    this.releaseSlaveIdLock();
+                                }
+                            }
+                        } catch (err: any) {
+                            lastError = err;
+
+                            // Device busy hatası mı kontrol et
+                            const isDeviceBusy = err.message && (
+                                err.message.includes("Modbus exception 6") ||
+                                err.message.includes("Slave device busy") ||
+                                err.message.includes("device busy") ||
+                                err.message.includes("busy")
+                            );
+
+                            if (isDeviceBusy) {
+                                backendLogger.debug(`⚠️ WRITE RETRY: Device busy detected for ${this.connectionId} (attempt ${attempt}/${maxRetries}). Retrying...`, "ModbusConnection");
+
+                                // Device busy ise biraz daha bekle
+                                if (attempt < maxRetries) {
+                                    await this.sleep(500 * attempt); // Artan bekleme süresi
+                                    continue;
+                                }
+                            }
+
+                            // Diğer hatalar için de retry dene ama daha az agresif
+                            if (attempt < maxRetries && !isDeviceBusy) {
+                                await this.sleep(200 * attempt);
+                                continue;
+                            }
+
+                            throw err;
                         }
                     }
+
+                    throw lastError;
                 },
                 {
-                    priority: writePriority,
+                    priority: 10, // Write'lara yüksek öncelik
                     timeout: this.calculateSmartTimeout(timeoutMs) + 2000
                 }
             );
 
             const elapsed = Date.now() - startTime;
-            backendLogger.info(`Write multiple success (${slaveId}:${address} count: ${values.length}) (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+            backendLogger.info(`✅ WRITE SUCCESS: Write completed successfully (${this.connectionId}:${slaveId}:${address} = ${value}) (took ${elapsed}ms)`, "ModbusConnection");
 
         } catch (err: any) {
             const elapsed = Date.now() - startTime;
-            backendLogger.error(`Write multiple error (${slaveId}:${address}): ${err.message} (took ${elapsed}ms)`, "ModbusConnection", { connectionId: this.connectionId });
+            const errorMessage = err.message || String(err);
+
+            // Device busy hatalarını warning olarak logla, diğerlerini error olarak
+            if (errorMessage.includes("Modbus exception 6") || errorMessage.includes("Slave device busy")) {
+                backendLogger.warning(`❌ WRITE FAILED: Write failed due to device busy (${this.connectionId}:${slaveId}:${address}): ${errorMessage} (took ${elapsed}ms)`, "ModbusConnection");
+            } else {
+                backendLogger.error(`❌ WRITE ERROR: Write error (${this.connectionId}:${slaveId}:${address}): ${errorMessage} (took ${elapsed}ms)`, "ModbusConnection");
+            }
+
             this.handleReadError(err);
             throw err;
         }
+    }
+
+    /**
+     * Modbus üzerinden birden çok register'a yazar (FC16) - Device busy koruması ile
+     */
+    async writeHoldingRegisters(slaveId: number, address: number, values: number[], timeoutMs: number): Promise<void> {
+        return this.writeHoldingRegistersWithRetry(slaveId, address, values, timeoutMs);
+    }
+
+    /**
+     * Modbus üzerinden birden çok register'a yazar (FC16) - Device busy koruması ile
+     */
+    async writeHoldingRegistersWithRetry(slaveId: number, address: number, values: number[], timeoutMs: number, maxRetries: number = 3): Promise<void> {
+        this.initializeWriteQueue();
+
+        if (!this.writeQueue) {
+            throw new Error("Write queue not initialized");
+        }
+
+        const startTime = Date.now();
+        backendLogger.debug(`✏️ WRITE MULTIPLE: Starting write multiple operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length}) - Priority: 10`, "ModbusConnection");
+
+        try {
+            backendLogger.debug(`✏️ WRITE MULTIPLE QUEUE: Adding write multiple operation to WRITE QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
+            await this.writeQueue.add(
+                async () => {
+                    backendLogger.debug(`✏️ WRITE MULTIPLE EXEC: Starting write multiple execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length})`, "ModbusConnection");
+                    let lastError: any = null;
+
+                    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                        try {
+                            if (this.isShuttingDown) {
+                                throw new Error("Connection is shutting down, operation cancelled.");
+                            }
+
+                            if (!this.client || !this.isConnected) {
+                                throw new Error("Connection lost");
+                            }
+
+                            if (this instanceof ModbusTcpConnection) {
+                                await this.acquireSlaveIdLock();
+                            }
+
+                            try {
+                                this.client.setID(Math.max(1, Math.min(255, slaveId)));
+                                const smartTimeout = this.calculateSmartTimeout(timeoutMs);
+                                this.client.setTimeout(smartTimeout);
+
+                                // Write öncesi kısa bekleme
+                                await this.sleep(100);
+
+                                backendLogger.debug(`✏️ WRITE MULTIPLE MODBUS: Executing Modbus write multiple for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length})`, "ModbusConnection");
+                                const response = await this.client.writeRegisters(address, values);
+
+                                // Write sonrası bekleme
+                                await this.sleep(200);
+
+                                return response;
+                            } finally {
+                                if (this instanceof ModbusTcpConnection) {
+                                    this.releaseSlaveIdLock();
+                                }
+                            }
+                        } catch (err: any) {
+                            lastError = err;
+
+                            // Device busy hatası mı kontrol et
+                            const isDeviceBusy = err.message && (
+                                err.message.includes("Modbus exception 6") ||
+                                err.message.includes("Slave device busy") ||
+                                err.message.includes("device busy") ||
+                                err.message.includes("busy")
+                            );
+
+                            if (isDeviceBusy) {
+                                backendLogger.debug(`⚠️ WRITE MULTIPLE RETRY: Device busy detected for ${this.connectionId} (attempt ${attempt}/${maxRetries}). Retrying...`, "ModbusConnection");
+
+                                // Device busy ise biraz daha bekle
+                                if (attempt < maxRetries) {
+                                    await this.sleep(500 * attempt); // Artan bekleme süresi
+                                    continue;
+                                }
+                            }
+
+                            // Diğer hatalar için de retry dene ama daha az agresif
+                            if (attempt < maxRetries && !isDeviceBusy) {
+                                await this.sleep(200 * attempt);
+                                continue;
+                            }
+
+                            throw err;
+                        }
+                    }
+
+                    throw lastError;
+                },
+                {
+                    priority: 10, // Write'lara yüksek öncelik
+                    timeout: this.calculateSmartTimeout(timeoutMs) + 2000
+                }
+            );
+
+            const elapsed = Date.now() - startTime;
+            backendLogger.info(`✅ WRITE MULTIPLE SUCCESS: Write multiple completed successfully (${this.connectionId}:${slaveId}:${address} count: ${values.length}) (took ${elapsed}ms)`, "ModbusConnection");
+
+        } catch (err: any) {
+            const elapsed = Date.now() - startTime;
+            const errorMessage = err.message || String(err);
+
+            // Device busy hatalarını warning olarak logla, diğerlerini error olarak
+            if (errorMessage.includes("Modbus exception 6") || errorMessage.includes("Slave device busy")) {
+                backendLogger.warning(`❌ WRITE MULTIPLE FAILED: Write multiple failed due to device busy (${this.connectionId}:${slaveId}:${address}): ${errorMessage} (took ${elapsed}ms)`, "ModbusConnection");
+            } else {
+                backendLogger.error(`❌ WRITE MULTIPLE ERROR: Write multiple error (${this.connectionId}:${slaveId}:${address}): ${errorMessage} (took ${elapsed}ms)`, "ModbusConnection");
+            }
+
+            this.handleReadError(err);
+            throw err;
+        }
+    }
+
+    /**
+     * Modbus üzerinden tek bir register'a yazar (FC06) - Interface uyumluluğu için
+     */
+    async writeRegister(address: number, value: number): Promise<any> {
+        // Bu metod sadece interface uyumluluğu için, gerçek implementasyon writeHoldingRegisterWithRetry'de
+        throw new Error("Use writeHoldingRegisterWithRetry instead of writeRegister");
+    }
+
+    /**
+     * Modbus üzerinden birden çok register'a yazar (FC16) - Interface uyumluluğu için
+     */
+    async writeRegisters(address: number, values: number[]): Promise<any> {
+        // Bu metod sadece interface uyumluluğu için, gerçek implementasyon writeHoldingRegistersWithRetry'de
+        throw new Error("Use writeHoldingRegistersWithRetry instead of writeRegisters");
     }
 
 

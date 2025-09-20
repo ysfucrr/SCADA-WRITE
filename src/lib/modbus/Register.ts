@@ -23,6 +23,7 @@ export interface RegisterConfig {
     unit: number;
     onIcon?: string; // ON durumu için ikon URL veya yolu
     offIcon?: string; // OFF durumu için ikon URL veya yolu
+    registerType?: 'read' | 'write';
 }
 
 // ────────── Temel Sınıflar ──────────
@@ -45,6 +46,7 @@ export class Register {
     unit: number;
     onIcon?: string; // ON durumu için ikon URL veya yolu
     offIcon?: string; // OFF durumu için ikon URL veya yolu
+    registerType: 'read' | 'write';
     value: any = null;
     missCount: number = 0;
     lastUpdated: number = 0;
@@ -76,6 +78,7 @@ export class Register {
         this.unit = config.unit;
         this.onIcon = config.onIcon;
         this.offIcon = config.offIcon;
+        this.registerType = config.registerType || 'read'; // Varsayılan olarak 'read'
     }
 
     /**

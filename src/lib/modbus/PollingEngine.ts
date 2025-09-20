@@ -376,14 +376,30 @@ export class PollingEngine extends EventEmitter {
         const oldTimer = this.pollingTimers.get(analyzer.id);
         if (oldTimer) {
             clearTimeout(oldTimer);
-            //backendLogger.debug(`Stopped previous polling timer for analyzer ${analyzer.name}`, "PollingEngine");
+            this.pollingTimers.delete(analyzer.id);
         }
 
+        // Eğer analizöre bağlı hiç register yoksa (ne read ne write), hiçbir şey yapma.
+        if (!this.hasRegisters(analyzer.id)) {
+            backendLogger.debug(`Analyzer ${analyzer.name} has no registers at all, skipping polling and connection.`, "PollingEngine");
+            return;
+        }
+
+        // --- EN KRİTİK DEĞİŞİKLİK ---
+        // Okunacak blok olmasa bile (sadece write register'ları olabilir),
+        // bağlantının kurulduğundan emin olmalıyız.
+        const connection = await this.ensureConnection(analyzer);
+        if (!connection) {
+            backendLogger.warning(`Connection for ${analyzer.name} could not be established. Handing over to ModbusConnection's backoff mechanism.`, "PollingEngine");
+            return;
+        }
+        analyzer.connection = connection; // Referansı ata
+
+        // Sadece okunacak bloklar varsa polling döngüsünü başlat.
         const blocks = this.getBlocksForAnalyzer(analyzer.id);
         if (!blocks || blocks.length === 0) {
-            this.pollingTimers.delete(analyzer.id); // Zamanlayıcı kalmadığından emin ol.
-            //backendLogger.debug(`No blocks found for analyzer ${analyzer.name}, skipping polling start.`, "PollingEngine");
-            return;
+            backendLogger.debug(`No readable blocks for analyzer ${analyzer.name}. Connection is ensured, but polling loop will not start.`, "PollingEngine");
+            return; // Polling döngüsünü başlatmadan çık.
         }
 
         // Analizörün polling state'ini al veya oluştur.
@@ -396,19 +412,6 @@ export class PollingEngine extends EventEmitter {
         const currentVersion = pollState.pollVersion;
         this.analyzerPollState.set(analyzer.id, pollState);
 
-        const connection = await this.ensureConnection(analyzer);
-        if (!connection) {
-            // Bağlantı kurulamadı. `ensureConnection` zaten `ModbusConnection` içindeki
-            // `scheduleReconnect`'i tetikledi. Bu yüzden PollingEngine'in burada
-            // ek bir yeniden deneme döngüsü başlatması YANLIŞ.
-            // Bu, 5 saniyelik spam döngüsüne neden oluyordu. Bu bölümü kaldırarak
-            // kontrolü tamamen ModbusConnection'ın backoff mekanizmasına bırakıyoruz.
-            backendLogger.warning(`Connection for ${analyzer.name} could not be established. Handing over to ModbusConnection's backoff mechanism.`, "PollingEngine");
-            return;
-        }
-        
-        // DÜZELTME: Analyzer'ın connection referansını güncel connection ile güncelle
-        analyzer.connection = connection;
         //backendLogger.debug(`Started polling for analyzer ${analyzer.name} with connection ${connection.connectionId}`, "PollingEngine");
 
         const totalPollMs = Math.max(analyzer.pollMs || 1000, 500);
@@ -646,7 +649,14 @@ export class PollingEngine extends EventEmitter {
 
     private createBlocksForAnalyzer(analyzerId: string): void {
         const analyzerRegisters = Array.from(this.registers.values()).filter(r => r.analyzerId === analyzerId);
-        this.blocks.set(analyzerId, PollerBlockFactory.makeBlocks(analyzerRegisters));
+        // Sadece 'read' tipi register'ları poll bloklarına dahil et
+        const readRegisters = analyzerRegisters.filter(r => r.registerType === 'read');
+        
+        if(readRegisters.length < analyzerRegisters.length) {
+            backendLogger.info(`Analyzer ${analyzerId}: Found ${analyzerRegisters.length} total registers, but only polling ${readRegisters.length} ('read' type).`, "PollingEngine");
+        }
+
+        this.blocks.set(analyzerId, PollerBlockFactory.makeBlocks(readRegisters));
     }
     
         private hasRegisters(analyzerId: string): boolean {

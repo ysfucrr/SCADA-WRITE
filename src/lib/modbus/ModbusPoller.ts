@@ -270,7 +270,8 @@ export class ModbusPoller extends EventEmitter {
                     dataType: node.data?.dataType,
                     scale: parseFloat(node.data?.scale) || 1,
                     byteOrder: node.data?.byteOrder,
-                    bit: node.data?.bit || 0
+                    bit: node.data?.bit || 0,
+                    registerType: node.data?.registerType || 'read' // 'read' veya 'write'
                 }));
         };
         buildings.forEach((building: any) => {
