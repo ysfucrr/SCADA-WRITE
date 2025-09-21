@@ -420,7 +420,7 @@ export abstract class ModbusConnection extends EventEmitter {
         }
 
         const readPriority = 0;
-        backendLogger.debug(`📖 READ OPERATION: Starting read operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity}) - Priority: ${readPriority}`, "ModbusConnection");
+        //backendLogger.debug(`📖 READ OPERATION: Starting read operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity}) - Priority: ${readPriority}`, "ModbusConnection");
 
         const startTime = Date.now();
 
