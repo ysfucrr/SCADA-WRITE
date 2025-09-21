@@ -431,11 +431,11 @@ export abstract class ModbusConnection extends EventEmitter {
 
         try {
             // İşlemi kuyruğa ekle
-                        backendLogger.debug(`📖 READ QUEUE: Adding read operation to MAIN QUEUE for ${this.connectionId} - Priority: ${readPriority}`, "ModbusConnection");
+                        //backendLogger.debug(`📖 READ QUEUE: Adding read operation to MAIN QUEUE for ${this.connectionId} - Priority: ${readPriority}`, "ModbusConnection");
 
             const result = await this.queue.add(
                 async () => {
-                 backendLogger.debug(`📖 READ EXEC: Starting read operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
+                 //backendLogger.debug(`📖 READ EXEC: Starting read operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
 
 
                     // FORCE SHUTDOWN KONTROLÜ: Eğer bağlantı kapatılma sürecindeyse,
@@ -460,7 +460,7 @@ export abstract class ModbusConnection extends EventEmitter {
                         // Akıllı timeout - UI değeri + RTT tabanlı koruma
                         const smartTimeout = this.calculateSmartTimeout(timeoutMs);
                         this.client.setTimeout(smartTimeout);
-                        backendLogger.debug(`📖 READ MODBUS: Executing Modbus read for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
+                        //backendLogger.debug(`📖 READ MODBUS: Executing Modbus read for ${this.connectionId} (Slave: ${slaveId}, Address: ${startAddr}x${quantity})`, "ModbusConnection");
 
                         return this.client.readHoldingRegisters(startAddr, quantity);
                     } finally {
