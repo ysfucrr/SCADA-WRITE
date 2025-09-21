@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       { $set: settings },
       { upsert: true }
     );
-    
+
     // Trigger a reload of the mail service settings
     await mailService.reloadSettings();
 
@@ -33,5 +33,20 @@ export async function POST(request: Request) {
   } catch (error) {
     backendLogger.error('Failed to update mail settings', 'API/mail-settings', { error });
     return NextResponse.json({ error: 'Failed to update mail settings' }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const { db } = await connectToDatabase();
+    await db.collection('mail_settings').deleteMany({});
+
+    // Reset the mail service settings
+    await mailService.reloadSettings();
+
+    return NextResponse.json({ message: 'Mail settings deleted successfully' });
+  } catch (error) {
+    backendLogger.error('Failed to delete mail settings', 'API/mail-settings', { error });
+    return NextResponse.json({ error: 'Failed to delete mail settings' }, { status: 500 });
   }
 }

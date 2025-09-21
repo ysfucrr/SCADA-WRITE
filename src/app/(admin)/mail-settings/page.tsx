@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from 'react';
-import { Eye, EyeOff, Mail } from 'lucide-react';
+import { Eye, EyeOff, Mail, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import PageBreadcrumb from '@/components/common/PageBreadCrumb';
@@ -102,6 +102,37 @@ const MailSettingsPage: React.FC = () => {
         }
     };
 
+    const handleDeleteSettings = async () => {
+        const result = await Swal.fire({
+            title: 'Are you sure?',
+            text: 'This will delete all mail settings. You will need to reconfigure them to send emails.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await axios.delete('/api/mail-settings');
+                Swal.fire('Deleted!', 'Mail settings have been deleted.', 'success');
+                // Reset form to default
+                setSettings({
+                    host: '',
+                    port: 587,
+                    secure: true,
+                    auth: { user: '', pass: '' },
+                    from: '',
+                    to: '',
+                });
+            } catch (error) {
+                console.error('Failed to delete mail settings:', error);
+                Swal.fire('Error', 'Failed to delete mail settings.', 'error');
+            }
+        }
+    };
+
     if (loading) {
         return <div className="p-4 text-center">Loading settings...</div>;
     }
@@ -155,6 +186,9 @@ const MailSettingsPage: React.FC = () => {
                      <div className="mt-6 flex justify-end gap-4">
                         <OutlineButton type="button" onClick={handleSendTestEmail} leftIcon={<Mail size={16}/>}>
                             Send Test Mail
+                        </OutlineButton>
+                        <OutlineButton type="button" onClick={handleDeleteSettings} leftIcon={<Trash2 size={16}/>} variant="error">
+                            Delete Settings
                         </OutlineButton>
                         <Button type="submit" variant="primary">
                             Save Settings
