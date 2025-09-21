@@ -12,8 +12,6 @@ const MIN_TIMEOUT_MS = 500;  // Minimum timeout 500ms
 const MAX_TIMEOUT_MS = 60000; // Maximum timeout 60 saniye
 const MIN_WORKERS = 1;      // Minimum eşzamanlı işlem sayısı
 const MAX_WORKERS = 64;     // Maximum eşzamanlı işlem sayısı
-const PRE_WRITE_DELAY_MS = 500;  // Default delay before writing (500ms)
-const POST_WRITE_DELAY_MS = 1000; // Default delay after writing (1000ms)
 
 // ────────── Tip Tanımlamaları ──────────
 interface ExtendedModbusRTU {
@@ -773,21 +771,6 @@ export abstract class ModbusConnection extends EventEmitter {
         }
     }
 
-    /**
-     * Modbus üzerinden tek bir register'a yazar (FC06) - Interface uyumluluğu için
-     */
-    async writeRegister(address: number, value: number): Promise<any> {
-        // Bu metod sadece interface uyumluluğu için, gerçek implementasyon writeHoldingRegisterWithRetry'de
-        throw new Error("Use writeHoldingRegisterWithRetry instead of writeRegister");
-    }
-
-    /**
-     * Modbus üzerinden birden çok register'a yazar (FC16) - Interface uyumluluğu için
-     */
-    async writeRegisters(address: number, values: number[]): Promise<any> {
-        // Bu metod sadece interface uyumluluğu için, gerçek implementasyon writeHoldingRegistersWithRetry'de
-        throw new Error("Use writeHoldingRegistersWithRetry instead of writeRegisters");
-    }
 
 
     /**

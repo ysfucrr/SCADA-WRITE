@@ -630,7 +630,7 @@ export class PollingEngine extends EventEmitter {
         // aktif değilse ve artık register'ı varsa, şimdi başlat.
         const analyzer = this.analyzers.get(analyzerId);
         if (analyzer && !this.pollingTimers.has(analyzerId) && this.hasRegisters(analyzerId)) {
-            backendLogger.info(`Polling was not active for ${analyzerId} but now has registers. Starting it.`, "PollingEngine");
+            //backendLogger.info(`Polling was not active for ${analyzerId} but now has registers. Starting it.`, "PollingEngine");
             this.startPolling(analyzer);
             
             // Register eklendikten sonra, eğer bu analizörün bağlantısı kopuksa reconnect tetikle
@@ -888,9 +888,13 @@ export class PollingEngine extends EventEmitter {
             const fc = wordsToWrite.length > 1 ? 'FC10' : register.writeFunctionCode;
             backendLogger.info(`Executing TCP write for ${analyzer.name}: addr=${register.addr}, words=[${wordsToWrite.join(', ')}] (from value ${value}), FC=${fc}`, "PollingEngine");
 
-            // Her zaman writeHoldingRegisters (FC10) kullanmak daha evrensel ve güvenli.
-            // Tek bir değer yazarken bile bunu destekler.
-            await connection.writeHoldingRegisters(slaveId, register.addr, wordsToWrite, timeoutMs);
+            // Kullanıcının seçimine veya veri boyutuna göre doğru fonksiyon kodunu kullan
+            if (fc === 'FC06' && wordsToWrite.length === 1) {
+                await connection.writeHoldingRegister(slaveId, register.addr, wordsToWrite[0], timeoutMs);
+            } else {
+                // FC10 seçilmişse veya Float32 gibi çoklu word gerektiren bir durum varsa
+                await connection.writeHoldingRegisters(slaveId, register.addr, wordsToWrite, timeoutMs);
+            }
             
             backendLogger.info(`TCP write successful for analyzer ${analyzer.name}`, "PollingEngine");
 

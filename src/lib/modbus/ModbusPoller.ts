@@ -536,7 +536,7 @@ export class ModbusPoller extends EventEmitter {
             // This ensures internal state is consistent before notifying workers.
             oldRegistersInBuilding.forEach(r => this.allKnownRegisters.delete(r.id));
             newRegistersInBuilding.forEach(r => this.allKnownRegisters.set(r.id, r));
-            backendLogger.debug(`Updated internal cache: ${oldRegistersInBuilding.length} registers removed, ${newRegistersInBuilding.length} added.`, "ModbusPoller");
+            //backendLogger.debug(`Updated internal cache: ${oldRegistersInBuilding.length} registers removed, ${newRegistersInBuilding.length} added.`, "ModbusPoller");
     
             // 4. For each affected analyzer, send the new *complete* state to the worker
             for (const analyzerId of involvedAnalyzerIds) {
@@ -567,7 +567,7 @@ export class ModbusPoller extends EventEmitter {
                             registers: completeRegisterList
                         }
                     });
-                    backendLogger.info(`Sent updated state for analyzer ${analyzerId} to worker ${workerIndex}. New register count: ${completeRegisterList.length}`, "ModbusPoller");
+                    //backendLogger.info(`Sent updated state for analyzer ${analyzerId} to worker ${workerIndex}. New register count: ${completeRegisterList.length}`, "ModbusPoller");
                 } else {
                     //backendLogger.warning(`Surgical update ignored: TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
                 }
