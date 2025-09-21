@@ -318,18 +318,22 @@ export default function TrendLogPage() {
             showToast(error.message || "Trend log could not be updated", "error");
         }
     };
-    const exportToXls = async (trendLog: TrendLogType) => {
+    const exportToXls = async (trendLog: TrendLogType): Promise<boolean> => {
         try {
-            //console.log("trendLog", trendLog)
             //önce tüm veriyi çek
             const response = await fetch(`/api/trend-logs/${trendLog._id}`);
-            const responseData = (await response.json())
-            //console.log("responseData", responseData)
-            const logs = responseData.trendLogData
-            //console.log("logs: ", logs)
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to fetch log data for export");
+            }
+
+            const responseData = await response.json();
+            const logs = responseData.trendLogData;
 
             if (!logs || logs.length === 0) {
                 showToast("No log data to export", "warning");
+                return false; // Indicate that export did not happen
             }
 
             // XLSX formatı için veri hazırlama
@@ -356,11 +360,11 @@ export default function TrendLogPage() {
 
             // XLSX dosyasını indirme
             XLSX.writeFile(workbook, fileName);
-
-            // showToast("Trend log exported to Excel successfully");
+            return true; // Indicate success
         } catch (error: any) {
             console.error("Export error:", error);
             showToast(error.message || "Trend log could not be exported to Excel", "error");
+            return false; // Indicate failure
         }
     };
 
@@ -376,21 +380,27 @@ export default function TrendLogPage() {
         if (result.isConfirmed) {
             setDeleting(true);
             try {
-                exportToXls(TrendLog);
-                const response = await fetch(`/api/trend-logs/${TrendLog._id}`, {
-                    method: "DELETE",
-                });
+                const exportSuccess = await exportToXls(TrendLog);
 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || "TrendLog could not be deleted");
+                // Sadece export başarılı olduysa silme işlemine devam et.
+                if (exportSuccess) {
+                    const response = await fetch(`/api/trend-logs/${TrendLog._id}`, {
+                        method: "DELETE",
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || "TrendLog could not be deleted after export");
+                    }
+
+                    showToast("TrendLog exported and deleted successfully");
+                    fetchData();
+                } else {
+                    showToast("Export failed or cancelled, deletion aborted.", "warning");
                 }
-
-                showToast("TrendLog deleted successfully");
-                setDeleting(false);
-                fetchData();
             } catch (error: any) {
-                showErrorAlert(error.message || "TrendLog could not be deleted");
+                showErrorAlert(error.message || "An error occurred during the process");
+            } finally {
                 setDeleting(false);
             }
         }

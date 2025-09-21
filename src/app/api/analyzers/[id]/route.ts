@@ -1,12 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { ObjectId } from 'mongodb';
+import path from 'path';
+import fs from 'fs';
 
 // Analizör bilgisi alma
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -39,7 +41,7 @@ export async function GET(
 
 // Analizör güncelleme
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -99,7 +101,7 @@ export async function PUT(
 
 // Analyzer silme
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -111,47 +113,62 @@ export async function DELETE(
     }
 
     const { db } = await connectToDatabase();
-
+    
     const analyzerToDelete = await db.collection('analyzers').findOne({ _id: new ObjectId(id) });
     if (!analyzerToDelete) {
       return NextResponse.json({ error: 'Analyzer not found' }, { status: 404 });
     }
 
-    const connectedTrendLogs = await db.collection('trendLogs').find({ analyzerId: id }).toArray();
-    if (connectedTrendLogs.length > 0) {
+    const connectedTrendLogs = await db.collection('trendLogs').countDocuments({ analyzerId: id });
+    if (connectedTrendLogs > 0) {
       return NextResponse.json({ error: 'Analyzer is connected to trend logs, cannot delete.' }, { status: 400 });
     }
 
-    // Find all buildings to remove associated register nodes from them
-    const buildings = await db.collection('buildings').find({ "flowData.nodes.data.analyzerId": id }).toArray();
-    for (const building of buildings) {
-      const newNodes = building.flowData.nodes.filter((node: any) => node.data?.analyzerId !== id);
-      const newFloors = (building.floors || []).map((floor: any) => {
-        if (floor.flowData?.nodes) {
-          floor.flowData.nodes = floor.flowData.nodes.filter((node: any) => node.data?.analyzerId !== id);
-        }
-        if (floor.rooms) {
-            for (const room of floor.rooms) {
-                if (room.flowData?.nodes) {
-                    room.flowData.nodes = room.flowData.nodes.filter((node: any) => node.data?.analyzerId !== id);
-                }
+    const buildingsWithRegisters = await db.collection('buildings').find({
+      $or: [
+        { "flowData.nodes.data.analyzerId": id },
+        { "floors.flowData.nodes.data.analyzerId": id },
+        { "floors.rooms.flowData.nodes.data.analyzerId": id },
+      ]
+    }).toArray();
+
+    for (const building of buildingsWithRegisters) {
+        const nodes = [
+            ...(building.flowData?.nodes || []),
+            ...building.floors?.flatMap((f:any) => f.flowData?.nodes || []),
+            ...building.floors?.flatMap((f:any) => f.rooms?.flatMap((r:any) => r.flowData?.nodes || []))
+        ];
+        
+        const nodesToDelete = nodes.filter(node => node?.data?.analyzerId === id);
+
+        for (const node of nodesToDelete) {
+            if (node.data?.onIcon) {
+                const iconPath = path.join(process.cwd(), 'public', node.data.onIcon.replace('/api/image', ''));
+                if (fs.existsSync(iconPath)) fs.unlinkSync(iconPath);
+            }
+            if (node.data?.offIcon) {
+                const iconPath = path.join(process.cwd(), 'public', node.data.offIcon.replace('/api/image', ''));
+                if (fs.existsSync(iconPath)) fs.unlinkSync(iconPath);
             }
         }
-        return floor;
-      });
-
-      await db.collection('buildings').updateOne(
-          { _id: building._id },
-          { $set: { "flowData.nodes": newNodes, floors: newFloors, updatedAt: new Date() } }
-      );
     }
+    
+    await db.collection('buildings').updateMany(
+      { "flowData.nodes.data.analyzerId": id },
+      { $pull: { "flowData.nodes": { "data.analyzerId": id } } as any }
+    );
+    await db.collection('buildings').updateMany(
+      { "floors.flowData.nodes.data.analyzerId": id },
+      { $pull: { "floors.$[].flowData.nodes": { "data.analyzerId": id } } as any }
+    );
+    await db.collection('buildings').updateMany(
+      { "floors.rooms.flowData.nodes.data.analyzerId": id },
+      { $pull: { "floors.$[].rooms.$[].flowData.nodes": { "data.analyzerId": id } } as any }
+    );
 
-    const result = await db.collection('analyzers').deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) {
-      return NextResponse.json({ error: 'Analyzer not found during delete operation' }, { status: 404 });
-    }
+    await db.collection('analyzers').deleteOne({ _id: new ObjectId(id) });
 
-    return NextResponse.json({ success: true, message: 'Analyzer and associated register nodes deleted successfully' });
+    return NextResponse.json({ success: true, message: 'Analyzer and associated registers/images deleted successfully' });
   } catch (error) {
     console.error('Analyzer deletion failed:', error);
     return NextResponse.json({ error: 'Analyzer deletion failed' }, { status: 500 });
