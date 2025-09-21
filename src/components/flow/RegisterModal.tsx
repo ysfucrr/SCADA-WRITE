@@ -371,57 +371,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       return;
     }
     const id = node?.id || `register-${Date.now()}`;
-    // Call registers post (if node id is not defined) or update API (if node id is defined)
-    if (node?.id) {
-      if (address != node.data.address ||
-        dataType != node.data.dataType ||
-        scale != node.data.scale ||
-        byteOrder != node.data.byteOrder ||
-        analyzer != node.data.analyzerId ||
-        bit != node.data.bit) {
-        await fetch(`/api/registers/${node.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            nodeId: id,
-            label,
-            address,
-            dataType,
-            scale,
-            scaleUnit,
-            byteOrder: showByteOrderOption ? byteOrder : undefined,
-            textColor,
-            backgroundColor,
-            analyzerId: analyzer,
-            analyzer: analyzers.find(a => a._id === analyzer),
-            bit: dataType === 'boolean' && bit >= 0 ? bit : undefined,
-          }),
-        });
-      }
-    } else {
-      await fetch('/api/registers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          nodeId: id,
-          label,
-          address,
-          dataType,
-          scale,
-          byteOrder: showByteOrderOption ? byteOrder : undefined,
-          textColor,
-          backgroundColor,
-          analyzerId: analyzer,
-          analyzer: analyzers.find(a => a._id === analyzer),
-          bit: dataType === 'boolean' && bit >= 0 ? bit : undefined,
-        }),
-      });
-    }
-    const registerData = {
+    const registerData: Node = {
       id,
       type: 'registerNode',
       position: node?.position || { x: 100, y: 100 },
@@ -457,6 +407,47 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         decimalPlaces: decimalPlaces !== 2 ? decimalPlaces : undefined,
       },
     };
+    // Call registers post (if node id is not defined) or update API (if node id is defined)
+    if (node?.id) {
+      // Always update if it is an existing node.
+      try {
+        const response = await fetch(`/api/registers/${node.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(registerData.data), // Pass all data
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update register');
+        }
+      } catch (error) {
+        showToast("Error updating register", "error");
+        console.error("Error updating register:", error);
+        return; // Stop execution on error
+      }
+    } else {
+      await fetch('/api/registers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nodeId: id,
+          label,
+          address,
+          dataType,
+          scale,
+          byteOrder: showByteOrderOption ? byteOrder : undefined,
+          textColor,
+          backgroundColor,
+          analyzerId: analyzer,
+          analyzer: analyzers.find(a => a._id === analyzer),
+          bit: dataType === 'boolean' && bit >= 0 ? bit : undefined,
+        }),
+      });
+    }
     //console.log("register data:", registerData);
     // Reset form
     onConfirm(registerData);
