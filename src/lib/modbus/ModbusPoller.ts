@@ -84,7 +84,7 @@ export class ModbusPoller extends EventEmitter {
     }
 
     private async loadAndDistributeConfiguration(): Promise<void> {
-        backendLogger.info("Loading and distributing configurations to workers...", "ModbusPoller");
+        //backendLogger.info("Loading and distributing configurations to workers...", "ModbusPoller");
         try {
             const { db } = await connectToDatabase();
 
@@ -314,7 +314,7 @@ export class ModbusPoller extends EventEmitter {
                     backendLogger.error(`Change stream error for ${collectionName}: ${err}`, "ModbusPoller");
                     setTimeout(() => setup(collectionName, handler), 5000);
                 });
-                backendLogger.info(`Change stream established for collection ${collectionName}`, "ModbusPoller");
+                //backendLogger.info(`Change stream established for collection ${collectionName}`, "ModbusPoller");
             } catch (err) {
                 backendLogger.error(`Failed to set up change stream for ${collectionName}: ${err}`, "ModbusPoller");
                 setTimeout(() => setup(collectionName, handler), 5000);
@@ -322,7 +322,7 @@ export class ModbusPoller extends EventEmitter {
         };
 
         const bulkUpdateHandler = (change: any) => {
-            backendLogger.info(`Major config change detected in ${change.ns.coll}. Reloading all workers.`, "ModbusPoller");
+            //backendLogger.info(`Major config change detected in ${change.ns.coll}. Reloading all workers.`, "ModbusPoller");
             this.handleBulkUpdate().catch(err => {
                  backendLogger.error(`Error handling bulk update`, "ModbusPoller", { error: (err as Error).message });
             });
@@ -405,7 +405,7 @@ export class ModbusPoller extends EventEmitter {
                             });
                             backendLogger.info(`Sent update to worker ${workerIndex} for analyzer ${analyzerId} after building deletion. New register count: ${completeRegisterList.length}`, "ModbusPoller");
                         } else {
-                            backendLogger.warning(`Surgical update skipped: TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
+                            //backendLogger.warning(`Surgical update skipped: TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
                         }
                     } catch (err) {
                         backendLogger.error(`Failed to update analyzer ${analyzerId} after building deletion`, "ModbusPoller", { error: (err as Error).message });
@@ -440,7 +440,7 @@ export class ModbusPoller extends EventEmitter {
                 } else {
                     // fullDocumentBeforeChange yoksa, analizörün hangi poller tarafından yönetildiğini kontrol et
                     // SerialPoller kendi analyzer listesinde varsa serial, yoksa tcp
-                    backendLogger.debug(`No fullDocumentBeforeChange for deleted analyzer ${analyzerId}. Using fallback detection.`, "ModbusPoller");
+                    //backendLogger.debug(`No fullDocumentBeforeChange for deleted analyzer ${analyzerId}. Using fallback detection.`, "ModbusPoller");
                     connectionType = 'tcp'; // Default olarak tcp kabul et, SerialPoller kendi kontrolünü yapacak
                 }
             }
@@ -449,7 +449,7 @@ export class ModbusPoller extends EventEmitter {
                 // fullDocumentBeforeChange varsa connection type'a göre karar ver
                 if (change.fullDocumentBeforeChange) {
                     if (connectionType === 'tcp') {
-                        backendLogger.info(`TCP Analyzer ${analyzerId} deleted. Triggering bulk update.`, "ModbusPoller");
+                        //backendLogger.info(`TCP Analyzer ${analyzerId} deleted. Triggering bulk update.`, "ModbusPoller");
                         bulkUpdateHandler(change);
                     } else {
                         backendLogger.debug(`Serial analyzer ${analyzerId} deleted. Managed by SerialPoller.`, "ModbusPoller");
@@ -460,7 +460,7 @@ export class ModbusPoller extends EventEmitter {
                     // ModbusPoller da analyzerToWorker map'inde varsa işleyecek, yoksa skip edecek
                     const isInWorkerMap = this.analyzerToWorker.has(analyzerId);
                     if (isInWorkerMap) {
-                        backendLogger.info(`TCP Analyzer ${analyzerId} deleted (fallback detection). Triggering bulk update.`, "ModbusPoller");
+                        //backendLogger.info(`TCP Analyzer ${analyzerId} deleted (fallback detection). Triggering bulk update.`, "ModbusPoller");
                         bulkUpdateHandler(change);
                     } else {
                         backendLogger.debug(`Analyzer ${analyzerId} deleted but not in TCP worker map. Likely serial, managed by SerialPoller.`, "ModbusPoller");
@@ -470,7 +470,7 @@ export class ModbusPoller extends EventEmitter {
             } else if (change.operationType === 'insert') {
                 // INSERT işlemi için connection type kontrolü yap
                 if (connectionType === 'tcp') {
-                    backendLogger.info(`TCP Analyzer ${analyzerId} inserted. Triggering bulk update.`, "ModbusPoller");
+                    //backendLogger.info(`TCP Analyzer ${analyzerId} inserted. Triggering bulk update.`, "ModbusPoller");
                     bulkUpdateHandler(change);
                 } else {
                     // Serial analizör eklendi - SerialPoller kendi change stream'i ile yönetiyor
@@ -478,7 +478,7 @@ export class ModbusPoller extends EventEmitter {
                 }
             } else if (change.operationType === 'update' && change.updateDescription.updatedFields.gateway) {
                 // Gateway değişti - bu durumda her zaman bulk update gerekli
-                backendLogger.info(`Analyzer ${analyzerId} gateway changed. Triggering bulk update.`, "ModbusPoller");
+                //backendLogger.info(`Analyzer ${analyzerId} gateway changed. Triggering bulk update.`, "ModbusPoller");
                 bulkUpdateHandler(change);
             } else if (change.operationType === 'update') {
                 // Sadece TCP analizörleri için property change işle
@@ -569,11 +569,11 @@ export class ModbusPoller extends EventEmitter {
                     });
                     backendLogger.info(`Sent updated state for analyzer ${analyzerId} to worker ${workerIndex}. New register count: ${completeRegisterList.length}`, "ModbusPoller");
                 } else {
-                    backendLogger.warning(`Surgical update ignored: TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
+                    //backendLogger.warning(`Surgical update ignored: TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
                 }
             }
         } catch (err) {
-            backendLogger.error(`Failed to process surgical building change for ${buildingId}. Falling back to bulk update.`, "ModbusPoller", { error: (err as Error).message });
+            //backendLogger.error(`Failed to process surgical building change for ${buildingId}. Falling back to bulk update.`, "ModbusPoller", { error: (err as Error).message });
             await this.handleBulkUpdate();
         } finally {
             this.isReloading = false;

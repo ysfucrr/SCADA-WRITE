@@ -386,7 +386,7 @@ export class SerialPoller extends EventEmitter {
                     backendLogger.error(`Change stream error on ${collectionName} for SerialPoller: ${err.message}`, "SerialPoller");
                     setTimeout(() => setup(collectionName, handler), 5000);
                 });
-                backendLogger.info(`Change stream for SerialPoller established for collection ${collectionName}`, "SerialPoller");
+                //backendLogger.info(`Change stream for SerialPoller established for collection ${collectionName}`, "SerialPoller");
             } catch (err: any) {
                 backendLogger.error(`Failed to set up change stream for ${collectionName}: ${err.message}`, "SerialPoller");
                 setTimeout(() => setup(collectionName, handler), 5000);
@@ -474,7 +474,7 @@ export class SerialPoller extends EventEmitter {
         if (this.isReloading) return;
         this.isReloading = true;
         try {
-            backendLogger.info(`SerialPoller is reloading configuration. Reason: ${reason}`, "SerialPoller");
+            //backendLogger.info(`SerialPoller is reloading configuration. Reason: ${reason}`, "SerialPoller");
             
             const oldConnections = new Map(this.connections);
             this.pollingTimers.forEach(timer => clearTimeout(timer));

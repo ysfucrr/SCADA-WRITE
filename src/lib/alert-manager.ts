@@ -27,7 +27,7 @@ class AlertManager {
     // HACK: To mitigate startup race conditions where the poller might not be fully ready
     // when the alert manager loads its rules, we schedule a reload after a short delay.
     setTimeout(() => {
-        backendLogger.info('Performing delayed rule reload to ensure synchronization.', 'AlertManager');
+        //backendLogger.info('Performing delayed rule reload to ensure synchronization.', 'AlertManager');
         this.reloadRules();
     }, 15000); // 15-second delay to be safe
   }
@@ -52,7 +52,7 @@ class AlertManager {
           this.connectionRules.get(rule.gatewayId)!.push(rule);
         }
       });
-      backendLogger.info(`${rules.length} alert rules loaded.`, 'AlertManager');
+      //backendLogger.info(`${rules.length} alert rules loaded.`, 'AlertManager');
     } catch (error) {
       backendLogger.error('Failed to load alert rules.', 'AlertManager', { error: (error as Error).message });
     }
@@ -68,7 +68,7 @@ class AlertManager {
     });
 
     poller.on('connectionStatusChanged', (data: { gatewayId: string; status: GatewayStatus; connectionId?: string }) => {
-      backendLogger.info(`[ALERT-DEBUG] Connection status changed: ${data.gatewayId} → ${data.status}`, 'AlertManager', { connectionId: data.connectionId });
+      //backendLogger.info(`[ALERT-DEBUG] Connection status changed: ${data.gatewayId} → ${data.status}`, 'AlertManager', { connectionId: data.connectionId });
       this.checkConnectionRules(data.gatewayId, data.status);
     });
   }
@@ -88,7 +88,7 @@ class AlertManager {
                 this.reloadRules();
             }, 500); // 500ms debounce window
         });
-        backendLogger.info('Watching alert_rules collection for changes.', 'AlertManager');
+        //backendLogger.info('Watching alert_rules collection for changes.', 'AlertManager');
     } catch (error) {
         backendLogger.error('Failed to set up watch on alert_rules collection.', 'AlertManager', { error: (error as Error).message });
     }
@@ -145,29 +145,29 @@ class AlertManager {
   }
   
   private checkConnectionRules(gatewayId: string, newStatus: GatewayStatus) {
-      backendLogger.info(`[ALERT-DEBUG] Checking rules for gateway: ${gatewayId}, status: ${newStatus}`, 'AlertManager');
+      //backendLogger.info(`[ALERT-DEBUG] Checking rules for gateway: ${gatewayId}, status: ${newStatus}`, 'AlertManager');
       
       const rulesForGateway = this.connectionRules.get(gatewayId);
       if(!rulesForGateway) {
-          backendLogger.info(`[ALERT-DEBUG] No rules found for gateway: ${gatewayId}. Available gateways: ${Array.from(this.connectionRules.keys()).join(', ')}`, 'AlertManager');
+          //backendLogger.info(`[ALERT-DEBUG] No rules found for gateway: ${gatewayId}. Available gateways: ${Array.from(this.connectionRules.keys()).join(', ')}`, 'AlertManager');
           return;
       }
 
-      backendLogger.info(`[ALERT-DEBUG] Found ${rulesForGateway.length} rules for gateway: ${gatewayId}`, 'AlertManager');
+      //backendLogger.info(`[ALERT-DEBUG] Found ${rulesForGateway.length} rules for gateway: ${gatewayId}`, 'AlertManager');
 
       const currentState = this.connectionStates.get(gatewayId) || { status: 'unknown', lastNotification: new Date(0), isFirstDisconnect: true };
 
-      backendLogger.info(`[ALERT-DEBUG] Current state: ${currentState.status}, New status: ${newStatus}`, 'AlertManager');
+      //backendLogger.info(`[ALERT-DEBUG] Current state: ${currentState.status}, New status: ${newStatus}`, 'AlertManager');
 
       // Durum değişmediyse (örneğin, zaten 'disconnected' iken başka bir paralel bağlantıdan 'disconnected' geldiyse)
       // hiçbir işlem yapma ve mükerrer mail gönderimini engelle.
       // DÜZELTME: İlk bağlantı durumunda (unknown → connected/disconnected) da alert gönder
       if (currentState.status === newStatus && currentState.status !== 'unknown') {
-          backendLogger.info(`[ALERT-DEBUG] Status unchanged for gateway: ${gatewayId} (${newStatus}), skipping`, 'AlertManager');
+          //backendLogger.info(`[ALERT-DEBUG] Status unchanged for gateway: ${gatewayId} (${newStatus}), skipping`, 'AlertManager');
           return;
       }
  
-      backendLogger.info(`[ALERT-DEBUG] Status changed for gateway: ${gatewayId} from ${currentState.status} to ${newStatus}`, 'AlertManager');
+      //backendLogger.info(`[ALERT-DEBUG] Status changed for gateway: ${gatewayId} from ${currentState.status} to ${newStatus}`, 'AlertManager');
       this.connectionStates.set(gatewayId, { ...currentState, status: newStatus });
 
       rulesForGateway.forEach(async (rule) => {

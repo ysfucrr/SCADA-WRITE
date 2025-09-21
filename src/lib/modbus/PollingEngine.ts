@@ -75,7 +75,7 @@ export class PollingEngine extends EventEmitter {
                 const analyzer = Array.from(this.analyzers.values()).find(a => a.getConnectionId() === gatewayId);
                 const gatewayIdWithAnalyzer = analyzer?.gatewayId || gatewayId;
                 
-                backendLogger.info(`[ALERT-EVENT] Gateway ${gatewayIdWithAnalyzer} disconnected (from ${connectionId})`, "PollingEngine");
+                //backendLogger.info(`[ALERT-EVENT] Gateway ${gatewayIdWithAnalyzer} disconnected (from ${connectionId})`, "PollingEngine");
                 this.emit('connectionStatusChanged', { gatewayId: gatewayIdWithAnalyzer, status: 'disconnected', connectionId });
             }
     
@@ -138,7 +138,7 @@ export class PollingEngine extends EventEmitter {
                 const analyzer = Array.from(this.analyzers.values()).find(a => a.getConnectionId() === gatewayId);
                 const gatewayIdWithAnalyzer = analyzer?.gatewayId || gatewayId;
                 
-                backendLogger.info(`[ALERT-EVENT] Gateway ${gatewayIdWithAnalyzer} connected (from ${connectionId})`, "PollingEngine");
+                //backendLogger.info(`[ALERT-EVENT] Gateway ${gatewayIdWithAnalyzer} connected (from ${connectionId})`, "PollingEngine");
                 this.emit('connectionStatusChanged', { gatewayId: gatewayIdWithAnalyzer, status: 'connected', connectionId });
             }
     
@@ -314,7 +314,7 @@ export class PollingEngine extends EventEmitter {
                 });
                 
                 // --- KONTROLLÜ KAPATMA (GRACEFUL SHUTDOWN) ---
-                backendLogger.debug(`[Graceful Shutdown] Starting for connection: ${connId}.`, "PollingEngine");
+                //backendLogger.debug(`[Graceful Shutdown] Starting for connection: ${connId}.`, "PollingEngine");
                 conn.isShuttingDown = true;
 
                 // 1. ADIM: İşlem kuyruğunu duraklat ve bekleyen tüm görevleri temizle.
@@ -325,13 +325,13 @@ export class PollingEngine extends EventEmitter {
                     // Kuyruğun tüm bekleyen görevleri tamamlamasını beklemeden önce durdur ve temizle.
                     conn.queue.pause();
                     conn.queue.clear();
-                    backendLogger.debug(`[Graceful Shutdown] Paused and cleared queue for ${connId}. (Was size: ${qSize}, pending: ${qPending})`, "PollingEngine");
+                    //backendLogger.debug(`[Graceful Shutdown] Paused and cleared queue for ${connId}. (Was size: ${qSize}, pending: ${qPending})`, "PollingEngine");
                 }
                 
                 // 2. ADIM: Kuyruk temizlendikten SONRA bağlantıyı kapat.
                 conn.close();
                 this.connections.delete(connId); // Haritadan hemen kaldır
-                backendLogger.info(`[Graceful Shutdown] Connection ${connId} successfully closed and removed.`, "PollingEngine");
+                //backendLogger.info(`[Graceful Shutdown] Connection ${connId} successfully closed and removed.`, "PollingEngine");
             }
         });
         await Promise.allSettled(closePromises);
@@ -381,7 +381,7 @@ export class PollingEngine extends EventEmitter {
 
         // Eğer analizöre bağlı hiç register yoksa (ne read ne write), hiçbir şey yapma.
         if (!this.hasRegisters(analyzer.id)) {
-            backendLogger.debug(`Analyzer ${analyzer.name} has no registers at all, skipping polling and connection.`, "PollingEngine");
+            //backendLogger.debug(`Analyzer ${analyzer.name} has no registers at all, skipping polling and connection.`, "PollingEngine");
             return;
         }
 
@@ -811,7 +811,7 @@ export class PollingEngine extends EventEmitter {
         connectionsToClose.forEach(pooledConnectionId => {
             const connection = this.connections.get(pooledConnectionId);
             if (connection) {
-                backendLogger.info(`[Graceful Shutdown] Starting for connection: ${pooledConnectionId} (device count is zero).`, "PollingEngine");
+                //backendLogger.info(`[Graceful Shutdown] Starting for connection: ${pooledConnectionId} (device count is zero).`, "PollingEngine");
                 
                 // Bu connection'ı kullanan tüm analizörlerin polling timer'larını durdur
                 this.analyzers.forEach(analyzer => {
@@ -831,7 +831,7 @@ export class PollingEngine extends EventEmitter {
                 keysToDelete.forEach(key => this.connectionMismatchLogged.delete(key));
                 
                 // --- KONTROLLÜ KAPATMA (GRACEFUL SHUTDOWN) ---
-                backendLogger.debug(`[Graceful Shutdown] Step 2: Setting 'isShuttingDown' flag for ${pooledConnectionId}.`, "PollingEngine");
+                //backendLogger.debug(`[Graceful Shutdown] Step 2: Setting 'isShuttingDown' flag for ${pooledConnectionId}.`, "PollingEngine");
                 connection.isShuttingDown = true;
 
                 if (connection.queue) {
@@ -839,14 +839,14 @@ export class PollingEngine extends EventEmitter {
                     const qPending = connection.queue.pending;
                     connection.queue.pause();
                     connection.queue.clear();
-                    backendLogger.debug(`[Graceful Shutdown] Step 3: Paused and cleared queue for ${pooledConnectionId}. (Was size: ${qSize}, pending: ${qPending})`, "PollingEngine");
+                    //backendLogger.debug(`[Graceful Shutdown] Step 3: Paused and cleared queue for ${pooledConnectionId}. (Was size: ${qSize}, pending: ${qPending})`, "PollingEngine");
                 }
                 
-                backendLogger.debug(`[Graceful Shutdown] Step 4: Calling close() for ${pooledConnectionId}.`, "PollingEngine");
+                //backendLogger.debug(`[Graceful Shutdown] Step 4: Calling close() for ${pooledConnectionId}.`, "PollingEngine");
                 connection.close();
                 
                 this.connections.delete(pooledConnectionId);
-                backendLogger.info(`[Graceful Shutdown] Step 5: Connection ${pooledConnectionId} successfully closed and removed.`, "PollingEngine");
+                //backendLogger.info(`[Graceful Shutdown] Step 5: Connection ${pooledConnectionId} successfully closed and removed.`, "PollingEngine");
             }
         });
     }

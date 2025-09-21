@@ -8,7 +8,7 @@
     "email": "developer@example.com"
   },
   "scripts": {
-    "dev": "cross-env NODE_ENV=development next dev -p 3000",
+    "dev": "cross-env NODE_ENV=development next dev -p 3000 -H 0.0.0.0",
     "service": "ts-node service_new.ts",
     "push": "git add . && git commit -m 'update' && git push",
     "build": "next build",
@@ -23,7 +23,7 @@
     "build:service": "yarn prepare-serial-modules && yarn simplify-serial-modules && yarn build:service-main && yarn build:service-workers && yarn obfuscate-service",
     "build:license-server": "node license-server/build-go.js",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "electron-dev": "tsc -p electron/tsconfig.json && cross-env NODE_ENV=development concurrently --kill-others \"cross-env IS_PACKAGED=false yarn service\" \"yarn dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron-dev": "tsc -p electron/tsconfig.json && cross-env NODE_ENV=development concurrently --kill-others \"cross-env IS_PACKAGED=false yarn service\" \"yarn dev -H 0.0.0.0\" \"wait-on http://localhost:3000 && electron .\"",
     "electron-build": "yarn build:service && yarn build:license-server && yarn next build && yarn build:electron",
     "electron-start": "electron electron-dist/main.js",
     "electron:package:mac": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --mac",

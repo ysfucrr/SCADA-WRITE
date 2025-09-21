@@ -63,7 +63,7 @@ export class TrendLoggerService {
                     this.loadAllTrendLoggers();
                 }, 500); // 500ms debounce window
             });
-            backendLogger.info('Watching trendLogs collection for changes.', 'TrendLoggerService');
+            //backendLogger.info('Watching trendLogs collection for changes.', 'TrendLoggerService');
         } catch (error) {
             backendLogger.error('Failed to set up watch on trendLogs collection.', 'TrendLoggerService', { error: (error as Error).message });
         }
@@ -102,7 +102,7 @@ export class TrendLoggerService {
     }
 
     public async loadAllTrendLoggers() {
-        backendLogger.info("[TREND-LOGGER] Reloading all trend logger definitions...", "TrendLoggerService");
+        //backendLogger.info("[TREND-LOGGER] Reloading all trend logger definitions...", "TrendLoggerService");
         const { db } = await connectToDatabase();
         const trendLogs = await db.collection('trendLogs').find({ status: { $ne: 'stopped' } }).toArray();
         
@@ -128,7 +128,7 @@ export class TrendLoggerService {
             activeTrendLoggers.set(key, value);
         });
 
-        backendLogger.info(`[TREND-LOGGER] ${activeTrendLoggers.size} trend logger definitions reloaded.`, "TrendLoggerService");
+        //backendLogger.info(`[TREND-LOGGER] ${activeTrendLoggers.size} trend logger definitions reloaded.`, "TrendLoggerService");
     }
 
     public getLastKnownValue(registerId: string): number | undefined {

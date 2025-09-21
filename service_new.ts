@@ -297,7 +297,7 @@ const setupWriteRequestListener = async () => {
             setTimeout(setupWriteRequestListener, 5000);
         });
 
-        backendLogger.info('Successfully set up write request listener on the database.', "DBWatcher");
+        //backendLogger.info('Successfully set up write request listener on the database.', "DBWatcher");
 
     } catch (err) {
         backendLogger.error(`Failed to set up write request listener: ${(err as Error).message}`, "DBWatcher");

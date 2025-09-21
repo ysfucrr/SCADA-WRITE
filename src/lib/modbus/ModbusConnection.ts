@@ -371,7 +371,7 @@ export abstract class ModbusConnection extends EventEmitter {
             this.queue.removeAllListeners();
             this.queue.clear();
             this.queue = null;
-            backendLogger.debug(`[Graceful Shutdown] Queue for ${this.connectionId} has been destroyed.`, "ModbusConnection");
+            //backendLogger.debug(`[Graceful Shutdown] Queue for ${this.connectionId} has been destroyed.`, "ModbusConnection");
         }
 
         try {
@@ -380,25 +380,25 @@ export abstract class ModbusConnection extends EventEmitter {
                 if (port) {
                     if (port.socket) {
                         port.socket.destroy();
-                        backendLogger.debug(`[Graceful Shutdown] Socket for ${this.connectionId} destroyed.`, "ModbusConnection");
+                        //backendLogger.debug(`[Graceful Shutdown] Socket for ${this.connectionId} destroyed.`, "ModbusConnection");
                     }
                     if (typeof port.destroy === 'function') {
                         port.destroy();
-                        backendLogger.debug(`[Graceful Shutdown] Port for ${this.connectionId} destroyed.`, "ModbusConnection");
+                        //backendLogger.debug(`[Graceful Shutdown] Port for ${this.connectionId} destroyed.`, "ModbusConnection");
                     }
                     (this.client as any)._port = undefined;
                 }
                 if (typeof this.client.close === 'function') {
                     this.client.close(() => {});
-                    backendLogger.debug(`[Graceful Shutdown] Modbus client for ${this.connectionId} closed.`, "ModbusConnection");
+                    //backendLogger.debug(`[Graceful Shutdown] Modbus client for ${this.connectionId} closed.`, "ModbusConnection");
                 }
             }
         } catch (err: any) {
-            backendLogger.warning(`[Graceful Shutdown] Error during aggressive close for ${this.connectionId}: ${err.message}`, "ModbusConnection");
+            //backendLogger.warning(`[Graceful Shutdown] Error during aggressive close for ${this.connectionId}: ${err.message}`, "ModbusConnection");
         } finally {
             this.client = null;
             this.portListeners.clear();
-            backendLogger.debug(`[Graceful Shutdown] All references for ${this.connectionId} have been nullified.`, "ModbusConnection");
+            //backendLogger.debug(`[Graceful Shutdown] All references for ${this.connectionId} have been nullified.`, "ModbusConnection");
         }
     }
 
