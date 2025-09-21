@@ -285,8 +285,8 @@ const setupWriteRequestListener = async () => {
                     await db.collection('write_requests').deleteOne({ _id: change.documentKey._id });
                 } catch (error) {
                     backendLogger.error('Failed to handle write request from DB', 'DBWatcher', { error: (error as Error).message, docId: change.documentKey._id });
-                    // Hatalı işlemde isteğin durumunu güncelleyebiliriz.
-                    await db.collection('write_requests').updateOne({ _id: change.documentKey._id }, { $set: { status: 'failed', error: (error as Error).message } });
+                    // Hatalı işlemde isteği sil
+                    await db.collection('write_requests').deleteOne({ _id: change.documentKey._id });
                 }
             }
         });
