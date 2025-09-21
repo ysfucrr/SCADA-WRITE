@@ -371,7 +371,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       return;
     }
     const id = node?.id || `register-${Date.now()}`;
-    const registerData: Node = {
+
+    const registerData = {
       id,
       type: 'registerNode',
       position: node?.position || { x: 100, y: 100 },
@@ -396,7 +397,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         bit: dataType === 'boolean' && bit >= 0 ? bit : undefined,
         displayMode,
         registerType,
-        offsetValue: offsetValue !== 0 ? offsetValue : undefined,
+        offset: offsetValue,
         controlType: registerType === 'write' ? controlType : undefined,
         dropdownOptions: registerType === 'write' && controlType === 'dropdown' ? dropdownOptions : undefined,
         writeFunctionCode: registerType === 'write' ? writeFunctionCode : undefined,
@@ -407,49 +408,29 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         decimalPlaces: decimalPlaces !== 2 ? decimalPlaces : undefined,
       },
     };
-    // Call registers post (if node id is not defined) or update API (if node id is defined)
-    if (node?.id) {
-      // Always update if it is an existing node.
+    
+    // If in edit mode, always send a PUT request to the backend
+    if (isEditMode && node?.id) {
       try {
         const response = await fetch(`/api/registers/${node.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(registerData.data), // Pass all data
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(registerData.data), // Send the complete 'data' object
         });
-
         if (!response.ok) {
-          throw new Error('Failed to update register');
+          const errorResult = await response.json();
+          throw new Error(errorResult.error || 'Failed to update register on the server');
         }
       } catch (error) {
-        showToast("Error updating register", "error");
-        console.error("Error updating register:", error);
-        return; // Stop execution on error
+        console.error("Failed to update register:", error);
+        showToast(`Error saving register: ${(error as Error).message}`, "error");
+        return; // Stop the process and keep the modal open on error
       }
-    } else {
-      await fetch('/api/registers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          nodeId: id,
-          label,
-          address,
-          dataType,
-          scale,
-          byteOrder: showByteOrderOption ? byteOrder : undefined,
-          textColor,
-          backgroundColor,
-          analyzerId: analyzer,
-          analyzer: analyzers.find(a => a._id === analyzer),
-          bit: dataType === 'boolean' && bit >= 0 ? bit : undefined,
-        }),
-      });
     }
-    //console.log("register data:", registerData);
-    // Reset form
+    // Note: Creating a new node (POST) is handled by the parent FlowComponent saving the entire flow,
+    // so we don't need a separate POST request here. We just confirm the local node data.
+
+    // Update the local state in React Flow and reset the form
     onConfirm(registerData);
     setRegisterType('read');
     setAddress(0);

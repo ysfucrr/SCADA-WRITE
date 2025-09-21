@@ -340,8 +340,8 @@ export class ModbusPoller extends EventEmitter {
                 const changedBuildingDoc = await db.collection('buildings').findOne({ _id: buildingId });
                 const newRegisters = changedBuildingDoc ? this.loadRegistersFromBuildings([changedBuildingDoc]) : [];
 
-                // Karşılaştırma için register'ları basitleştirilmiş bir formata getir (sadece kritik alanlar).
-                const toComparableString = (r: any) => `${r.id}|${r.analyzerId}|${r.address}|${r.dataType}|${r.byteOrder}|${r.scale}|${r.bit}`;
+                // Karşılaştırma için register'ları basitleştirilmiş bir formata getir (kritik alanlar).
+                const toComparableString = (r: any) => `${r.id}|${r.analyzerId}|${r.address}|${r.dataType}|${r.byteOrder}|${r.scale}|${r.bit}|${r.controlType}|${r.writeFunctionCode}`;
 
                 const oldComparable = oldRegisters.map(toComparableString).sort().join(',');
                 const newComparable = newRegisters.map(toComparableString).sort().join(',');
