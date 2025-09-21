@@ -24,6 +24,7 @@ export interface RegisterConfig {
     onIcon?: string; // ON durumu için ikon URL veya yolu
     offIcon?: string; // OFF durumu için ikon URL veya yolu
     registerType?: 'read' | 'write';
+    writeFunctionCode?: 'FC06' | 'FC10';
 }
 
 // ────────── Temel Sınıflar ──────────
@@ -47,6 +48,7 @@ export class Register {
     onIcon?: string; // ON durumu için ikon URL veya yolu
     offIcon?: string; // OFF durumu için ikon URL veya yolu
     registerType: 'read' | 'write';
+    writeFunctionCode: 'FC06' | 'FC10';
     value: any = null;
     missCount: number = 0;
     lastUpdated: number = 0;
@@ -79,6 +81,7 @@ export class Register {
         this.onIcon = config.onIcon;
         this.offIcon = config.offIcon;
         this.registerType = config.registerType || 'read'; // Varsayılan olarak 'read'
+        this.writeFunctionCode = config.writeFunctionCode || 'FC06'; // Varsayılan olarak FC06
     }
 
     /**
@@ -108,6 +111,59 @@ export class Register {
         
         //console.log(`[REGISTER-GETVALUE] Ham değer döndürülüyor: ${this.value}`);
         return this.value;
+    }
+
+    /**
+     * Verilen bir değeri, register'ın veri tipine ve byte sırasına göre
+     * 16-bit'lik word dizisine dönüştürür (encode eder).
+     * @param valueToEncode Yazılacak olan son kullanıcı değeri (örn: 67.8)
+     * @returns Cihaza yazılacak 16-bit'lik word dizisi.
+     */
+    encode(valueToEncode: number): number[] {
+        // Değeri cihaza yazmadan önce ters dönüşüm uygula
+        const rawValue = (valueToEncode / this.scale) - this.offset;
+        let words: number[] = [];
+
+        try {
+            if (this.dataType === "int16" || this.dataType === "uint16") {
+                words = [Math.round(rawValue)];
+            } else if (this.dataType === "float32") {
+                const buffer = Buffer.alloc(4);
+                buffer.writeFloatBE(rawValue, 0);
+
+                // Byte sırasını tersine çevir
+                const finalBuffer = Buffer.from(buffer);
+                if (this.byteOrder === "BADC") finalBuffer.swap16();
+                else if (this.byteOrder === "CDAB") finalBuffer.swap32();
+                else if (this.byteOrder === "DCBA") { finalBuffer.swap32(); finalBuffer.swap16(); }
+
+                words = [finalBuffer.readUInt16BE(0), finalBuffer.readUInt16BE(2)];
+            } else if (this.dataType === "int32" || this.dataType === "uint32") {
+                const buffer = Buffer.alloc(4);
+                if (this.dataType === "int32") {
+                    buffer.writeInt32BE(Math.round(rawValue), 0);
+                } else {
+                    buffer.writeUInt32BE(Math.round(rawValue), 0);
+                }
+
+                // Byte sırasını tersine çevir
+                const finalBuffer = Buffer.from(buffer);
+                if (this.byteOrder === "BADC") finalBuffer.swap16();
+                else if (this.byteOrder === "CDAB") finalBuffer.swap32();
+                else if (this.byteOrder === "DCBA") { finalBuffer.swap32(); finalBuffer.swap16(); }
+
+                words = [finalBuffer.readUInt16BE(0), finalBuffer.readUInt16BE(2)];
+            } else {
+                // Desteklenmeyen veya basit veri tipleri için varsayılan davranış
+                words = [Math.round(rawValue)];
+            }
+        } catch (err: any) {
+            backendLogger.error(`Encode error for register ${this.id} (dataType: ${this.dataType}, value: ${valueToEncode}): ${err.message}`, "Register");
+            // Hata durumunda boş dizi döndürerek yazma işlemini engelle
+            return [];
+        }
+
+        return words;
     }
 
     /**

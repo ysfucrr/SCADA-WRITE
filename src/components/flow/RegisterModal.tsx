@@ -97,6 +97,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
   // Simplified state for write options
   const [controlType, setControlType] = useState<'dropdown'>('dropdown');
   const [dropdownOptions, setDropdownOptions] = useState<{ label: string, value: string }[]>([]);
+  const [writeFunctionCode, setWriteFunctionCode] = useState<'FC06' | 'FC10'>('FC06');
 
   const handleAddDropdownOption = () => {
     setDropdownOptions([...dropdownOptions, { label: '', value: '' }]);
@@ -310,6 +311,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setRegisterType(node.data.registerType || 'read');
       setControlType(node.data.controlType || 'dropdown');
       setDropdownOptions(node.data.dropdownOptions || []);
+      setWriteFunctionCode(node.data.writeFunctionCode || 'FC06');
       setOffsetValue(node.data.offsetValue || 0);
       setDecimalPlaces(node.data.decimalPlaces || 2);
 
@@ -346,6 +348,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setDecimalPlaces(2);
       setControlType('dropdown');
       setDropdownOptions([]);
+      setWriteFunctionCode('FC06'); // Reset to default
       resetIcons(); // Reset icons
     }
   }, [isOpen, node]);
@@ -440,6 +443,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         offsetValue: offsetValue !== 0 ? offsetValue : undefined,
         controlType: registerType === 'write' ? controlType : undefined,
         dropdownOptions: registerType === 'write' ? dropdownOptions : undefined,
+        writeFunctionCode: registerType === 'write' ? writeFunctionCode : undefined,
         decimalPlaces: decimalPlaces !== 2 ? decimalPlaces : undefined,
         // Add icons for boolean register (read)
         onIcon: registerType === 'read' &&dataType === 'boolean' ? onIcon : undefined,
@@ -468,6 +472,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setDecimalPlaces(2);
     setControlType('dropdown');
     setDropdownOptions([]);
+    setWriteFunctionCode('FC06'); // Reset to default
     resetIcons(); // Reset icons
     onClose();
   };
@@ -524,6 +529,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setDecimalPlaces(2);
     setControlType('dropdown');
     setDropdownOptions([]);
+    setWriteFunctionCode('FC06'); // Reset to default
     resetIcons(); // Reset icons
     onClose();
   };
@@ -705,6 +711,18 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                     className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs"
                   >
                     <option value="dropdown">Dropdown</option>
+                  </select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="writeFunctionCode">Write Function Code</Label>
+                  <select
+                    id="writeFunctionCode"
+                    value={writeFunctionCode}
+                    onChange={(e) => setWriteFunctionCode(e.target.value as 'FC06' | 'FC10')}
+                    className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
+                  >
+                    <option value="FC06">FC06 (Write Single Register)</option>
+                    <option value="FC10">FC10 (Write Multiple Registers)</option>
                   </select>
                 </div>
               </div>

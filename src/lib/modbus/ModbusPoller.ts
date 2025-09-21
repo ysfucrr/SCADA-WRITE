@@ -271,7 +271,8 @@ export class ModbusPoller extends EventEmitter {
                     scale: parseFloat(node.data?.scale) || 1,
                     byteOrder: node.data?.byteOrder,
                     bit: node.data?.bit || 0,
-                    registerType: node.data?.registerType || 'read' // 'read' veya 'write'
+                    registerType: node.data?.registerType || 'read', // 'read' veya 'write'
+                    writeFunctionCode: node.data?.writeFunctionCode || 'FC06'
                 }));
         };
         buildings.forEach((building: any) => {
@@ -631,28 +632,34 @@ export class ModbusPoller extends EventEmitter {
             throw new Error(`Analyzer with ID ${analyzerId} not found.`);
         }
 
-        const payload = {
-            registerId,
-            value,
-            analyzerId,
-            slaveId: analyzerInfo.slaveId,
-            address: register.address,
-            timeoutMs: analyzerInfo.timeoutMs,
-            // Ters dönüşüm için gerekli bilgiler
-            scale: register.scale,
-            offset: register.offset,
-            dataType: register.dataType
-        };
-
         if (analyzerInfo.connType === 'serial') {
+            // SerialPoller eski payload yapısını bekliyor, ona uygun gönder.
+            const serialPayload = {
+                registerId,
+                value,
+                analyzerId,
+                slaveId: analyzerInfo.slaveId,
+                address: register.address,
+                timeoutMs: analyzerInfo.timeoutMs,
+                scale: register.scale,
+                offset: register.offset,
+            };
             if (this.serialPoller) {
                 backendLogger.info(`Forwarding write request to SerialPoller for analyzer ${analyzerId}`, "ModbusPoller");
-                await this.serialPoller.handleWriteRequest(payload);
+                await this.serialPoller.handleWriteRequest(serialPayload as any); // cast as any to bypass strict type check for now
             } else {
                 backendLogger.error("SerialPoller is not initialized. Cannot handle write request.", "ModbusPoller");
                 throw new Error("SerialPoller is not available.");
             }
         } else { // TCP
+            // PollingEngine'in encode metodunu kullanabilmesi için tüm register nesnesini gönderiyoruz.
+            const tcpPayload = {
+                register, // The whole register object
+                value,
+                analyzerId, // Keep for convenience
+                slaveId: analyzerInfo.slaveId,
+                timeoutMs: analyzerInfo.timeoutMs
+            };
             const workerIndex = this.analyzerToWorker.get(analyzerId);
             if (workerIndex === undefined) {
                 backendLogger.error(`Cannot handle write request. TCP Analyzer ${analyzerId} is not assigned to any worker.`, "ModbusPoller");
@@ -662,7 +669,7 @@ export class ModbusPoller extends EventEmitter {
             backendLogger.info(`Forwarding write request to worker ${workerIndex} for analyzer ${analyzerId}`, "ModbusPoller");
             worker.postMessage({
                 type: 'WRITE_REGISTER',
-                payload: payload
+                payload: tcpPayload
             });
         }
     }

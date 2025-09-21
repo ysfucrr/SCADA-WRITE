@@ -853,18 +853,19 @@ export class PollingEngine extends EventEmitter {
 
 
     public async handleWriteRequest(payload: {
-        registerId: string;
+        register: any; // The full register object from the poller
         value: number;
         analyzerId: string;
         slaveId: number;
-        address: number;
         timeoutMs: number;
-        scale: number;
-        offset: number;
     }): Promise<void> {
-        const { analyzerId, slaveId, address, value, timeoutMs, scale, offset } = payload;
-        const analyzer = this.analyzers.get(analyzerId);
+        const { analyzerId, slaveId, value, timeoutMs } = payload;
 
+        // Worker'dan gelen düz objeyi Register sınıfı instance'ına dönüştür.
+        // Bu sayede .encode() gibi metodları kullanabiliriz.
+        const register = new Register(payload.register);
+
+        const analyzer = this.analyzers.get(analyzerId);
         if (!analyzer) {
             backendLogger.error(`TCP write failed: Analyzer ${analyzerId} not found in PollingEngine.`, "PollingEngine");
             throw new Error(`Analyzer ${analyzerId} not found.`);
@@ -877,19 +878,21 @@ export class PollingEngine extends EventEmitter {
         }
 
         try {
-            // Değeri cihaza yazmadan önce ters dönüşüm uygula
-            const rawValue = Math.round((value / (scale || 1)) - (offset || 0));
+            // Değeri, veri tipine göre 16-bit word dizisine dönüştür (örn: Float32 -> 2 word)
+            const wordsToWrite = register.encode(value);
 
-            backendLogger.info(`Executing TCP write for ${analyzer.name}: addr=${address}, rawValue=${rawValue} (from ${value})`, "PollingEngine");
+            if (!wordsToWrite || wordsToWrite.length === 0) {
+                throw new Error(`Failed to encode value for register ${register.id} (dataType: ${register.dataType})`);
+            }
             
-            await connection.writeHoldingRegister(slaveId, address, rawValue, timeoutMs);
+            const fc = wordsToWrite.length > 1 ? 'FC10' : register.writeFunctionCode;
+            backendLogger.info(`Executing TCP write for ${analyzer.name}: addr=${register.addr}, words=[${wordsToWrite.join(', ')}] (from value ${value}), FC=${fc}`, "PollingEngine");
+
+            // Her zaman writeHoldingRegisters (FC10) kullanmak daha evrensel ve güvenli.
+            // Tek bir değer yazarken bile bunu destekler.
+            await connection.writeHoldingRegisters(slaveId, register.addr, wordsToWrite, timeoutMs);
             
             backendLogger.info(`TCP write successful for analyzer ${analyzer.name}`, "PollingEngine");
-
-            // Optional: After a successful write, you might want to trigger an immediate read
-            // to update the state in the UI instantly. This can be done by calling
-            // pollNextBlockForAnalyzer or a similar method.
-            // this.pollNextBlockForAnalyzer(analyzer, connection, this.analyzerPollState.get(analyzer.id)!.pollVersion);
 
         } catch (error) {
             backendLogger.error(`TCP write failed for analyzer ${analyzer.name}`, "PollingEngine", { error: (error as Error).message });
