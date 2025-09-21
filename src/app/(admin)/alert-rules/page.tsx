@@ -220,7 +220,7 @@ const AlertRulesPage: React.FC = () => {
 
                                 if (rule.ruleType === 'value') {
                                     const register = registers.find(r => r.id === rule.registerId);
-                                    targetName = register ? `${register.analyzerName} - ${register.name}` : `Unknown Register`;
+                                    targetName = register ? `${register.analyzerName} (Addr: ${register.address})` : `Unknown Register`;
                                     conditionDisplay = `Value ${rule.condition === 'gt' ? '>' : '<'} ${rule.threshold}`;
                                 } else if (rule.ruleType === 'connection') {
                                     const gateway = gateways.find(g => g._id === rule.gatewayId);
