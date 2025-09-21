@@ -46,6 +46,7 @@ const AlertRulesPage: React.FC = () => {
     const [rules, setRules] = useState<AlertRule[]>([]);
     const [registers, setRegisters] = useState<UIRegister[]>([]);
     const [gateways, setGateways] = useState<UIGateway[]>([]);
+    const [mailSettings, setMailSettings] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentRule, setCurrentRule] = useState<Partial<AlertRule>>({ ruleType: 'value' });
@@ -53,17 +54,19 @@ const AlertRulesPage: React.FC = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [rulesRes, gatewaysRes, unitsRes, analyzersRes] = await Promise.all([
+            const [rulesRes, gatewaysRes, unitsRes, analyzersRes, mailRes] = await Promise.all([
                 axios.get('/api/alert-rules'),
                 axios.get('/api/gateway'),
                 axios.get('/api/units'),
-                axios.get('/api/analyzers')
+                axios.get('/api/analyzers'),
+                axios.get('/api/mail-settings')
             ]);
 
             const rulesData = rulesRes.data;
             const gatewaysData = gatewaysRes.data;
             const buildingsData = unitsRes.data.buildings;
             const analyzersData = analyzersRes.data;
+            const mailData = mailRes.data;
 
             const allRegisters: UIRegister[] = [];
             if (buildingsData) {
@@ -104,6 +107,7 @@ const AlertRulesPage: React.FC = () => {
             
             setRules(rulesData);
             setGateways(gatewaysData);
+            setMailSettings(mailData);
             setRegisters(allRegisters.sort((a,b) => a.analyzerName.localeCompare(b.analyzerName) || a.address - b.address));
 
         } catch (error) {
@@ -119,6 +123,10 @@ const AlertRulesPage: React.FC = () => {
     }, [fetchData]);
 
     const handleOpenModal = (rule: AlertRule | null = null) => {
+        if (!mailSettings || Object.keys(mailSettings).length === 0) {
+            Swal.fire('Warning', 'Please add mail settings first.', 'warning');
+            return;
+        }
         if (rule) {
             setCurrentRule({ ...rule });
         } else {
