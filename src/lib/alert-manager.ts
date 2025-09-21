@@ -129,6 +129,7 @@ class AlertManager {
         const subject = `Alert: ${rule.name}`;
         const text = rule.message.replace('{value}', String(value)).replace('{ruleName}', rule.name).replace('{threshold}', String(rule.threshold));
         
+        await mailService.reloadSettings();
         const mailSent = await mailService.sendMail(subject, text);
         
         if (mailSent) {
@@ -203,6 +204,7 @@ class AlertManager {
     backendLogger.info(`Connection rule triggered: ${rule.name}`, 'AlertManager', { gatewayId, status });
     const subject = `Alert: ${rule.name}`;
     const text = rule.message.replace('{status}', status).replace('{ruleName}', rule.name);
+    await mailService.reloadSettings();
     await mailService.sendMail(subject, text);
     // this.updateLastTriggered(rule._id!); // This is no longer needed as state is in-memory
   }
