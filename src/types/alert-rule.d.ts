@@ -1,8 +1,8 @@
 import { ObjectId } from 'mongodb';
 
-export type RuleType = 'value' | 'connection';
+export type RuleType = 'value' | 'connection' | 'bit';
 
-export type ValueCondition = 'gt' | 'lt';
+export type ValueCondition = 'gt' | 'lt' | 'eq';
 export type ConnectionCondition = 'disconnected' | 'connected';
 
 export interface BaseRule {
@@ -27,4 +27,11 @@ export interface ConnectionRule extends BaseRule {
   condition: ConnectionCondition;
 }
 
-export type AlertRule = ValueRule | ConnectionRule;
+export interface BitRule extends BaseRule {
+  ruleType: 'bit';
+  registerId: string;
+  bitPosition: number; // 0-31
+  bitValue: 0 | 1; // Expected bit value
+}
+
+export type AlertRule = ValueRule | ConnectionRule | BitRule;

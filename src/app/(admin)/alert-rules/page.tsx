@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { AlertRule, ValueRule, ConnectionRule, RuleType, ValueCondition, ConnectionCondition } from '@/types/alert-rule';
+import { AlertRule, ValueRule, ConnectionRule, BitRule, RuleType, ValueCondition, ConnectionCondition } from '@/types/alert-rule';
 import PageBreadcrumb from '@/components/common/PageBreadCrumb';
 import { Button, OutlineButton } from '@/components/ui/button/CustomButton';
 import { Modal } from '@/components/ui/modal';
@@ -156,8 +156,12 @@ const AlertRulesPage: React.FC = () => {
             };
             if (newType === 'value') {
                 return { ...commonFields, ruleType: 'value', condition: 'gt', registerId: '', threshold: 0 };
-            } else {
+            } else if (newType === 'connection') {
                 return { ...commonFields, ruleType: 'connection', condition: 'disconnected', gatewayId: '' };
+            } else if (newType === 'bit') {
+                return { ...commonFields, ruleType: 'bit', registerId: '', bitPosition: 0, bitValue: 1 };
+            } else {
+                return commonFields;
             }
         });
     };
@@ -197,9 +201,9 @@ const AlertRulesPage: React.FC = () => {
     
     const registerOptions = registers.map(reg => ({ value: reg.id, label: `${reg.analyzerName} (Addr: ${reg.address})`}));
     const gatewayOptions = gateways.map(gw => ({ value: gw._id, label: gw.name }));
-    const valueConditionOptions = [ { value: 'gt', label: 'Greater Than (>)'}, { value: 'lt', label: 'Less Than (<)'} ];
+    const valueConditionOptions = [ { value: 'gt', label: 'Greater Than (>)'}, { value: 'lt', label: 'Less Than (<)'}, { value: 'eq', label: 'Equals (=)'} ];
     const connectionConditionOptions = [ { value: 'disconnected', label: 'Disconnected'}, { value: 'connected', label: 'Connected'} ];
-    const ruleTypeOptions = [{value: 'value', label: 'Value Based'}, {value: 'connection', label: 'Connection Based'}];
+    const ruleTypeOptions = [{value: 'value', label: 'Value Based'}, {value: 'connection', label: 'Connection Based'}, {value: 'bit', label: 'Bit Based'}];
 
     if (loading) return <Spinner variant="bars" fullPage />;
 
@@ -229,11 +233,15 @@ const AlertRulesPage: React.FC = () => {
                                 if (rule.ruleType === 'value') {
                                     const register = registers.find(r => r.id === rule.registerId);
                                     targetName = register ? `${register.analyzerName} (Addr: ${register.address})` : `Unknown Register`;
-                                    conditionDisplay = `Value ${rule.condition === 'gt' ? '>' : '<'} ${rule.threshold}`;
+                                    conditionDisplay = `Value ${rule.condition === 'gt' ? '>' : rule.condition === 'lt' ? '<' : '='} ${rule.threshold}`;
                                 } else if (rule.ruleType === 'connection') {
                                     const gateway = gateways.find(g => g._id === rule.gatewayId);
                                     targetName = gateway ? `Gateway: ${gateway.name}`: `Unknown Gateway`;
                                     conditionDisplay = `Status is ${rule.condition}`;
+                                } else if (rule.ruleType === 'bit') {
+                                    const register = registers.find(r => r.id === rule.registerId);
+                                    targetName = register ? `${register.analyzerName} (Addr: ${register.address})` : `Unknown Register`;
+                                    conditionDisplay = `Bit ${rule.bitPosition} is ${rule.bitValue ? 'Set' : 'Clear'}`;
                                 }
                                 return (
                                     <tr key={rule._id?.toString()} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -302,10 +310,29 @@ const AlertRulesPage: React.FC = () => {
                              </div>
                         )}
 
+                        {currentRule.ruleType === 'bit' && (
+                             <div className="flex flex-col gap-2">
+                                <div className="flex flex-col gap-1">
+                                    <Label>Register</Label>
+                                    <Select options={registerOptions} defaultValue={(currentRule as Partial<BitRule>).registerId} onChange={v => setCurrentRule(p => ({...p, registerId: v}))} placeholder="Select a Register"/>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="flex flex-col gap-1">
+                                        <Label htmlFor="bitPosition">Bit Position (0-31)</Label>
+                                        <Input id="bitPosition" type="number" min="0" max="31" value={(currentRule as Partial<BitRule>).bitPosition || 0} onChange={e => setCurrentRule(p => ({...p, bitPosition: parseInt(e.target.value, 10) || 0}))} />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <Label>Expected Bit Value</Label>
+                                        <Select options={[{value: '1', label: '1 (True/On/Set)'}, {value: '0', label: '0 (False/Off/Clear)'}]} defaultValue={(currentRule as Partial<BitRule>).bitValue?.toString()} onChange={v => setCurrentRule(p => ({...(p as Partial<BitRule>), bitValue: parseInt(v, 10) as 0 | 1}))}/>
+                                    </div>
+                                </div>
+                             </div>
+                        )}
+
                         <div className="flex flex-col gap-1">
                              <Label>Alert Message</Label>
                              <Textarea value={currentRule.message || ''} onChange={v => setCurrentRule(p => ({...p, message: v}))} rows={3}/>
-                             <p className="text-xs text-gray-500 dark:text-gray-400">Placeholders: {'{ruleName}'}, {'{targetName}'}, {'{value}'}, {'{threshold}'}, {'{status}'}</p>
+                             <p className="text-xs text-gray-500 dark:text-gray-400">Placeholders: {'{ruleName}'}, {'{targetName}'}, {'{value}'}, {'{threshold}'}, {'{status}'}, {'{bitPosition}'}, {'{bitValue}'}</p>
                         </div>
                         <div className="flex items-center gap-2">
                            <Checkbox id="enabled" label="Enable this rule" checked={!!currentRule.enabled} onChange={c => setCurrentRule(p => ({...p, enabled: c}))} />

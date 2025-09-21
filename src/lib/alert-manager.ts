@@ -1,5 +1,5 @@
 import { connectToDatabase } from './mongodb';
-import { AlertRule, ConnectionRule, ValueRule } from '@/types/alert-rule';
+import { AlertRule, ConnectionRule, ValueRule, BitRule } from '@/types/alert-rule';
 import { mailService } from './mail-service';
 import { backendLogger } from './logger/BackendLogger';
 import { ModbusPoller } from './modbus/ModbusPoller'; // We need the type
@@ -14,6 +14,8 @@ interface ConnectionState {
 class AlertManager {
   private valueRules: Map<string, ValueRule[]> = new Map();
   private connectionRules: Map<string, ConnectionRule[]> = new Map();
+  private bitRules: Map<string, BitRule[]> = new Map();
+  private monitoredRegisters: Set<string> = new Set();
   private connectionStates: Map<string, ConnectionState> = new Map(); // Tracks the state of each gateway
   private processingRules: Set<string> = new Set(); // Tracks rule IDs currently being processed to prevent race conditions
   private valueRuleCooldowns: Map<string, Date> = new Map(); // In-memory cooldowns for value rules
@@ -38,6 +40,8 @@ class AlertManager {
       const rules = await db.collection('alert_rules').find<AlertRule>({ enabled: true }).toArray();
       this.valueRules.clear();
       this.connectionRules.clear();
+      this.bitRules.clear();
+      this.monitoredRegisters.clear();
 
       rules.forEach(rule => {
         if (rule.ruleType === 'value') {
@@ -50,8 +54,21 @@ class AlertManager {
             this.connectionRules.set(rule.gatewayId, []);
           }
           this.connectionRules.get(rule.gatewayId)!.push(rule);
+        } else if (rule.ruleType === 'bit') {
+          if (!this.bitRules.has(rule.registerId)) {
+            this.bitRules.set(rule.registerId, []);
+          }
+          this.bitRules.get(rule.registerId)!.push(rule);
+          this.monitoredRegisters.add(rule.registerId);
+          backendLogger.info(`Loaded bit rule: ${rule.name} for register ${rule.registerId}, bit ${rule.bitPosition}, value ${rule.bitValue}`, 'AlertManager');
         }
       });
+
+      // Add value rule registers
+      for (const registerId of this.valueRules.keys()) {
+        this.monitoredRegisters.add(registerId);
+      }
+      // Bit rules already added
       //backendLogger.info(`${rules.length} alert rules loaded.`, 'AlertManager');
     } catch (error) {
       backendLogger.error('Failed to load alert rules.', 'AlertManager', { error: (error as Error).message });
@@ -63,8 +80,11 @@ class AlertManager {
   }
 
   public listenForUpdates(poller: ModbusPoller) {
-    poller.on('registerUpdated', (data: { id: string; value: number }) => {
+    poller.on('registerUpdated', (data: { id: string; value: any }) => {
+      if (!this.monitoredRegisters.has(data.id)) return;
+      //backendLogger.info(`[ALERT-DEBUG] Register updated: ${data.id} = ${data.value}`, 'AlertManager');
       this.checkValueRules(data.id, data.value);
+      this.checkBitRules(data.id, data.value);
     });
 
     poller.on('connectionStatusChanged', (data: { gatewayId: string; status: GatewayStatus; connectionId?: string }) => {
@@ -94,13 +114,81 @@ class AlertManager {
     }
   }
 
-  private async checkValueRules(registerId: string, value: number) {
-    const rulesForRegister = this.valueRules.get(registerId);
+  private async checkBitRules(registerId: string, value: any) {
+    const rulesForRegister = this.bitRules.get(registerId);
     if (!rulesForRegister) return;
+
+    // Convert value to number for bit operations
+    let numValue: number;
+    if (typeof value === 'boolean') {
+      numValue = value ? 1 : 0;
+    } else if (typeof value === 'string') {
+      const lower = value.toLowerCase();
+      numValue = (lower === 'true' || lower === 'on' || lower === '1') ? 1 : 0;
+    } else {
+      numValue = Number(value) || 0;
+    }
+
+    backendLogger.info(`[BIT-DEBUG] Checking bit rules for register ${registerId}, value: ${value} (${typeof value}), numValue: ${numValue}`, 'AlertManager');
 
     for (const rule of rulesForRegister) {
       const ruleId = rule._id!.toString();
-      const triggered = (rule.condition === 'gt' && value > rule.threshold) || (rule.condition === 'lt' && value < rule.threshold);
+      const bitValue = (numValue >> rule.bitPosition) & 1;
+      const triggered = bitValue === rule.bitValue;
+
+      backendLogger.info(`[BIT-DEBUG] Rule ${rule.name}: bitPosition ${rule.bitPosition}, expected ${rule.bitValue}, got ${bitValue}, triggered: ${triggered}`, 'AlertManager');
+
+      if (!triggered) {
+        // Reset cooldown if not triggered
+        this.valueRuleCooldowns.delete(ruleId);
+        continue;
+      }
+
+      if (this.processingRules.has(ruleId)) {
+        continue;
+      }
+
+      const lastSent = this.valueRuleCooldowns.get(ruleId);
+      const cooldown = 10 * 60 * 1000; // 10 minutes
+      if (lastSent && new Date().getTime() - lastSent.getTime() < cooldown) {
+        continue;
+      }
+
+      this.processingRules.add(ruleId);
+      try {
+        backendLogger.info(`Bit rule triggered: ${rule.name}`, 'AlertManager', { registerId, value: numValue, bitPosition: rule.bitPosition, bitValue });
+        const subject = `Alert: ${rule.name}`;
+        const text = rule.message.replace('{value}', String(numValue)).replace('{ruleName}', rule.name).replace('{bitPosition}', String(rule.bitPosition)).replace('{bitValue}', String(rule.bitValue));
+
+        const mailSent = await mailService.sendMail(subject, text);
+
+        if (mailSent) {
+          this.valueRuleCooldowns.set(ruleId, new Date());
+        }
+      } finally {
+        this.processingRules.delete(ruleId);
+      }
+    }
+  }
+
+  private async checkValueRules(registerId: string, value: any) {
+    const rulesForRegister = this.valueRules.get(registerId);
+    if (!rulesForRegister) return;
+
+    // Convert value to number for comparisons
+    let numValue: number;
+    if (typeof value === 'boolean') {
+      numValue = value ? 1 : 0;
+    } else if (typeof value === 'string') {
+      const lower = value.toLowerCase();
+      numValue = (lower === 'true' || lower === 'on' || lower === '1') ? 1 : 0;
+    } else {
+      numValue = Number(value) || 0;
+    }
+
+    for (const rule of rulesForRegister) {
+      const ruleId = rule._id!.toString();
+      const triggered = (rule.condition === 'gt' && numValue > rule.threshold) || (rule.condition === 'lt' && numValue < rule.threshold) || (rule.condition === 'eq' && numValue === rule.threshold);
       
       if (!triggered) {
         // Condition is not met, so reset the cooldown for this rule.
@@ -125,9 +213,9 @@ class AlertManager {
 
       this.processingRules.add(ruleId);
       try {
-        backendLogger.info(`Value rule triggered: ${rule.name}`, 'AlertManager', { registerId, value });
+        backendLogger.info(`Value rule triggered: ${rule.name}`, 'AlertManager', { registerId, value: numValue });
         const subject = `Alert: ${rule.name}`;
-        const text = rule.message.replace('{value}', String(value)).replace('{ruleName}', rule.name).replace('{threshold}', String(rule.threshold));
+        const text = rule.message.replace('{value}', String(numValue)).replace('{ruleName}', rule.name).replace('{threshold}', String(rule.threshold));
         
         await mailService.reloadSettings();
         const mailSent = await mailService.sendMail(subject, text);
