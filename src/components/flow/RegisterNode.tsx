@@ -29,16 +29,20 @@ interface RegisterNodeData {
   analyzerId?: string | number;
   displayMode?: 'digit' | 'graph';
   registerType?: 'read' | 'write';
+  controlType?: 'dropdown' | 'button';
   dropdownOptions?: { label: string, value: string }[];
-  onIcon?: string; 
+  onValue?: string;
+  offValue?: string;
+  onIcon?: string;
   offIcon?: string;
   onEdit?: () => void;
   onDelete?: () => void;
 }
 
  const RegisterNode = memo((node: NodeProps<RegisterNodeData>) => {
-  const { label, address, dataType, fontFamily, scale, scaleUnit, font = 1, byteOrder, backgroundColor = '#000000', textColor = '#ffffff', opacity, bit, analyzerId = '1', displayMode = 'digit', registerType = 'read', dropdownOptions, onIcon, offIcon } = node.data;
-  const [value, setValue] = useState<string | number>('--' );
+  const { label, address, dataType, fontFamily, scale, scaleUnit, font = 1, byteOrder, backgroundColor = '#000000', textColor = '#ffffff', opacity, bit, analyzerId = '1', displayMode = 'digit', registerType = 'read', controlType = 'dropdown', dropdownOptions, onValue = '1', offValue = '0', onIcon, offIcon } = node.data;
+  const [value, setValue] = useState<string | number>('--' ); // For display
+  const [rawValue, setRawValue] = useState<any>(null); // For state logic
   const [isLoading, setIsLoading] = useState(true);
   const textRef = useRef<HTMLDivElement | null>(null);
   const booleanTextRef = useRef<HTMLDivElement | null>(null);
@@ -74,10 +78,10 @@ interface RegisterNodeData {
 
   // WebSocket ile register izlemeyi başlat
   useEffect(() => {
-    // Yazma tipi register'lar için hiçbir watch işlemi yapma ve hemen çık.
-    if (registerType === 'write') {
+    // Dropdown tipi write register'lar için hiçbir watch işlemi yapma.
+    if (registerType === 'write' && controlType === 'dropdown') {
       setIsLoading(false);
-      setValue(label);
+      setValue(label); // Sadece etiketi göster
       return;
     }
 
@@ -90,7 +94,7 @@ interface RegisterNodeData {
 
     setIsLoading(true);
 
-    // Sadece 'read' tipi register'lar için izlemeyi başlat.
+    // 'read' veya 'write-button' tipleri için izlemeyi başlat.
     const register = {
       registerId: node.id,
       analyzerId: analyzerId,
@@ -102,14 +106,20 @@ interface RegisterNodeData {
       bit,
       registerType
     };
+    
+    // İşlenmemiş değeri state'te tutmak için ayrı bir callback
+    const rawValueCallback = (currentVal: any) => {
+      setRawValue(currentVal);
+      formatValue(currentVal); // Görüntüyü de formatla
+    };
 
-    watchRegister(register, formatValue);
+    watchRegister(register, rawValueCallback);
     
     // Component unmount olduğunda izlemeyi bırak.
     return () => {
-      unwatchRegister(register, formatValue);
+      unwatchRegister(register, rawValueCallback);
     };
-  }, [address, dataType, scale, byteOrder, bit, analyzerId, isConnected, watchRegister, unwatchRegister, registerType, label, node.id]);
+  }, [address, dataType, scale, byteOrder, bit, analyzerId, isConnected, watchRegister, unwatchRegister, registerType, controlType, label, node.id]);
 
   // Font boyutu hesaplama fonksiyonu
   const calculateFontSize = (element: HTMLDivElement, textValue: string | number) => {
@@ -209,7 +219,7 @@ interface RegisterNodeData {
           borderRadius: '5px',
         }}
       >
-        {registerType === 'write' ? (
+        {registerType === 'write' && controlType === 'dropdown' ? (
           <div className="flex flex-col w-full h-full"
             style={{ backgroundColor: hexToRgba(backgroundColor, opacity! / 100) }}>
             <div className="text-center p-2 w-full">
@@ -220,7 +230,7 @@ interface RegisterNodeData {
             
             <div className="flex-grow flex flex-col items-center justify-center px-4 w-full">
               <select
-                id="registerValueSelect"
+                id={`select-${node.id}`}
                 className="w-full text-base rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 px-4 py-3 mb-4"
                 style={{
                   minWidth: "90%",
@@ -237,7 +247,7 @@ interface RegisterNodeData {
               
               <button
                 onClick={() => {
-                  const selectElement = document.getElementById('registerValueSelect') as HTMLSelectElement;
+                  const selectElement = document.getElementById(`select-${node.id}`) as HTMLSelectElement;
                   if (selectElement && selectElement.value) {
                     handleWrite(Number(selectElement.value));
                     selectElement.value = ""; // Reset selection after write
@@ -254,6 +264,30 @@ interface RegisterNodeData {
               </button>
             </div>
           </div>
+        ) : registerType === 'write' && controlType === 'button' ? (
+          <button
+            onClick={() => {
+              const numericOnValue = Number(onValue);
+              const valueToSend = rawValue === numericOnValue ? Number(offValue) : numericOnValue;
+              handleWrite(valueToSend);
+            }}
+            className="w-full h-full p-0 border-none bg-transparent cursor-pointer flex items-center justify-center"
+            style={{ backgroundColor: hexToRgba(backgroundColor, opacity! / 100) }}
+            >
+            {(onIcon || offIcon) ? (
+              <Image
+                src={rawValue === Number(onValue) ? onIcon! : offIcon!}
+                alt={rawValue === Number(onValue) ? 'ON' : 'OFF'}
+                fill
+                className="object-contain p-2"
+                priority
+              />
+            ) : (
+                <div className="text-center font-bold" style={{ color: textColor }}>
+                {rawValue === Number(onValue) ? (label.toUpperCase() + ' ON') : (label.toUpperCase() + ' OFF')}
+              </div>
+            )}
+          </button>
         ) : displayMode === 'digit' ? (
           dataType === 'boolean' && (onIcon || offIcon) ? (
             <div className="w-full h-full flex items-center justify-center p-2">

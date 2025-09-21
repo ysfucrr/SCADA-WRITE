@@ -25,6 +25,7 @@ export interface RegisterConfig {
     offIcon?: string; // OFF durumu için ikon URL veya yolu
     registerType?: 'read' | 'write';
     writeFunctionCode?: 'FC06' | 'FC10';
+    controlType?: 'dropdown' | 'button';
 }
 
 // ────────── Temel Sınıflar ──────────
@@ -49,6 +50,7 @@ export class Register {
     offIcon?: string; // OFF durumu için ikon URL veya yolu
     registerType: 'read' | 'write';
     writeFunctionCode: 'FC06' | 'FC10';
+    controlType: 'dropdown' | 'button';
     value: any = null;
     missCount: number = 0;
     lastUpdated: number = 0;
@@ -82,6 +84,7 @@ export class Register {
         this.offIcon = config.offIcon;
         this.registerType = config.registerType || 'read'; // Varsayılan olarak 'read'
         this.writeFunctionCode = config.writeFunctionCode || 'FC06'; // Varsayılan olarak FC06
+        this.controlType = config.controlType || 'dropdown';
     }
 
     /**

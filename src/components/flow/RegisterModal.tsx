@@ -95,9 +95,11 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
   const offIconInputRef = useRef<HTMLInputElement>(null);
   
   // Simplified state for write options
-  const [controlType, setControlType] = useState<'dropdown'>('dropdown');
+  const [controlType, setControlType] = useState<'dropdown' | 'button'>('dropdown');
   const [dropdownOptions, setDropdownOptions] = useState<{ label: string, value: string }[]>([]);
   const [writeFunctionCode, setWriteFunctionCode] = useState<'FC06' | 'FC10'>('FC06');
+  const [onValue, setOnValue] = useState<string>('1');
+  const [offValue, setOffValue] = useState<string>('0');
 
   const handleAddDropdownOption = () => {
     setDropdownOptions([...dropdownOptions, { label: '', value: '' }]);
@@ -312,6 +314,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setControlType(node.data.controlType || 'dropdown');
       setDropdownOptions(node.data.dropdownOptions || []);
       setWriteFunctionCode(node.data.writeFunctionCode || 'FC06');
+      setOnValue(node.data.onValue || '1');
+      setOffValue(node.data.offValue || '0');
       setOffsetValue(node.data.offsetValue || 0);
       setDecimalPlaces(node.data.decimalPlaces || 2);
 
@@ -349,6 +353,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
       setControlType('dropdown');
       setDropdownOptions([]);
       setWriteFunctionCode('FC06'); // Reset to default
+      setOnValue('1');
+      setOffValue('0');
       resetIcons(); // Reset icons
     }
   }, [isOpen, node]);
@@ -442,12 +448,13 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
         registerType,
         offsetValue: offsetValue !== 0 ? offsetValue : undefined,
         controlType: registerType === 'write' ? controlType : undefined,
-        dropdownOptions: registerType === 'write' ? dropdownOptions : undefined,
+        dropdownOptions: registerType === 'write' && controlType === 'dropdown' ? dropdownOptions : undefined,
         writeFunctionCode: registerType === 'write' ? writeFunctionCode : undefined,
+        onValue: registerType === 'write' && controlType === 'button' ? onValue : undefined,
+        offValue: registerType === 'write' && controlType === 'button' ? offValue : undefined,
+        onIcon: (registerType === 'read' && dataType === 'boolean') || (registerType === 'write' && controlType === 'button') ? onIcon : undefined,
+        offIcon: (registerType === 'read' && dataType === 'boolean') || (registerType === 'write' && controlType === 'button') ? offIcon : undefined,
         decimalPlaces: decimalPlaces !== 2 ? decimalPlaces : undefined,
-        // Add icons for boolean register (read)
-        onIcon: registerType === 'read' &&dataType === 'boolean' ? onIcon : undefined,
-        offIcon: registerType === 'read' && dataType === 'boolean' ? offIcon : undefined,
       },
     };
     //console.log("register data:", registerData);
@@ -473,6 +480,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setControlType('dropdown');
     setDropdownOptions([]);
     setWriteFunctionCode('FC06'); // Reset to default
+    setOnValue('1');
+    setOffValue('0');
     resetIcons(); // Reset icons
     onClose();
   };
@@ -530,6 +539,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     setControlType('dropdown');
     setDropdownOptions([]);
     setWriteFunctionCode('FC06'); // Reset to default
+    setOnValue('1');
+    setOffValue('0');
     resetIcons(); // Reset icons
     onClose();
   };
@@ -711,6 +722,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                     className="h-11 w-full appearance-none rounded-lg border border-gray-300 px-4 py-2.5 pr-11 text-sm shadow-theme-xs"
                   >
                     <option value="dropdown">Dropdown</option>
+                    <option value="button">Button</option>
                   </select>
                 </div>
                 <div className="grid gap-2">
@@ -761,14 +773,36 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
             </div>
           )}
 
-          {/* Boolean Icons Section - show only for read-only boolean */}
-          {registerType === 'read' && dataType === 'boolean' && (
-            <div className="mt-6">
-              <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
-                Boolean Icons
-              </Typography>
+          {/* Button Control Type Settings */}
+          {registerType === 'write' && controlType === 'button' && (
+            <div className="mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="onValue">Value for ON state</Label>
+                  <Input
+                    id="onValue"
+                    type="text"
+                    value={onValue}
+                    onChange={(e) => setOnValue(e.target.value)}
+                    placeholder="e.g., 1"
+                    className="text-black dark:text-white"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="offValue">Value for OFF state</Label>
+                  <Input
+                    id="offValue"
+                    type="text"
+                    value={offValue}
+                    onChange={(e) => setOffValue(e.target.value)}
+                    placeholder="e.g., 0"
+                    className="text-black dark:text-white"
+                  />
+                </div>
+              </div>
+              
+              {/* Re-using Boolean Icons Section for Button */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* ON Icon Upload */}
                 <div className="grid gap-2">
                   <Label htmlFor="onIcon">ON Icon</Label>
                   <div className="flex gap-2">
@@ -944,6 +978,71 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
                   <Typography className="text-sm text-gray-500">
                     Icon to be displayed in Boolean "OFF" state
                   </Typography>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Boolean Icons Section (for read-only boolean) */}
+          {registerType === 'read' && dataType === 'boolean' && (
+            <div className="mt-6">
+              <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+                Boolean Icons
+              </Typography>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* ON Icon Upload */}
+                <div className="grid gap-2">
+                  <Label htmlFor="onIconBoolean">ON Icon</Label>
+                  <div className="flex gap-2">
+                    <div className="relative w-20 h-20 border-dashed border-2 border-gray-300 rounded-md flex items-center justify-center">
+                      {onIconPreview ? (
+                        <div className="relative w-full h-full">
+                          <Image
+                            src={onIconPreview}
+                            alt="ON Icon"
+                            className="max-w-full max-h-full p-1 object-contain"
+                            fill
+                            priority
+                          />
+                        </div>
+                      ) : (
+                        <Typography className="text-sm text-gray-500">Icon</Typography>
+                      )}
+                    </div>
+                    <div className="flex flex-col justify-center gap-1">
+                      <Button variant="secondary" size="sm" onClick={() => onIconInputRef.current?.click()}>Select Icon</Button>
+                      {onIconPreview && <Button variant="secondary" size="sm" onClick={() => { setOnIcon(''); setOnIconPreview(''); }}>Delete</Button>}
+                    </div>
+                    <input type="file" ref={onIconInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleOnIconChange} />
+                  </div>
+                  <Typography className="text-sm text-gray-500">Icon for ON state</Typography>
+                </div>
+                {/* OFF Icon Upload */}
+                <div className="grid gap-2">
+                  <Label htmlFor="offIconBoolean">OFF Icon</Label>
+                  <div className="flex gap-2">
+                    <div className="relative w-20 h-20 border-dashed border-2 border-gray-300 rounded-md flex items-center justify-center">
+                      {offIconPreview ? (
+                        <div className="relative w-full h-full">
+                          <Image
+                            src={offIconPreview}
+                            alt="OFF Icon"
+                            className="max-w-full max-h-full p-1 object-contain"
+                            fill
+                            priority
+                          />
+                        </div>
+                      ) : (
+                        <Typography className="text-sm text-gray-500">Icon</Typography>
+                      )}
+                    </div>
+                    <div className="flex flex-col justify-center gap-1">
+                      <Button variant="secondary" size="sm" onClick={() => offIconInputRef.current?.click()}>Select Icon</Button>
+                      {offIconPreview && <Button variant="secondary" size="sm" onClick={() => { setOffIcon(''); setOffIconPreview(''); }}>Delete</Button>}
+                    </div>
+                    <input type="file" ref={offIconInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleOffIconChange} />
+                  </div>
+                  <Typography className="text-sm text-gray-500">Icon for OFF state</Typography>
                 </div>
               </div>
             </div>

@@ -649,8 +649,8 @@ export class PollingEngine extends EventEmitter {
 
     private createBlocksForAnalyzer(analyzerId: string): void {
         const analyzerRegisters = Array.from(this.registers.values()).filter(r => r.analyzerId === analyzerId);
-        // Sadece 'read' tipi register'ları poll bloklarına dahil et
-        const readRegisters = analyzerRegisters.filter(r => r.registerType === 'read');
+        // 'read' tipi register'ları VEYA 'write' olup kontrol tipi 'button' olanları poll bloklarına dahil et
+        const readRegisters = analyzerRegisters.filter(r => r.registerType === 'read' || (r.registerType === 'write' && r.controlType === 'button'));
         
         if(readRegisters.length < analyzerRegisters.length) {
             backendLogger.info(`Analyzer ${analyzerId}: Found ${analyzerRegisters.length} total registers, but only polling ${readRegisters.length} ('read' type).`, "PollingEngine");
