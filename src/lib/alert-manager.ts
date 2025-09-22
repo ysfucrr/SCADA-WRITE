@@ -99,7 +99,7 @@ class AlertManager {
         const changeStream = db.collection('alert_rules').watch();
 
         changeStream.on('change', (change) => {
-            backendLogger.info('Change detected in alert_rules collection, reloading rules.', 'AlertManager', { changeType: change.operationType });
+            //backendLogger.info('Change detected in alert_rules collection, reloading rules.', 'AlertManager', { changeType: change.operationType });
             // Debounce the reload to handle multiple quick changes
             if (this.configUpdateTimeout) {
                 clearTimeout(this.configUpdateTimeout);

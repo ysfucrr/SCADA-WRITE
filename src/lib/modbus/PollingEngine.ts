@@ -896,7 +896,7 @@ export class PollingEngine extends EventEmitter {
                 await connection.writeHoldingRegisters(slaveId, register.addr, wordsToWrite, timeoutMs);
             }
             
-            backendLogger.info(`TCP write successful for analyzer ${analyzer.name}`, "PollingEngine");
+            //backendLogger.info(`TCP write successful for analyzer ${analyzer.name}`, "PollingEngine");
 
         } catch (error) {
             backendLogger.error(`TCP write failed for analyzer ${analyzer.name}`, "PollingEngine", { error: (error as Error).message });

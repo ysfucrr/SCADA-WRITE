@@ -646,7 +646,7 @@ export class ModbusPoller extends EventEmitter {
                 offset: register.offset,
             };
             if (this.serialPoller) {
-                backendLogger.info(`Forwarding write request to SerialPoller for analyzer ${analyzerId}`, "ModbusPoller");
+                //backendLogger.info(`Forwarding write request to SerialPoller for analyzer ${analyzerId}`, "ModbusPoller");
                 await this.serialPoller.handleWriteRequest(serialPayload as any); // cast as any to bypass strict type check for now
             } else {
                 backendLogger.error("SerialPoller is not initialized. Cannot handle write request.", "ModbusPoller");
@@ -667,7 +667,7 @@ export class ModbusPoller extends EventEmitter {
                 throw new Error(`TCP Analyzer ${analyzerId} is not assigned to a worker.`);
             }
             const worker = this.workers[workerIndex];
-            backendLogger.info(`Forwarding write request to worker ${workerIndex} for analyzer ${analyzerId}`, "ModbusPoller");
+            //backendLogger.info(`Forwarding write request to worker ${workerIndex} for analyzer ${analyzerId}`, "ModbusPoller");
             worker.postMessage({
                 type: 'WRITE_REGISTER',
                 payload: tcpPayload

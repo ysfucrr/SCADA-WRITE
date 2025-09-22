@@ -587,7 +587,7 @@ export class SerialPoller extends EventEmitter {
             // Tek bir register yazmak için `writeHoldingRegister` kullanıyoruz.
             await (connection as ModbusSerialConnection).writeHoldingRegister(slaveId, address, rawValue, timeoutMs);
             
-            backendLogger.info(`Serial write successful for analyzer ${analyzer.name}`, "SerialPoller");
+            //backendLogger.info(`Serial write successful for analyzer ${analyzer.name}`, "SerialPoller");
 
         } catch (error) {
             backendLogger.error(`Serial write failed for analyzer ${analyzer.name}`, "SerialPoller", { error: (error as Error).message });

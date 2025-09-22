@@ -279,7 +279,7 @@ const setupWriteRequestListener = async () => {
             if (change.operationType === 'insert') {
                 const { registerId, value } = change.fullDocument;
                 try {
-                    backendLogger.info('New write request detected from database', 'DBWatcher', { registerId, value });
+                    //backendLogger.info('New write request detected from database', 'DBWatcher', { registerId, value });
                     await modbusPoller.handleWriteRequest(registerId, value);
                     // Başarılı işlemden sonra isteği silebilir veya durumunu güncelleyebiliriz.
                     await db.collection('write_requests').deleteOne({ _id: change.documentKey._id });

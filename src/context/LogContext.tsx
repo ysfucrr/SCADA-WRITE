@@ -49,7 +49,7 @@ export const LogProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isAutoScroll, setIsAutoScroll] = useState<boolean>(true);
-  // Otomatik log limiti kaldırıldı - manuel temizleme ile yönetilecek
+  // Otomatik log limiti: 1500 log
 
   // Logları temizle - useCallback ile tanımla
   const clearLogs = useCallback(() => {
@@ -93,16 +93,24 @@ export const LogProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Geçmiş logları al
     newSocket.on('logs:history', (historyLogs: LogMessage[]) => {
       if (!isPaused) {
-        setLogs(historyLogs);
-        // Otomatik log temizleme kaldırıldı - manuel temizleme ile yönetilecek
+        // Geçmiş logları 1500 ile sınırla
+        const trimmedLogs = historyLogs.slice(-1500);
+        setLogs(trimmedLogs);
       }
     });
 
     // Yeni log geldiğinde ekle
     newSocket.on('logs:new', (newLog: LogMessage) => {
       if (!isPaused) {
-        setLogs(prevLogs => [...prevLogs, newLog]);
-        // Otomatik log temizleme kaldırıldı - manuel temizleme ile yönetilecek
+        setLogs(prevLogs => {
+          const updatedLogs = [...prevLogs, newLog];
+          // 1500 log'a ulaştığında otomatik temizle
+          if (updatedLogs.length >= 1500) {
+            console.log('[LogContext] The 40 log limit has been reached, client logs are being cleared');
+            return [newLog]; // Sadece yeni log'u tut, diğerlerini temizle
+          }
+          return updatedLogs;
+        });
       }
     });
 

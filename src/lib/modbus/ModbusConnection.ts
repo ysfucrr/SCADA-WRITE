@@ -553,13 +553,13 @@ export abstract class ModbusConnection extends EventEmitter {
         }
 
         const startTime = Date.now();
-        backendLogger.debug(`✏️ WRITE OPERATION: Starting write operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value}) - Priority: 10`, "ModbusConnection");
+        //backendLogger.debug(`✏️ WRITE OPERATION: Starting write operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value}) - Priority: 10`, "ModbusConnection");
 
         try {
-            backendLogger.debug(`✏️ WRITE QUEUE: Adding write operation to MAIN QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
+            //backendLogger.debug(`✏️ WRITE QUEUE: Adding write operation to MAIN QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
             await this.queue.add(
                 async () => {
-                    backendLogger.debug(`✏️ WRITE EXEC: Starting write operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value})`, "ModbusConnection");
+                    //backendLogger.debug(`✏️ WRITE EXEC: Starting write operation execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value})`, "ModbusConnection");
                     let lastError: any = null;
 
                     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -584,7 +584,7 @@ export abstract class ModbusConnection extends EventEmitter {
                                 // Write öncesi kısa bekleme
                                 await this.sleep(100);
 
-                                backendLogger.debug(`✏️ WRITE MODBUS: Executing Modbus write for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value})`, "ModbusConnection");
+                                //backendLogger.debug(`✏️ WRITE MODBUS: Executing Modbus write for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Value: ${value})`, "ModbusConnection");
                                 const response = await this.client.writeRegister(address, value);
 
                                 // Write sonrası bekleme
@@ -636,7 +636,7 @@ export abstract class ModbusConnection extends EventEmitter {
             );
 
             const elapsed = Date.now() - startTime;
-            backendLogger.info(`✅ WRITE SUCCESS: Write completed successfully (${this.connectionId}:${slaveId}:${address} = ${value}) (took ${elapsed}ms)`, "ModbusConnection");
+            //backendLogger.info(`✅ WRITE SUCCESS: Write completed successfully (${this.connectionId}:${slaveId}:${address} = ${value}) (took ${elapsed}ms)`, "ModbusConnection");
 
         } catch (err: any) {
             const elapsed = Date.now() - startTime;
@@ -670,13 +670,13 @@ export abstract class ModbusConnection extends EventEmitter {
         }
 
         const startTime = Date.now();
-        backendLogger.debug(`✏️ WRITE MULTIPLE: Starting write multiple operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length}) - Priority: 10`, "ModbusConnection");
+        //backendLogger.debug(`✏️ WRITE MULTIPLE: Starting write multiple operation for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length}) - Priority: 10`, "ModbusConnection");
 
         try {
             backendLogger.debug(`✏️ WRITE MULTIPLE QUEUE: Adding write multiple operation to MAIN QUEUE for ${this.connectionId} - Priority: 10`, "ModbusConnection");
             await this.queue.add(
                 async () => {
-                    backendLogger.debug(`✏️ WRITE MULTIPLE EXEC: Starting write multiple execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length})`, "ModbusConnection");
+                    //backendLogger.debug(`✏️ WRITE MULTIPLE EXEC: Starting write multiple execution for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length})`, "ModbusConnection");
                     let lastError: any = null;
 
                     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -701,7 +701,7 @@ export abstract class ModbusConnection extends EventEmitter {
                                 // Write öncesi kısa bekleme
                                 await this.sleep(100);
 
-                                backendLogger.debug(`✏️ WRITE MULTIPLE MODBUS: Executing Modbus write multiple for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length})`, "ModbusConnection");
+                                //backendLogger.debug(`✏️ WRITE MULTIPLE MODBUS: Executing Modbus write multiple for ${this.connectionId} (Slave: ${slaveId}, Address: ${address}, Count: ${values.length})`, "ModbusConnection");
                                 const response = await this.client.writeRegisters(address, values);
 
                                 // Write sonrası bekleme
