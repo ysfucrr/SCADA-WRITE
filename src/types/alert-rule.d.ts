@@ -30,7 +30,7 @@ export interface ConnectionRule extends BaseRule {
 export interface BitRule extends BaseRule {
   ruleType: 'bit';
   registerId: string;
-  bitPosition: number; // 0-31
+  bitPosition: number; // 0-63 for full 64-bit support
   bitValue: 0 | 1; // Expected bit value
 }
 

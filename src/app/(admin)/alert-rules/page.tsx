@@ -318,8 +318,8 @@ const AlertRulesPage: React.FC = () => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="flex flex-col gap-1">
-                                        <Label htmlFor="bitPosition">Bit Position (0-31)</Label>
-                                        <Input id="bitPosition" type="number" min="0" max="31" value={(currentRule as Partial<BitRule>).bitPosition || 0} onChange={e => setCurrentRule(p => ({...p, bitPosition: parseInt(e.target.value, 10) || 0}))} />
+                                        <Label htmlFor="bitPosition">Bit Position (0-63)</Label>
+                                        <Input id="bitPosition" type="number" min="0" max="63" value={(currentRule as Partial<BitRule>).bitPosition || 0} onChange={e => setCurrentRule(p => ({...p, bitPosition: parseInt(e.target.value, 10) || 0}))} />
                                     </div>
                                     <div className="flex flex-col gap-1">
                                         <Label>Expected Bit Value</Label>
