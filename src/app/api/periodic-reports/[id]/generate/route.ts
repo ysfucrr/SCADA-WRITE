@@ -10,7 +10,7 @@ import autoTable from 'jspdf-autotable';
 // Generate and send a report immediately
 export async function POST(
   request: NextRequest,
-  { params }: { params: any }
+  { params }: { params: Promise<any> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -18,8 +18,9 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
+    const resolvedParams = await params;
     // Get ID from params
-    const id = params.id;
+    const id = resolvedParams.id;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: 'Invalid report ID format' }, { status: 400 });
     }

@@ -7,7 +7,7 @@ import { ObjectId } from 'mongodb';
 // Get a single periodic report by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: any }
+  { params }: { params: Promise<any> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -15,8 +15,9 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
+    const resolvedParams = await params;
     // Get ID from params
-    const id = params.id;
+    const id = resolvedParams.id;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: 'Invalid report ID format' }, { status: 400 });
     }
@@ -47,7 +48,7 @@ export async function GET(
 // Update a periodic report
 export async function PUT(
   request: NextRequest,
-  { params }: { params: any }
+  { params }: { params: Promise<any> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -55,8 +56,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
+    const resolvedParams = await params;
     // Get ID from params
-    const id = params.id;
+    const id = resolvedParams.id;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: 'Invalid report ID format' }, { status: 400 });
     }
@@ -164,7 +166,7 @@ export async function PUT(
 // Delete a periodic report
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: any }
+  { params }: { params: Promise<any> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -172,8 +174,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
+    const resolvedParams = await params;
     // Get ID from params
-    const id = params.id;
+    const id = resolvedParams.id;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: 'Invalid report ID format' }, { status: 400 });
     }
