@@ -23,6 +23,7 @@ interface PeriodicReportFormProps {
             minute: number;
         };
         format: 'html' | 'pdf';
+        last24HoursOnly?: boolean;
         trendLogIds: string[];
         // Recipients now managed through centralized mail settings
     }) => void;
@@ -40,6 +41,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
     const [hour, setHour] = useState(report?.schedule?.hour || 8); // 8 AM default
     const [minute, setMinute] = useState(report?.schedule?.minute || 0);
     const [format, setFormat] = useState<'html' | 'pdf'>(report?.format || 'html');
+    const [last24HoursOnly, setLast24HoursOnly] = useState<boolean>(report?.last24HoursOnly || false);
     const [selectedTrendLogIds, setSelectedTrendLogIds] = useState<string[]>(report?.trendLogIds || []);
     
     const [isTrendLogDropdownOpen, setIsTrendLogDropdownOpen] = useState(false);
@@ -104,6 +106,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
             frequency,
             schedule,
             format,
+            last24HoursOnly,
             trendLogIds: selectedTrendLogIds,
         });
         
@@ -235,6 +238,23 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
                             defaultValue={format}
                         />
                     </div>
+                </div>
+
+                {/* Data Range Option */}
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="last24HoursOnly"
+                            checked={last24HoursOnly}
+                            onChange={setLast24HoursOnly}
+                        />
+                        <Label htmlFor="last24HoursOnly" className="text-sm">
+                            Include only last 24 hours data
+                        </Label>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 ml-6">
+                        If unchecked, all historical trend log data will be included in the report.
+                    </p>
                 </div>
 
                 {/* Trend Log Selection */}

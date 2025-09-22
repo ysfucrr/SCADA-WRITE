@@ -75,6 +75,7 @@ export async function PUT(
       frequency,
       schedule,
       format,
+      last24HoursOnly,
       trendLogIds,
       active
       // recipients are now managed through centralized mail settings
@@ -125,6 +126,7 @@ export async function PUT(
           frequency,
           schedule,
           format: format || 'html',
+          last24HoursOnly: last24HoursOnly !== undefined ? last24HoursOnly : existingReport.last24HoursOnly,
           trendLogIds,
           active: active !== undefined ? active : existingReport.active,
           updatedAt: now

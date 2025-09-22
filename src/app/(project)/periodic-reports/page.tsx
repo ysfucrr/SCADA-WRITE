@@ -25,6 +25,7 @@ interface PeriodicReportType {
     minute: number; // 0-59
   };
   format: 'html' | 'pdf';
+  last24HoursOnly?: boolean;
   // Recipients now managed through centralized mail settings
   trendLogIds: string[];
   trendLogs?: any[]; // Populated data

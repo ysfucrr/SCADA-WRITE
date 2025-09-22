@@ -17,6 +17,7 @@
  * @property {string[]} trendLogIds - Array of trend log IDs to include in the report
  * @property {string} timezone - Timezone for the report (default: Europe/Istanbul)
  * @property {Date} [lastSent] - When the report was last sent
+ * @property {boolean} last24HoursOnly - Whether to include only last 24 hours data
  * @property {boolean} active - Whether the report is active
  * @property {Date} createdAt - When the report was created
  * @property {Date} updatedAt - When the report was last updated

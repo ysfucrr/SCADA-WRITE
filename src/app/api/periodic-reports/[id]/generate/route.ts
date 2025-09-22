@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { ObjectId } from 'mongodb';
 import { mailService } from '@/lib/mail-service';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Generate and send a report immediately
 export async function POST(
@@ -31,8 +33,9 @@ export async function POST(
       return NextResponse.json({ error: 'Report not found' }, { status: 404 });
     }
 
-    // Fetch trend logs data for the specified trend logs
-    const trendLogEntries = await fetchTrendLogData(db, report.trendLogIds);
+    // Fetch trend log data based on the report settings
+    const timeLimit = report.last24HoursOnly ? new Date(Date.now() - 24 * 60 * 60 * 1000) : null;
+    const trendLogEntries = await fetchTrendLogData(db, report.trendLogIds, timeLimit);
     
     if (!trendLogEntries || trendLogEntries.length === 0) {
       return NextResponse.json({ error: 'No trend log data available for the report' }, { status: 400 });
@@ -50,7 +53,7 @@ export async function POST(
     }).toArray();
 
     // Generate the report content
-    const { reportSubject, reportText, reportHtml } = await generateReportContent(
+    const { reportSubject, reportText, reportHtml, entriesByTrendLog, trendLogMap, analyzerMap } = await generateReportContent(
       report,
       trendLogs,
       trendLogEntries,
@@ -60,10 +63,38 @@ export async function POST(
     // Send the report
     let success = false;
 
-    // PDF generation logic has been removed from this route.
-    // The primary PDF generation is now handled by the persistent periodic-report-service.
-    // This route will now only send a standard HTML/text email.
-    success = await mailService.sendMail(reportSubject, reportText, reportHtml);
+    if (report.format === 'pdf') {
+      // Generate PDF
+      const trendLogDataForPdf = new Map();
+      for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
+        const trendLog = trendLogMap.get(trendLogId);
+        if (trendLog) {
+          const analyzer = analyzerMap.get(trendLog.analyzerId);
+          const title = analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+          trendLogDataForPdf.set(title, entries);
+        }
+      }
+
+      const pdfBuffer = await generatePdfReport(report.name, trendLogDataForPdf);
+
+      // Send PDF as attachment
+      const notificationHtml = `<p>Please find the attached report: <strong>${report.name}</strong></p>`;
+
+      success = await mailService.sendMail(
+        reportSubject,
+        "Please find the attached PDF report.",
+        notificationHtml,
+        3,
+        [{
+          filename: `${report.name.replace(/ /g, '_')}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }]
+      );
+    } else {
+      // Send HTML email
+      success = await mailService.sendMail(reportSubject, reportText, reportHtml);
+    }
 
     if (!success) {
       return NextResponse.json({ error: 'Failed to send the report email' }, { status: 500 });
@@ -93,18 +124,22 @@ export async function POST(
 }
 
 // Helper function to fetch trend log data
-async function fetchTrendLogData(db: any, trendLogIds: string[]) {
+async function fetchTrendLogData(db: any, trendLogIds: string[], timeLimit?: Date | null) {
   try {
     // Convert string IDs to ObjectId
     const objectIds = trendLogIds.map((id: string) => new ObjectId(id));
 
-    // Get the last 24 hours of data for each trend log
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // Build query
+    const query: any = {
+      trendLogId: { $in: objectIds }
+    };
 
-    const entries = await db.collection('trend_log_entries').find({
-      trendLogId: { $in: objectIds },
-      timestamp: { $gte: twentyFourHoursAgo }
-    }).sort({ timestamp: 1 }).toArray();
+    // Add time limit if specified
+    if (timeLimit) {
+      query.timestamp = { $gte: timeLimit };
+    }
+
+    const entries = await db.collection('trend_log_entries').find(query).sort({ timestamp: 1 }).toArray();
 
     return entries;
   } catch (error) {
@@ -248,6 +283,50 @@ async function generateReportContent(
   return {
     reportSubject,
     reportText,
-    reportHtml
+    reportHtml,
+    entriesByTrendLog,
+    trendLogMap,
+    analyzerMap
   };
+}
+
+// Helper function to generate PDF report
+async function generatePdfReport(reportName: string, trendLogData: Map<string, any[]>): Promise<Buffer> {
+  const doc = new jsPDF();
+  const reportDate = new Date();
+
+  doc.setFontSize(20);
+  doc.text(reportName, doc.internal.pageSize.getWidth() / 2, 20, { align: 'center' });
+  doc.setFontSize(12);
+  doc.text(`Report Date: ${reportDate.toLocaleDateString()}`, doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+
+  let startY = 40;
+
+  for (const [title, entries] of trendLogData.entries()) {
+    if (startY > 260) { // Add new page if content overflows
+      doc.addPage();
+      startY = 20;
+    }
+
+    doc.setFontSize(14);
+    doc.text(title, 14, startY);
+    startY += 10;
+
+    autoTable(doc, {
+      head: [['Timestamp', 'Value']],
+      body: entries.map(entry => [
+        new Date(entry.timestamp).toLocaleString(),
+        entry.value
+      ]),
+      startY: startY,
+      theme: 'grid',
+      headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
+      styles: { fontSize: 10 },
+    });
+
+    startY = (doc as any).lastAutoTable.finalY + 15;
+  }
+
+  const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+  return pdfBuffer;
 }

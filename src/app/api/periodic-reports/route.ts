@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
       frequency,
       schedule,
       format,
+      last24HoursOnly,
       trendLogIds
       // recipients now managed through centralized mail settings
     } = body;
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest) {
       frequency,
       schedule,
       format: format || 'html',
+      last24HoursOnly: last24HoursOnly || false,
       trendLogIds,
       timezone: "Europe/Istanbul",
       active: true,
@@ -109,6 +111,7 @@ export async function POST(request: NextRequest) {
       frequency,
       schedule,
       format: format || 'html',
+      last24HoursOnly: last24HoursOnly || false,
       trendLogIds,
       active: true,
       createdAt: now.toISOString(),

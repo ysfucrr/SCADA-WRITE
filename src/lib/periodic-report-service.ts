@@ -93,14 +93,17 @@ class PeriodicReportService {
       
       // Note: Email recipients are now managed through centralized mail settings
       
-      // Get the last 24 hours of data
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      
-      // Fetch trend log entries
-      const entries = await db.collection('trend_log_entries').find({
-        trendLogId: { $in: trendLogIds },
-        timestamp: { $gte: twentyFourHoursAgo }
-      }).sort({ timestamp: 1 }).toArray();
+      // Fetch trend log entries based on report settings
+      const query: any = {
+        trendLogId: { $in: trendLogIds }
+      };
+
+      if (report.last24HoursOnly) {
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        query.timestamp = { $gte: twentyFourHoursAgo };
+      }
+
+      const entries = await db.collection('trend_log_entries').find(query).sort({ timestamp: 1 }).toArray();
       
       if (entries.length === 0) {
         backendLogger.info(`No trend logs found for report: ${report.name}. Skipping.`, 'PeriodicReportService');
