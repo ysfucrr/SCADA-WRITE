@@ -332,18 +332,35 @@ async function generateReportContent(
 async function generateSinglePdfReport(title: string, entries: any[], reportName: string): Promise<Buffer> {
   const doc = new jsPDF();
   const reportDate = new Date();
+  const pageWidth = doc.internal.pageSize.getWidth();
 
-  doc.setFontSize(20);
-  doc.text(reportName, doc.internal.pageSize.getWidth() / 2, 20, { align: 'center' });
+  // Header with background
+  doc.setFillColor(102, 126, 234); // Blue background
+  doc.rect(0, 0, pageWidth, 40, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22);
+  doc.text(reportName, pageWidth / 2, 20, { align: 'center' });
+
   doc.setFontSize(12);
-  doc.text(`Report Date: ${reportDate.toLocaleDateString()}`, doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+  doc.text(`Generated: ${reportDate.toLocaleDateString()}`, pageWidth / 2, 30, { align: 'center' });
 
-  let startY = 40;
+  // Reset text color
+  doc.setTextColor(0, 0, 0);
 
-  doc.setFontSize(14);
-  doc.text(title, 14, startY);
-  startY += 10;
+  let startY = 50;
 
+  // Section title with styling
+  doc.setFillColor(241, 245, 249); // Light gray background
+  doc.rect(14, startY - 5, pageWidth - 28, 15, 'F');
+
+  doc.setFontSize(16);
+  doc.setTextColor(30, 41, 59); // Dark blue
+  doc.text(title, 20, startY + 5);
+
+  startY += 20;
+
+  // Table with better styling
   autoTable(doc, {
     head: [['Timestamp', 'Value']],
     body: entries.map(entry => [
@@ -352,9 +369,26 @@ async function generateSinglePdfReport(title: string, entries: any[], reportName
     ]),
     startY: startY,
     theme: 'grid',
-    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
-    styles: { fontSize: 10 },
+    headStyles: {
+      fillColor: [71, 85, 105], // Dark slate
+      textColor: [255, 255, 255],
+      fontStyle: 'bold'
+    },
+    styles: {
+      fontSize: 10,
+      cellPadding: 8
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252] // Very light gray
+    },
+    margin: { left: 14, right: 14 },
   });
+
+  // Footer
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139); // Gray
+  doc.text('Periodic Report - Confidential', pageWidth / 2, pageHeight - 10, { align: 'center' });
 
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;
