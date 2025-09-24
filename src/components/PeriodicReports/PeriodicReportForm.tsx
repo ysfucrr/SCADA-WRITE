@@ -318,6 +318,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
                     {selectedTrendLogs.length > 0 && (
                         <div className="mt-4 space-y-3">
                             <Label>Selected Trend Logs with Labels</Label>
+                            <div className="max-h-64 overflow-y-auto space-y-3">
                             {selectedTrendLogs.map((item, index) => {
                                 const trendLog = trendLogs.find(log => log._id === item.id);
                                 return (
@@ -349,6 +350,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
                                     </div>
                                 );
                             })}
+                            </div>
                         </div>
                     )}
                 </div>

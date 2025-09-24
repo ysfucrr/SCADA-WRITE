@@ -6,6 +6,8 @@ import { ObjectId } from 'mongodb';
 import { mailService } from '@/lib/mail-service';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as archiver from 'archiver';
+import { Readable } from 'stream';
 
 // Generate and send a report immediately
 export async function POST(
@@ -96,19 +98,32 @@ export async function POST(
         }
       }
 
-      // Send PDFs as attachments
+      let finalAttachments = attachments;
+
+      // If multiple PDFs, create a ZIP file
+      if (attachments.length > 1) {
+        const zipBuffer = await createZipFromBuffers(attachments);
+        finalAttachments = [{
+          filename: `Periodic_Report_${new Date().toISOString().split('T')[0]}.zip`,
+          content: zipBuffer,
+          contentType: 'application/zip'
+        }];
+      }
+
+      // Send attachments
       const notificationHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
           <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             <h2 style="color: #2563eb; margin-bottom: 10px;">Periodic Report</h2>
             <p style="color: #374151; font-size: 16px; line-height: 1.5;">
-              Please find the attached PDF reports generated on ${new Date().toLocaleDateString()}.
+              Please find the attached ${attachments.length > 1 ? 'ZIP file containing PDF reports' : 'PDF report'} generated on ${new Date().toLocaleDateString()}.
             </p>
             <div style="margin-top: 20px; padding: 15px; background-color: #e0f2fe; border-left: 4px solid #2563eb; border-radius: 4px;">
               <p style="margin: 0; color: #1e40af; font-weight: bold;">Report Details:</p>
               <ul style="margin: 10px 0 0 20px; color: #374151;">
                 <li>Generated: ${new Date().toLocaleString()}</li>
-                <li>Format: PDF Attachments</li>
+                <li>Format: ${attachments.length > 1 ? 'ZIP (Multiple PDFs)' : 'PDF'}</li>
+                <li>Number of reports: ${attachments.length}</li>
               </ul>
             </div>
           </div>
@@ -117,10 +132,10 @@ export async function POST(
 
       success = await mailService.sendMail(
         reportSubject,
-        "Please find the attached PDF reports.",
+        `Please find the attached ${attachments.length > 1 ? 'ZIP file with PDF reports' : 'PDF report'}.`,
         notificationHtml,
         3,
-        attachments
+        finalAttachments
       );
     } else {
       // Send HTML email
@@ -392,6 +407,35 @@ async function generateSinglePdfReport(title: string, entries: any[], reportName
 
   const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
   return pdfBuffer;
+}
+
+// Helper function to create ZIP from buffer attachments
+async function createZipFromBuffers(attachments: any[]): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const archive = archiver.create('zip', {
+      zlib: { level: 9 } // Maximum compression
+    });
+
+    const buffers: Buffer[] = [];
+
+    archive.on('data', (chunk: Buffer) => {
+      buffers.push(chunk);
+    });
+
+    archive.on('end', () => {
+      resolve(Buffer.concat(buffers));
+    });
+
+    archive.on('error', reject);
+
+    // Add each PDF buffer to the ZIP
+    attachments.forEach((attachment) => {
+      const bufferStream = Readable.from(attachment.content);
+      archive.append(bufferStream, { name: attachment.filename });
+    });
+
+    archive.finalize();
+  });
 }
 
 // Helper function to generate PDF report (legacy, kept for compatibility)
