@@ -93,12 +93,6 @@ export async function middleware(request: NextRequest) {
                             redirectUrl.searchParams.set('source', 'redirect');
                             return NextResponse.redirect(redirectUrl);
                         }
-                        // Also redirect /billing to /home
-                        if (pathname === "/billing") {
-                            const redirectUrl = new URL('/home', request.url);
-                            redirectUrl.searchParams.set('source', 'redirect');
-                            return NextResponse.redirect(redirectUrl);
-                        }
                         return NextResponse.next();
                     } else {
                         // If no billing permission, redirect directly to System Health tab
