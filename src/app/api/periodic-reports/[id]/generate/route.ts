@@ -97,7 +97,23 @@ export async function POST(
       }
 
       // Send PDFs as attachments
-      const notificationHtml = `<p>Please find the attached reports: <strong>Periodic Report</strong></p>`;
+      const notificationHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+          <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h2 style="color: #2563eb; margin-bottom: 10px;">Periodic Report</h2>
+            <p style="color: #374151; font-size: 16px; line-height: 1.5;">
+              Please find the attached PDF reports generated on ${new Date().toLocaleDateString()}.
+            </p>
+            <div style="margin-top: 20px; padding: 15px; background-color: #e0f2fe; border-left: 4px solid #2563eb; border-radius: 4px;">
+              <p style="margin: 0; color: #1e40af; font-weight: bold;">Report Details:</p>
+              <ul style="margin: 10px 0 0 20px; color: #374151;">
+                <li>Generated: ${new Date().toLocaleString()}</li>
+                <li>Format: PDF Attachments</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      `;
 
       success = await mailService.sendMail(
         reportSubject,
