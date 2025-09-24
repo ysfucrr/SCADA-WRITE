@@ -49,3 +49,4 @@ dist
 electron-dist
 logs
 dist-service
+license-server

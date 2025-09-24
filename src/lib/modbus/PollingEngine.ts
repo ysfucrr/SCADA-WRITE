@@ -118,7 +118,11 @@ export class PollingEngine extends EventEmitter {
                 const timer = setTimeout(() => {
                     this.reconnectTimers.delete(connectionId);
                     this.reconnectingConnections.delete(connectionId); // Deneme öncesi kaldır
-                    connection.retryCount = 0;
+
+                    // YENİDEN BAĞLANMADAN ÖNCE CİHAZ SAYISINI GÜNCELLE
+                    const deviceCount = this.countDevicesForPooledConnection(connectionId);
+                    connection.updateDeviceCount(deviceCount);
+
                     connection.attemptReconnect();
                 }, 60000);
     
@@ -155,11 +159,26 @@ export class PollingEngine extends EventEmitter {
                 backendLogger.info(`Connection re-established for ${connectionId}, canceling scheduled reconnect.`, "PollingEngine");
             }
             
-            const affectedAnalyzers = Array.from(this.analyzers.values()).filter(a => connectionId.startsWith(a.getConnectionId()));
-            this.resetMissCountersForConnection(connectionId);
-            affectedAnalyzers.forEach((analyzer) => {
-                 this.startPolling(analyzer);
+            // Bağlantı zaten kuruldu. Sadece bu bağlantıyı kullanan analizörlerin
+            // polling döngülerini (okuma işlemlerini) yeniden başlat.
+            // EN KRİTİK ADIM: Başarıyla yeniden bağlanan bu connection nesnesini,
+            // PollingEngine'in merkezi haritasına kaydet. Bu, ensureConnection'ın
+            // yeni bir nesne oluşturmasını engelleyecektir.
+            this.connections.set(connectionId, connection);
+
+            const affectedAnalyzers = Array.from(this.analyzers.values()).filter(a => {
+                const analyzerConnectionId = `${a.getConnectionId()}:${this.analyzerToConnectionIndex.get(a.id) || 0}`;
+                return analyzerConnectionId === connectionId;
             });
+
+            if (affectedAnalyzers.length > 0) {
+                backendLogger.info(`Connection ${connectionId} re-established. Restarting polling for ${affectedAnalyzers.length} analyzer(s).`, "PollingEngine");
+                this.resetMissCountersForConnection(connectionId);
+                affectedAnalyzers.forEach((analyzer) => {
+                    // Artık `ensureConnection` doğru bağlantıyı bulacağı için bu çağrı güvenli.
+                    this.startPolling(analyzer);
+                });
+            }
         });
     }
 
@@ -372,94 +391,100 @@ export class PollingEngine extends EventEmitter {
     private async startPolling(analyzer: AnalyzerSettings): Promise<void> {
         if (!analyzer || this.isShuttingDown) return;
 
-        // Önceki polling döngüsünü durdur.
         const oldTimer = this.pollingTimers.get(analyzer.id);
         if (oldTimer) {
             clearTimeout(oldTimer);
             this.pollingTimers.delete(analyzer.id);
         }
 
-        // Eğer analizöre bağlı hiç register yoksa (ne read ne write), hiçbir şey yapma.
         if (!this.hasRegisters(analyzer.id)) {
-            //backendLogger.debug(`Analyzer ${analyzer.name} has no registers at all, skipping polling and connection.`, "PollingEngine");
             return;
         }
 
-        // --- EN KRİTİK DEĞİŞİKLİK ---
-        // Okunacak blok olmasa bile (sadece write register'ları olabilir),
-        // bağlantının kurulduğundan emin olmalıyız.
-        const connection = await this.ensureConnection(analyzer);
-        if (!connection) {
-            backendLogger.warning(`Connection for ${analyzer.name} could not be established. Handing over to ModbusConnection's backoff mechanism.`, "PollingEngine");
-            return;
-        }
-        analyzer.connection = connection; // Referansı ata
+        try {
+            // Bağlantıyı kurmayı veya mevcut olanı almayı dene
+            const connection = await this.ensureConnection(analyzer);
 
-        // Sadece okunacak bloklar varsa polling döngüsünü başlat.
-        const blocks = this.getBlocksForAnalyzer(analyzer.id);
-        if (!blocks || blocks.length === 0) {
-            backendLogger.debug(`No readable blocks for analyzer ${analyzer.name}. Connection is ensured, but polling loop will not start.`, "PollingEngine");
-            return; // Polling döngüsünü başlatmadan çık.
-        }
-
-        // Analizörün polling state'ini al veya oluştur.
-        let pollState = this.analyzerPollState.get(analyzer.id);
-        if (!pollState) {
-            pollState = { nextBlockIndex: 0, pollVersion: 0 };
-        }
-        // Versiyonu artırarak eski döngülerin sonlanmasını tetikle.
-        pollState.pollVersion = (pollState.pollVersion || 0) + 1;
-        const currentVersion = pollState.pollVersion;
-        this.analyzerPollState.set(analyzer.id, pollState);
-
-        //backendLogger.debug(`Started polling for analyzer ${analyzer.name} with connection ${connection.connectionId}`, "PollingEngine");
-
-        const totalPollMs = Math.max(analyzer.pollMs || 1000, 500);
-        const intervalMs = Math.max(50, totalPollMs / blocks.length);
-
-        const pollLoop = async () => {
-            const currentState = this.analyzerPollState.get(analyzer.id);
-            if (!currentState || currentState.pollVersion !== currentVersion) {
-                return; // Bu eski bir döngü, kendini sonlandır.
+            // KRİTİK DÜZELTME: ensureConnection yeni bir bağlantı oluşturduysa,
+            // bu yeni bağlantıyı merkezi haritaya ekle.
+            if (!this.connections.has(connection.connectionId)) {
+                this.connections.set(connection.connectionId, connection);
+                backendLogger.info(`Connection ${connection.connectionId} was re-created and added to the central pool.`, "PollingEngine");
             }
 
-            // İYİLEŞTİRME: Bu döngünün elindeki bağlantı referansının hala geçerli olduğunu doğrula.
-            // Bir konfigürasyon değişikliği sırasında bu referans geçersiz kalabilir.
-            const expectedConnectionId = `${analyzer.getConnectionId()}:${this.analyzerToConnectionIndex.get(analyzer.id) || 0}`;
-            if (!this.connections.has(expectedConnectionId) || this.connections.get(expectedConnectionId) !== connection) {
-                backendLogger.warning(`Stale pollLoop detected for analyzer ${analyzer.name}. Expected connection ${expectedConnectionId} is no longer valid. Terminating loop.`, "PollingEngine");
-                return; // Bu döngüyü sonlandır, startPolling yeniden başlatacaktır.
-            }
+            analyzer.connection = connection; // Referansı ata
 
-            // İYİLEŞTİRME: Bağlantı, merkezi olarak yeniden bağlanma sürecindeyse,
-            // bu döngü sessizce beklesin ve log spam'i yapmasın.
-            if (this.reconnectingConnections.has(connection.connectionId)) {
-                backendLogger.debug(`Connection ${connection.connectionId} is in reconnect procedure. Analyzer ${analyzer.name} poll loop is pausing for 60s.`, "PollingEngine");
-                const timer = setTimeout(pollLoop, 60000); // Daha uzun bir bekleme süresi
-                this.pollingTimers.set(analyzer.id, timer);
+            const blocks = this.getBlocksForAnalyzer(analyzer.id);
+            if (!blocks || blocks.length === 0) {
+                backendLogger.debug(`No readable blocks for analyzer ${analyzer.name}. Connection is ensured, but polling loop will not start.`, "PollingEngine");
                 return;
             }
 
-            try {
-                await this.pollNextBlockForAnalyzer(analyzer, connection, currentVersion);
-                const timer = setTimeout(pollLoop, intervalMs);
-                this.pollingTimers.set(analyzer.id, timer);
-            } catch (err: any) {
-                if (err.message.includes('VERSION_MISMATCH') || err.message.includes('Read operation cancelled during shutdown')) {
-                    // Bu hatalar, döngünün temiz bir şekilde sonlanması gerektiğini gösterir.
-                    // Uyarı log'u veya geri çekilme (backoff) olmadan sessizce çık.
+            let pollState = this.analyzerPollState.get(analyzer.id);
+            if (!pollState) {
+                pollState = { nextBlockIndex: 0, pollVersion: 0 };
+            }
+            pollState.pollVersion = (pollState.pollVersion || 0) + 1;
+            const currentVersion = pollState.pollVersion;
+            this.analyzerPollState.set(analyzer.id, pollState);
+
+            const totalPollMs = Math.max(analyzer.pollMs || 1000, 500);
+            const intervalMs = Math.max(50, totalPollMs / blocks.length);
+
+            const pollLoop = async () => {
+                const currentState = this.analyzerPollState.get(analyzer.id);
+                if (!currentState || currentState.pollVersion !== currentVersion) {
                     return;
                 }
-                
-                backendLogger.warning(`Polling error for ${analyzer.name}: ${err.message}. Backing off for 5s.`, "PollingEngine");
-                const timer = setTimeout(pollLoop, 5000);
-                this.pollingTimers.set(analyzer.id, timer);
+
+                const expectedConnectionId = `${analyzer.getConnectionId()}:${this.analyzerToConnectionIndex.get(analyzer.id) || 0}`;
+                if (!this.connections.has(expectedConnectionId) || this.connections.get(expectedConnectionId) !== connection) {
+                    backendLogger.warning(`Stale pollLoop detected for analyzer ${analyzer.name}. Terminating loop.`, "PollingEngine");
+                    return;
+                }
+
+                if (this.reconnectingConnections.has(connection.connectionId)) {
+                    backendLogger.debug(`Connection ${connection.connectionId} is in reconnect procedure. Analyzer ${analyzer.name} poll loop is pausing for 60s.`, "PollingEngine");
+                    const timer = setTimeout(pollLoop, 60000);
+                    this.pollingTimers.set(analyzer.id, timer);
+                    return;
+                }
+
+                try {
+                    await this.pollNextBlockForAnalyzer(analyzer, connection, currentVersion);
+                    const timer = setTimeout(pollLoop, intervalMs);
+                    this.pollingTimers.set(analyzer.id, timer);
+                } catch (err: any) {
+                    if (err.message.includes('VERSION_MISMATCH') || err.message.includes('Read operation cancelled during shutdown')) {
+                        return;
+                    }
+                    backendLogger.warning(`Polling error for ${analyzer.name}: ${err.message}. Backing off for 5s.`, "PollingEngine");
+                    const timer = setTimeout(pollLoop, 5000);
+                    this.pollingTimers.set(analyzer.id, timer);
+                }
+            };
+
+            const initialTimer = setTimeout(pollLoop, intervalMs);
+            this.pollingTimers.set(analyzer.id, initialTimer);
+
+        } catch (err: any) {
+            // ensureConnection'dan gelen hatayı burada yakala
+            backendLogger.warning(`Initial connection failed for ${analyzer.name}: ${err.message}. Scheduling reconnect.`, "PollingEngine");
+            
+            // Yeniden deneme mekanizmasını manuel olarak tetikle.
+            // Geçici bir connection nesnesi oluşturup 'connectionLost' olayını dinlemesini sağla.
+            const gatewayId = analyzer.getConnectionId();
+            const connectionIndex = this.analyzerToConnectionIndex.get(analyzer.id) || 0;
+            const pooledConnectionId = `${gatewayId}:${connectionIndex}`;
+
+            // Eğer bu bağlantı için zaten bir yeniden bağlanma süreci yoksa başlat
+            if (!this.reconnectingConnections.has(pooledConnectionId)) {
+                const tempConnection = new ModbusTcpConnection(String(analyzer.ip), Number(analyzer.port), pooledConnectionId);
+                this.setupConnectionListeners(tempConnection);
+                // 'connectionLost' olayını manuel olarak tetikleyerek yeniden deneme döngüsünü başlat
+                tempConnection.emit('connectionLost');
             }
-        };
-        
-        // Yeni polling döngüsünü başlat.
-        const initialTimer = setTimeout(pollLoop, intervalMs);
-        this.pollingTimers.set(analyzer.id, initialTimer);
+        }
     }
     
     private async pollNextBlockForAnalyzer(analyzer: AnalyzerSettings, connection: ModbusConnection, version: number): Promise<void> {
@@ -540,48 +565,42 @@ export class PollingEngine extends EventEmitter {
         }
     }
 
-    private async ensureConnection(analyzer: AnalyzerSettings): Promise<ModbusConnection | null> {
+    private async ensureConnection(analyzer: AnalyzerSettings): Promise<ModbusConnection> {
         const gatewayId = analyzer.getConnectionId();
         const connectionIndex = this.analyzerToConnectionIndex.get(analyzer.id) || 0;
         const pooledConnectionId = `${gatewayId}:${connectionIndex}`;
 
-        if (this.connections.has(pooledConnectionId)) return this.connections.get(pooledConnectionId)!;
-        if (this.pendingConnections.has(pooledConnectionId)) return this.pendingConnections.get(pooledConnectionId)!;
+        if (this.connections.has(pooledConnectionId)) {
+            return this.connections.get(pooledConnectionId)!;
+        }
+        if (this.pendingConnections.has(pooledConnectionId)) {
+            // Await the pending promise, and if it resolves to null (error), throw to be caught by startPolling
+            const conn = await this.pendingConnections.get(pooledConnectionId)!;
+            if (!conn) throw new Error(`Pending connection for ${pooledConnectionId} failed.`);
+            return conn;
+        }
 
         const connectionPromise = new Promise<ModbusConnection | null>(async (resolve) => {
             try {
                 let connection: ModbusConnection;
                 if (analyzer.connType === 'tcp') {
-                    // Benzersiz havuz ID'sini constructor'a yolla
                     connection = new ModbusTcpConnection(String(analyzer.ip), Number(analyzer.port), pooledConnectionId);
                 } else {
-                    // Serial bağlantılar artık SerialPoller tarafından yönetiliyor
                     backendLogger.warning(`Serial analyzer ${analyzer.id} should not be processed by PollingEngine`, "PollingEngine");
-                    resolve(null); return;
+                    resolve(null); // Should not happen, but resolve null to indicate failure
+                    return;
                 }
 
                 this.setupConnectionListeners(connection);
 
-                // HATALI YER: Buradaki lokal ve basit sayım mantığını kaldırıyoruz.
-                // Cihaz sayısı artık sadece merkezi `updateAllConnectionDeviceCounts` fonksiyonu ile yönetilecek.
-                // DÜZELTME: Bağlantıyı kurmadan ÖNCE cihaz sayısını hesapla ve ata.
-                // Bu, logların doğru sırada görünmesini ve `connect` metodunun
-                // en başından doğru `concurrency` değeriyle çalışmasını sağlar.
-                // YENİ DÜZELTME: Cihaz sayısını hesapla ve BAĞLANTIYI DENEMEDEN ÖNCE ata.
-                // Bu, logların doğru sırada görünmesini ve `connect` metodunun
-                // en başından doğru `concurrency` değeriyle çalışmasını sağlar.
-                
-                // Her zaman spesifik bağlantı için doğru cihaz sayısını hesapla
                 const deviceCountForThisConnection = this.countDevicesForPooledConnection(pooledConnectionId);
                 connection.updateDeviceCount(deviceCountForThisConnection);
-                
-                // Pending count'u temizle (artık kullanılmıyor)
                 this.pendingDeviceCounts.delete(gatewayId);
 
-                await connection.connect();
+                await connection.connect(); // This will throw on failure
+
                 this.connections.set(pooledConnectionId, connection);
                 
-                // Bu alt bağlantıyı kullanacak tüm analizörlere bu bağlantı nesnesini ata
                 this.analyzers.forEach((an) => {
                     if (an.getConnectionId() === gatewayId && (this.analyzerToConnectionIndex.get(an.id) || 0) === connectionIndex) {
                         an.connection = connection;
@@ -589,18 +608,23 @@ export class PollingEngine extends EventEmitter {
                 });
 
                 resolve(connection);
-            } catch (err: unknown) {
-                if (err instanceof Error) {
-                    backendLogger.error(`Failed to establish connection for ${pooledConnectionId}: ${err.message}`, "PollingEngine");
-                }
+            } catch (err) {
+                // Don't log error here, it's logged in startPolling's catch block.
+                // Resolve with null to signify failure.
                 resolve(null);
-            } finally {
-                this.pendingConnections.delete(pooledConnectionId);
             }
         });
 
         this.pendingConnections.set(pooledConnectionId, connectionPromise);
-        return connectionPromise;
+        const newConnection = await connectionPromise;
+        this.pendingConnections.delete(pooledConnectionId);
+
+        if (!newConnection) {
+            // Throw an error to be caught by startPolling
+            throw new Error(`Failed to establish connection for ${pooledConnectionId}.`);
+        }
+
+        return newConnection;
     }
     
     public createBlocksForAnalyzers(): void {

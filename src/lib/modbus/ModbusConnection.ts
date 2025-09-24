@@ -369,7 +369,7 @@ export abstract class ModbusConnection extends EventEmitter {
             this.queue.removeAllListeners();
             this.queue.clear();
             this.queue = null;
-            //backendLogger.debug(`[Graceful Shutdown] Queue for ${this.connectionId} has been destroyed.`, "ModbusConnection");
+            backendLogger.debug(`[Graceful Shutdown] Queue for ${this.connectionId} has been destroyed.`, "ModbusConnection");
         }
 
         try {
@@ -378,25 +378,25 @@ export abstract class ModbusConnection extends EventEmitter {
                 if (port) {
                     if (port.socket) {
                         port.socket.destroy();
-                        //backendLogger.debug(`[Graceful Shutdown] Socket for ${this.connectionId} destroyed.`, "ModbusConnection");
+                        backendLogger.debug(`[Graceful Shutdown] Socket for ${this.connectionId} destroyed.`, "ModbusConnection");
                     }
                     if (typeof port.destroy === 'function') {
                         port.destroy();
-                        //backendLogger.debug(`[Graceful Shutdown] Port for ${this.connectionId} destroyed.`, "ModbusConnection");
+                        backendLogger.debug(`[Graceful Shutdown] Port for ${this.connectionId} destroyed.`, "ModbusConnection");
                     }
                     (this.client as any)._port = undefined;
                 }
                 if (typeof this.client.close === 'function') {
                     this.client.close(() => {});
-                    //backendLogger.debug(`[Graceful Shutdown] Modbus client for ${this.connectionId} closed.`, "ModbusConnection");
+                    backendLogger.debug(`[Graceful Shutdown] Modbus client for ${this.connectionId} closed.`, "ModbusConnection");
                 }
             }
         } catch (err: any) {
-            //backendLogger.warning(`[Graceful Shutdown] Error during aggressive close for ${this.connectionId}: ${err.message}`, "ModbusConnection");
+            backendLogger.warning(`[Graceful Shutdown] Error during aggressive close for ${this.connectionId}: ${err.message}`, "ModbusConnection");
         } finally {
             this.client = null;
             this.portListeners.clear();
-            //backendLogger.debug(`[Graceful Shutdown] All references for ${this.connectionId} have been nullified.`, "ModbusConnection");
+            backendLogger.debug(`[Graceful Shutdown] All references for ${this.connectionId} have been nullified.`, "ModbusConnection");
         }
     }
 
@@ -997,96 +997,73 @@ export class ModbusTcpConnection extends ModbusConnection {
      * TCP bağlantısı kurar
      */
     async connect(): Promise<void> {
-        if (this.isConnected && this.client) {
+        if (this.isConnected) {
             return;
         }
 
-        // Kademeli bekleme süresi
-        if (this.retryCount > 0) {
-            const delay = Math.min(
-                EXPONENTIAL_BACKOFF_BASE * Math.pow(2, this.retryCount - 1),
-                300_000 // en fazla 5 dk bekle
-            );
-
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
+        this.client = new ModbusRTU() as ExtendedModbusRTU;
+        this.isShuttingDown = false;
 
         try {
-            this.client = new ModbusRTU();
+            backendLogger.info(`Attempting to connect to ${this.host}:${this.port} (ID: ${this.connectionId})`, "ModbusTcpConnection");
             await this.client.connectTCP(this.host, { port: this.port });
 
-            // Soketi yapılandır
+            // --- BAŞARILI BAĞLANTI SONRASI KURULUM ---
+            this.isConnected = true;
+
+            // Soketi yapılandır ve listener'ları ekle
             if (this.client._port && this.client._port.socket) {
                 const socket = this.client._port.socket;
                 socket.setKeepAlive(true, 15000);
                 socket.setNoDelay(true);
 
-                // Güvenli socket listener ekleme
-                this.safeAddSocketListener('error', (...args: unknown[]) => {
+                this.safeAddSocketListener('error', (...args: any[]) => {
                     const err = args[0] as Error;
                     backendLogger.error(`${this.connectionId} socket error: ${err.message}`, "ModbusConnection");
                     this.handleConnectionLoss();
                 });
-
                 this.safeAddSocketListener('close', () => {
                     backendLogger.warning(`${this.connectionId} socket closed`, "ModbusConnection");
                     this.handleConnectionLoss();
                 });
-
                 this.safeAddSocketListener('timeout', () => {
                     backendLogger.warning(`${this.connectionId} socket timeout`, "ModbusConnection");
                     socket.destroy();
                     this.handleConnectionLoss();
                 });
             }
-
             if (this.client._port) {
-                // Güvenli port listener ekleme
-                this.safeAddListener('error', (...args: unknown[]) => {
+                this.safeAddListener('error', (...args: any[]) => {
                     const err = args[0] as Error;
                     backendLogger.error(`[TCP] ${this.connectionId} port error: ${err.message}`, "ModbusConnection");
                     this.handleConnectionLoss();
                 });
             }
 
-            backendLogger.debug(`Device count: ${this.deviceCount}`, "ModbusConnection");
-            // Queue oluştur - dinamik concurrency ile
-            const concurrency = this.updateConcurrency(true); // Başlangıçta zorla güncelle
-            
-            // Eğer cihaz sayısı sıfır ise ve eski kuyruk varsa, yenisini oluşturma
-            if (this.deviceCount === 0 && this.queue) {
-                backendLogger.info(`${this.connectionId} has no devices, keeping minimal queue`, "ModbusConnection");
-                // Mevcut kuyruğu minimum ayarla
-                this.concurrency = 1;
-                this.queue.concurrency = 1;
-            } else {
-                // Normal durumda yeni kuyruk oluştur
-                this.queue = new PQueue({
-                    concurrency: concurrency,
-                    autoStart: true,
-                    throwOnTimeout: true,
-                    carryoverConcurrencyCount: true
-                });
+            // Kuyruğu oluştur veya güncelle
+            const initialConcurrency = this.updateConcurrency(true);
+            if (!this.queue || this.queue.concurrency !== initialConcurrency) {
+                this.queue = new PQueue({ concurrency: initialConcurrency });
+                backendLogger.info(`Queue created with concurrency: ${initialConcurrency} for connection ${this.connectionId}`, "ModbusConnection");
+                this.setupQueueEvents();
             }
-            
-            // Kuyruk olaylarını dinle
-            this.setupQueueEvents();
-            
-            backendLogger.info(`Queue created with concurrency: ${concurrency} for connection ${this.connectionId}`, "ModbusConnection");
-            
-            this.isConnected = true;
+
             this.retryCount = 0;
+            this.connectionLostEmitted = false;
+
             backendLogger.info(`Connected ${this.connectionId} (keepAlive enabled)`, "ModbusConnection");
             this.emit('connected');
-        } catch (err: any) {
-            this.retryCount++;
-            backendLogger.error(`Connection failed for ${this.connectionId}: ${err.message}`, "ModbusConnection");
 
-            // Bağlantı kaybı sinyalini gönder
-            this.emit('connectionLost');
-            
-            // PollingEngine'den kontrolü geri alıyoruz. Yeniden bağlanmayı kendimiz tetikleyeceğiz.
-            // this.scheduleReconnect(); // ARTIK POLLING ENGINE KONTROL EDECEK
+        } catch (err: any) {
+            // Hata durumunda, kaynakları temizle ve hatayı yukarıya fırlat.
+            backendLogger.warning(`Failed to connect to ${this.host}:${this.port}: ${err.message}. Handing over to PollingEngine.`, "ModbusTcpConnection");
+            this.isConnected = false;
+            this.client = null;
+            if (this.queue) {
+                this.queue.clear();
+                this.queue = null;
+            }
+            // Hatayı yukarı fırlatarak PollingEngine'in haberdar olmasını sağla.
             throw err;
         }
     }
@@ -1120,16 +1097,19 @@ export class ModbusTcpConnection extends ModbusConnection {
             return;
         }
 
-        // Yeniden bağlanma denemesi için flag'leri sıfırla
         this.isShuttingDown = false;
         this.connectionLostEmitted = false;
+        this.retryCount++; // Deneme sayacını artır
         
-        backendLogger.info(`Attempting to reconnect ${this.connectionId} (attempt ${this.retryCount + 1})`, "ModbusConnection");
+        backendLogger.info(`Attempting to reconnect ${this.connectionId} (attempt ${this.retryCount})`, "ModbusConnection");
         try {
             await this.connect();
-        } catch {
-            // Hata zaten connect içinde ele alınıyor ve connectionLost yayılıyor.
-            // O yüzden burada ek bir şeye gerek yok.
+            // Başarılı olursa, 'connected' olayı zaten connect() içinde tetiklenir ve döngü durur.
+        } catch (err) {
+            // Bağlantı tekrar başarısız oldu. Bir sonraki denemeyi tetiklemek için
+            // 'connectionLost' olayını tekrar yayınla.
+            backendLogger.warning(`Reconnect attempt ${this.retryCount} for ${this.connectionId} failed. Scheduling next attempt.`, "ModbusConnection");
+            this.emit('connectionLost');
         }
     }
     
