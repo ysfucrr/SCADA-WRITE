@@ -5,7 +5,6 @@
  * Represents a periodic report configuration
  *
  * @typedef {Object} PeriodicReport
- * @property {string} name - The name of the report
  * @property {string} description - Optional description of the report
  * @property {string} frequency - Frequency of the report (daily, weekly, monthly)
  * @property {Object} schedule - When to send the report
@@ -14,7 +13,9 @@
  * @property {number} schedule.hour - Hour of the day (0-23)
  * @property {number} schedule.minute - Minute of the hour (0-59)
  * @property {string} format - Report format (html or pdf)
- * @property {string[]} trendLogIds - Array of trend log IDs to include in the report
+ * @property {Object[]} trendLogs - Array of trend log configurations
+ * @property {string} trendLogs[].id - Trend log ID
+ * @property {string} trendLogs[].label - Custom label for the trend log
  * @property {string} timezone - Timezone for the report (default: Europe/Istanbul)
  * @property {Date} [lastSent] - When the report was last sent
  * @property {boolean} last24HoursOnly - Whether to include only last 24 hours data

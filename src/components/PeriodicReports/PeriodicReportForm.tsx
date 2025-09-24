@@ -13,7 +13,6 @@ import Checkbox from "../form/input/Checkbox";
 interface PeriodicReportFormProps {
     report?: any;
     onSubmit: (reportData: {
-        name: string;
         description: string;
         frequency: string;
         schedule: {
@@ -24,7 +23,7 @@ interface PeriodicReportFormProps {
         };
         format: 'html' | 'pdf';
         last24HoursOnly?: boolean;
-        trendLogIds: string[];
+        trendLogs: { id: string; label: string }[];
         // Recipients now managed through centralized mail settings
     }) => void;
     onCancel: () => void;
@@ -33,7 +32,6 @@ interface PeriodicReportFormProps {
 
 const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmit, onCancel, trendLogs }) => {
     // Form state
-    const [name, setName] = useState(report?.name || "");
     const [description, setDescription] = useState(report?.description || "");
     const [frequency, setFrequency] = useState(report?.frequency || "daily");
     const [dayOfWeek, setDayOfWeek] = useState(report?.schedule?.dayOfWeek || 1); // Monday default
@@ -42,7 +40,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
     const [minute, setMinute] = useState(report?.schedule?.minute || 0);
     const [format, setFormat] = useState<'html' | 'pdf'>(report?.format || 'html');
     const [last24HoursOnly, setLast24HoursOnly] = useState<boolean>(report?.last24HoursOnly || false);
-    const [selectedTrendLogIds, setSelectedTrendLogIds] = useState<string[]>(report?.trendLogIds || []);
+    const [selectedTrendLogs, setSelectedTrendLogs] = useState<{id: string, label: string}[]>(report?.trendLogs || []);
     
     const [isTrendLogDropdownOpen, setIsTrendLogDropdownOpen] = useState(false);
     const [trendLogSearchQuery, setTrendLogSearchQuery] = useState("");
@@ -67,10 +65,13 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
 
     // Toggle trend log selection
     const handleToggleTrendLog = (id: string) => {
-        if (selectedTrendLogIds.includes(id)) {
-            setSelectedTrendLogIds(selectedTrendLogIds.filter(logId => logId !== id));
+        if (selectedTrendLogs.some(item => item.id === id)) {
+            setSelectedTrendLogs(selectedTrendLogs.filter(item => item.id !== id));
         } else {
-            setSelectedTrendLogIds([...selectedTrendLogIds, id]);
+            // Default label olarak trend log'un adını kullan
+            const trendLog = trendLogs.find(log => log._id === id);
+            const defaultLabel = trendLog?.displayName || trendLog?.analyzerName || 'Trend Log';
+            setSelectedTrendLogs([...selectedTrendLogs, { id, label: defaultLabel }]);
         }
     };
 
@@ -78,20 +79,14 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
-        
+
         // Validation
-        if (!name) {
-            showToast("Report name is required", "error");
-            setSaving(false);
-            return;
-        }
-        
-        if (selectedTrendLogIds.length === 0) {
+        if (selectedTrendLogs.length === 0) {
             showToast("Please select at least one trend log", "error");
             setSaving(false);
             return;
         }
-        
+
         // Prepare schedule based on frequency
         const schedule: any = { hour, minute };
         if (frequency === 'weekly') {
@@ -99,17 +94,16 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
         } else if (frequency === 'monthly') {
             schedule.dayOfMonth = dayOfMonth;
         }
-        
+
         onSubmit({
-            name,
             description,
             frequency,
             schedule,
             format,
             last24HoursOnly,
-            trendLogIds: selectedTrendLogIds,
+            trendLogs: selectedTrendLogs,
         });
-        
+
         setSaving(false);
     };
 
@@ -126,17 +120,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Report Name and Description */}
-                <div className="space-y-2">
-                    <Label htmlFor="report-name">Report Name</Label>
-                    <InputField
-                        id="report-name"
-                        placeholder="Daily Energy Report"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                    />
-                </div>
-                
+                {/* Report Description */}
                 <div className="space-y-2">
                     <Label htmlFor="report-description">Description (Optional)</Label>
                     <textarea
@@ -266,11 +250,11 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
                             onClick={() => setIsTrendLogDropdownOpen(!isTrendLogDropdownOpen)}
                         >
                             <span className="text-sm text-gray-600 dark:text-gray-400">
-                                {selectedTrendLogIds.length === 0
+                                {selectedTrendLogs.length === 0
                                     ? "Select trend logs to include in report"
-                                    : selectedTrendLogIds.length === 1
-                                        ? trendLogs.find(log => log._id === selectedTrendLogIds[0])?.displayName || `${selectedTrendLogIds.length} trend log selected`
-                                        : `${selectedTrendLogIds.length} trend logs selected`}
+                                    : selectedTrendLogs.length === 1
+                                        ? trendLogs.find(log => log._id === selectedTrendLogs[0].id)?.displayName || `${selectedTrendLogs.length} trend log selected`
+                                        : `${selectedTrendLogs.length} trend logs selected`}
                             </span>
                             <ChevronDown size={16} />
                         </div>
@@ -311,7 +295,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
                                                     <div className="flex items-start gap-2">
                                                         <Checkbox
                                                             id={`trend-log-${log._id}`}
-                                                            checked={selectedTrendLogIds.includes(log._id)}
+                                                            checked={selectedTrendLogs.some(item => item.id === log._id)}
                                                             onChange={() => {}}
                                                         />
                                                         <div>
@@ -331,11 +315,40 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
                         )}
                     </div>
                     
-                    {selectedTrendLogIds.length > 0 && (
-                        <div className="mt-2">
-                            <SmallText className="text-gray-500 dark:text-gray-400">
-                                {selectedTrendLogIds.length} trend logs selected
-                            </SmallText>
+                    {selectedTrendLogs.length > 0 && (
+                        <div className="mt-4 space-y-3">
+                            <Label>Selected Trend Logs with Labels</Label>
+                            {selectedTrendLogs.map((item, index) => {
+                                const trendLog = trendLogs.find(log => log._id === item.id);
+                                return (
+                                    <div key={item.id} className="flex items-center gap-3 p-2 border rounded-md dark:border-gray-700">
+                                        <div className="flex-1">
+                                            <SmallText className="text-gray-600 dark:text-gray-400">
+                                                {trendLog?.displayName || trendLog?.analyzerName || 'Trend Log'}
+                                                {trendLog?.address && ` (Address: ${trendLog.address})`}
+                                            </SmallText>
+                                        </div>
+                                        <div className="flex-1">
+                                            <InputField
+                                                placeholder="Enter label for this trend log"
+                                                value={item.label}
+                                                onChange={(e) => {
+                                                    const newSelected = [...selectedTrendLogs];
+                                                    newSelected[index].label = e.target.value;
+                                                    setSelectedTrendLogs(newSelected);
+                                                }}
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedTrendLogs(selectedTrendLogs.filter((_, i) => i !== index))}
+                                            className="text-red-500 hover:text-red-700"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>

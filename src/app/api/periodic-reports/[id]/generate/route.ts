@@ -36,7 +36,8 @@ export async function POST(
 
     // Fetch trend log data based on the report settings
     const timeLimit = report.last24HoursOnly ? new Date(Date.now() - 24 * 60 * 60 * 1000) : null;
-    const trendLogEntries = await fetchTrendLogData(db, report.trendLogIds, timeLimit);
+    const trendLogIds = report.trendLogs.map((item: any) => item.id);
+    const trendLogEntries = await fetchTrendLogData(db, trendLogIds, timeLimit);
     
     if (!trendLogEntries || trendLogEntries.length === 0) {
       return NextResponse.json({ error: 'No trend log data available for the report' }, { status: 400 });
@@ -44,7 +45,7 @@ export async function POST(
 
     // Fetch trend log details for creating better report labels
     const trendLogs = await db.collection('trendLogs').find({
-      _id: { $in: report.trendLogIds.map((id: string) => new ObjectId(id)) }
+      _id: { $in: trendLogIds.map((id: string) => new ObjectId(id)) }
     }).toArray();
     
     // Fetch analyzer details for better display
@@ -53,12 +54,16 @@ export async function POST(
       _id: { $in: analyzerIds.map((id: string) => new ObjectId(id)) }
     }).toArray();
 
+    // Create label map from report.trendLogs
+    const labelMap = new Map<string, string>(report.trendLogs.map((item: any) => [item.id, item.label]));
+
     // Generate the report content
     const { reportSubject, reportText, reportHtml, entriesByTrendLog, trendLogMap, analyzerMap } = await generateReportContent(
       report,
       trendLogs,
       trendLogEntries,
-      db
+      db,
+      labelMap
     );
 
     // Send the report
@@ -70,13 +75,18 @@ export async function POST(
       for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
         const trendLog = trendLogMap.get(trendLogId);
         if (trendLog) {
-          const analyzer = analyzerMap.get(trendLog.analyzerId);
-          const title = analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
-          const pdfBuffer = await generateSinglePdfReport(title, entries, report.name);
+          const customLabel = labelMap.get(trendLogId);
+          const defaultTitle = (() => {
+            const analyzer = analyzerMap.get(trendLog.analyzerId);
+            return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+          })();
+
+          const title = customLabel || defaultTitle;
+          const pdfBuffer = await generateSinglePdfReport(title, entries, "Periodic Report");
 
           // Create unique filename
           const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '_');
-          const filename = `${report.name.replace(/ /g, '_')}_${safeTitle}.pdf`;
+          const filename = `Periodic_Report_${safeTitle}.pdf`;
 
           attachments.push({
             filename: filename,
@@ -87,7 +97,7 @@ export async function POST(
       }
 
       // Send PDFs as attachments
-      const notificationHtml = `<p>Please find the attached reports: <strong>${report.name}</strong></p>`;
+      const notificationHtml = `<p>Please find the attached reports: <strong>Periodic Report</strong></p>`;
 
       success = await mailService.sendMail(
         reportSubject,
@@ -158,7 +168,8 @@ async function generateReportContent(
   report: any,
   trendLogs: any[],
   trendLogEntries: any[],
-  db: any
+  db: any,
+  labelMap: Map<string, string>
 ) {
   // Create maps for trend logs and analyzers
   const trendLogMap = new Map();
@@ -193,28 +204,31 @@ async function generateReportContent(
   }
 
   // Generate report subject
-  const reportSubject = `${report.name} - ${new Date().toLocaleDateString()}`;
+  const reportSubject = `Periodic Report - ${new Date().toLocaleDateString()}`;
   
   // Generate report text
-  let reportText = `${report.name}\n\nDate: ${new Date().toLocaleDateString()}\n\n`;
-  
+  let reportText = `Periodic Report\n\nDate: ${new Date().toLocaleDateString()}\n\n`;
+
   for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
     const trendLog = trendLogMap.get(trendLogId);
-    
+
     if (trendLog) {
-      // Analyzer bilgisini al
-      const analyzer = trendLog.analyzerId ? analyzerMap.get(trendLog.analyzerId) : null;
-      const analyzerName = analyzer ? analyzer.name : 'Unknown Analyzer';
-      const analyzerSlaveId = analyzer ? analyzer.slaveId : 'N/A';
-      
-      reportText += `Trend Log: ${analyzerName} (Slave: ${analyzerSlaveId})\n`;
+      const customLabel = labelMap.get(trendLogId);
+      const defaultTitle = (() => {
+        const analyzer = trendLog.analyzerId ? analyzerMap.get(trendLog.analyzerId) : null;
+        return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+      })();
+
+      const title = customLabel || defaultTitle;
+
+      reportText += `Trend Log: ${title}\n`;
       reportText += `Entries: ${entries.length}\n\n`;
-      
+
       for (const entry of entries) {
         const timestamp = new Date(entry.timestamp).toLocaleString();
         reportText += `${timestamp} - Value: ${entry.value}\n`;
       }
-      
+
       reportText += '\n';
     }
   }
@@ -233,25 +247,28 @@ async function generateReportContent(
       </style>
     </head>
     <body>
-      <h1>${report.name}</h1>
+      <h1>Periodic Report</h1>
       <p>Date: ${new Date().toLocaleDateString()}</p>
   `;
 
   // Add sections for each trend log
   for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
     const trendLog = trendLogMap.get(trendLogId);
-    
+
     if (trendLog) {
-      // Analyzer bilgisini al
-      const analyzer = trendLog.analyzerId ? analyzerMap.get(trendLog.analyzerId) : null;
-      const analyzerName = analyzer ? analyzer.name : 'Unknown Analyzer';
-      const analyzerSlaveId = analyzer ? analyzer.slaveId : 'N/A';
-      
+      const customLabel = labelMap.get(trendLogId);
+      const defaultTitle = (() => {
+        const analyzer = trendLog.analyzerId ? analyzerMap.get(trendLog.analyzerId) : null;
+        return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+      })();
+
+      const title = customLabel || defaultTitle;
+
       reportHtml += `
         <div class="section">
-          <h2>Trend Log: ${analyzerName} (Slave: ${analyzerSlaveId})</h2>
+          <h2>Trend Log: ${title}</h2>
           <p>Entries: ${entries.length}</p>
-          
+
           <table>
             <thead>
               <tr>
@@ -261,7 +278,7 @@ async function generateReportContent(
             </thead>
             <tbody>
       `;
-      
+
       for (const entry of entries) {
         const timestamp = new Date(entry.timestamp).toLocaleString();
         reportHtml += `
@@ -271,7 +288,7 @@ async function generateReportContent(
           </tr>
         `;
       }
-      
+
       reportHtml += `
             </tbody>
           </table>

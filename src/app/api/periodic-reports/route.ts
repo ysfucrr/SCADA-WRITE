@@ -41,20 +41,19 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      name,
       description,
       frequency,
       schedule,
       format,
       last24HoursOnly,
-      trendLogIds
+      trendLogs
       // recipients now managed through centralized mail settings
     } = body;
 
     // Validate required fields
-    if (!name || !frequency || !schedule || !trendLogIds) {
+    if (!frequency || !schedule || !trendLogs) {
       return NextResponse.json({
-        error: 'Missing required fields: name, frequency, schedule, and trendLogIds are required'
+        error: 'Missing required fields: frequency, schedule, and trendLogs are required'
       }, { status: 400 });
     }
 
@@ -71,32 +70,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Hour and minute are required in the schedule' }, { status: 400 });
     }
 
-    // Validate trendLogIds (at least one)
-    if (!trendLogIds.length) {
+    // Validate trendLogs (at least one)
+    if (!trendLogs.length) {
       return NextResponse.json({ error: 'At least one trend log must be selected' }, { status: 400 });
     }
 
+    // Validate trendLogs structure
+    for (const item of trendLogs) {
+      if (!item.id || !item.label) {
+        return NextResponse.json({ error: 'Each trend log must have id and label' }, { status: 400 });
+      }
+    }
+
     const { db } = await connectToDatabase();
-    
-    // Validate that all trendLogIds exist
-    const trendLogs = await db.collection('trendLogs').find({
-      _id: { $in: trendLogIds.map((id: string) => new ObjectId(id)) }
+
+    // Validate that all trend log IDs exist
+    const existingTrendLogs = await db.collection('trendLogs').find({
+      _id: { $in: trendLogs.map((item: any) => new ObjectId(item.id)) }
     }).toArray();
 
-    if (trendLogs.length !== trendLogIds.length) {
+    if (existingTrendLogs.length !== trendLogs.length) {
       return NextResponse.json({ error: 'One or more trend log IDs are invalid' }, { status: 400 });
     }
 
     // Create the report
     const now = new Date();
     const periodicReport = await db.collection('periodicReports').insertOne({
-      name,
       description: description || '',
       frequency,
       schedule,
       format: format || 'html',
       last24HoursOnly: last24HoursOnly || false,
-      trendLogIds,
+      trendLogs,
       timezone: "Europe/Istanbul",
       active: true,
       createdAt: now,
@@ -106,13 +111,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       _id: periodicReport.insertedId.toString(),
-      name,
       description: description || '',
       frequency,
       schedule,
       format: format || 'html',
       last24HoursOnly: last24HoursOnly || false,
-      trendLogIds,
+      trendLogs,
       active: true,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()

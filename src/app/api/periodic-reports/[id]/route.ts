@@ -72,21 +72,20 @@ export async function PUT(
 
     const body = await request.json();
     const {
-      name,
       description,
       frequency,
       schedule,
       format,
       last24HoursOnly,
-      trendLogIds,
+      trendLogs,
       active
       // recipients are now managed through centralized mail settings
     } = body;
 
     // Validate required fields
-    if (!name || !frequency || !schedule || !trendLogIds) {
+    if (!frequency || !schedule || !trendLogs) {
       return NextResponse.json({
-        error: 'Missing required fields: name, frequency, schedule, and trendLogIds are required'
+        error: 'Missing required fields: frequency, schedule, and trendLogs are required'
       }, { status: 400 });
     }
 
@@ -103,17 +102,24 @@ export async function PUT(
       return NextResponse.json({ error: 'Hour and minute are required in the schedule' }, { status: 400 });
     }
 
-    // Validate trendLogIds (at least one)
-    if (!trendLogIds.length) {
+    // Validate trendLogs (at least one)
+    if (!trendLogs.length) {
       return NextResponse.json({ error: 'At least one trend log must be selected' }, { status: 400 });
     }
 
-    // Validate that all trendLogIds exist
-    const trendLogs = await db.collection('trendLogs').find({
-      _id: { $in: trendLogIds.map((id: string) => new ObjectId(id)) }
+    // Validate trendLogs structure
+    for (const item of trendLogs) {
+      if (!item.id || !item.label) {
+        return NextResponse.json({ error: 'Each trend log must have id and label' }, { status: 400 });
+      }
+    }
+
+    // Validate that all trend log IDs exist
+    const existingTrendLogs = await db.collection('trendLogs').find({
+      _id: { $in: trendLogs.map((item: any) => new ObjectId(item.id)) }
     }).toArray();
 
-    if (trendLogs.length !== trendLogIds.length) {
+    if (existingTrendLogs.length !== trendLogs.length) {
       return NextResponse.json({ error: 'One or more trend log IDs are invalid' }, { status: 400 });
     }
 
@@ -123,13 +129,12 @@ export async function PUT(
       { _id: new ObjectId(id) },
       {
         $set: {
-          name,
           description: description || '',
           frequency,
           schedule,
           format: format || 'html',
           last24HoursOnly: last24HoursOnly !== undefined ? last24HoursOnly : existingReport.last24HoursOnly,
-          trendLogIds,
+          trendLogs,
           active: active !== undefined ? active : existingReport.active,
           updatedAt: now
           // Email recipients are now managed through centralized mail settings
