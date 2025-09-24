@@ -103,7 +103,7 @@ const AppSidebar: React.FC = () => {
         {
           icon: <Receipt />,
           name: "Billing",
-          path: "/dashboard",
+          path: "/billing",
         },
         {
           icon: <Users />,
@@ -159,11 +159,11 @@ const AppSidebar: React.FC = () => {
       path: "/home",
     });
     
-    if (user.permissions.dashboard) {
+    if (user.permissions.billing) {
       items.push({
         icon: <Receipt />,
         name: "Billing",
-        path: "/dashboard",
+        path: "/billing",
       });
     }
     if (user.permissions.units) {

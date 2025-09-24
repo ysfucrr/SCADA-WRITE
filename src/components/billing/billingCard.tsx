@@ -6,7 +6,7 @@ import { useWebSocket } from '@/context/WebSocketContext';
 import { useAuth } from "@/hooks/use-auth";
 import * as XLSX from 'xlsx';
 import { utils, CellObject } from 'xlsx'; // Cell style türlerini tanımla
-import { billingType } from "@/app/(project)/dashboard/page";
+import { billingType } from "@/app/(project)/billing/page";
 import { showConfirmAlert } from "../ui/alert";
 
 export default function BillingCard({ billing, onEdit, onDelete, buildings }: { billing: billingType; onEdit: (billing: billingType) => void; onDelete: (billing: billingType) => void; buildings: any[]; }) {

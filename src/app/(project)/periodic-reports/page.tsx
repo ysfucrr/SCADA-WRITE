@@ -302,7 +302,7 @@ export default function PeriodicReportsPage() {
 
 
   if (!isAuthLoading && !isAdmin && !user?.permissions?.periodicReports) {
-    router.replace("/dashboard");
+    router.replace("/billing");
     return <Spinner variant="bars" fullPage />;
   }
 

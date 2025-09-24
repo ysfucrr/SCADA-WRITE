@@ -76,8 +76,8 @@ export async function middleware(request: NextRequest) {
                 console.log("user: ", user)
                 //check permissions
 
-                if (pathname.startsWith('/dashboard') || pathname === '/' || pathname.startsWith('/home')) {
-                    console.log("dashboard: ", pathname)
+                if (pathname.startsWith('/billing') || pathname === '/' || pathname.startsWith('/home')) {
+                    console.log("billing: ", pathname)
                     
                     // If URL has 'source=redirect' parameter, don't redirect again
                     // This prevents infinite redirection loops
@@ -86,22 +86,22 @@ export async function middleware(request: NextRequest) {
                         return NextResponse.next();
                     }
                     
-                    if (user.permissions?.dashboard) {
-                        console.log("dashboard")
+                    if (user.permissions?.billing) {
+                        console.log("billing")
                         if (pathname === "/") {
                             const redirectUrl = new URL('/home', request.url);
                             redirectUrl.searchParams.set('source', 'redirect');
                             return NextResponse.redirect(redirectUrl);
                         }
-                        // Also redirect /dashboard to /home
-                        if (pathname === "/dashboard") {
+                        // Also redirect /billing to /home
+                        if (pathname === "/billing") {
                             const redirectUrl = new URL('/home', request.url);
                             redirectUrl.searchParams.set('source', 'redirect');
                             return NextResponse.redirect(redirectUrl);
                         }
                         return NextResponse.next();
                     } else {
-                        // If no dashboard permission, redirect directly to System Health tab
+                        // If no billing permission, redirect directly to System Health tab
                         const redirectUrl = new URL('/home', request.url);
                         redirectUrl.searchParams.set('source', 'redirect');
                         return NextResponse.redirect(redirectUrl);
@@ -201,7 +201,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
     matcher: [
         '/',
-        '/dashboard',
+        '/billing',
         '/home',
         '/signin',
         '/buildings/:path*',

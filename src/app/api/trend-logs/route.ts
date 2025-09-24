@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
 
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false && session.user.permissions?.dashboard === false) {
+    if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const query = request.nextUrl.searchParams;

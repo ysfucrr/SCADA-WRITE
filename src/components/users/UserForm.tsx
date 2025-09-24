@@ -11,7 +11,7 @@ interface UserFormProps {
         username: string;
         password: string;
         permissions: {
-            dashboard: boolean;
+            billing: boolean;
             users: boolean;
             units: boolean;
             trendLog: boolean;
@@ -28,7 +28,7 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
     const [username, setUsername] = useState(user?.username || "");
     const [password, setPassword] = useState("");
     const [permissions, setPermissions] = useState({
-        dashboard: user?.permissions?.dashboard || false,
+        billing: user?.permissions?.billing || false,
         users: user?.permissions?.users || false,
         units: user?.permissions?.units || false,
         trendLog: user?.permissions?.trendLog || false,
@@ -179,19 +179,19 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
                         Page Permissions
                     </div>
                     <div className="grid grid-cols-2 gap-y-3 gap-x-2">
-                        {/* Dashboard permission */}
+                        {/* billing permission */}
                         <div className="flex items-center space-x-2">
                             <div className="switch-container">
                                 <Switch
-                                    disabled={loginedUser?.role != "admin" && !loginedUser?.permissions?.dashboard}
+                                    disabled={loginedUser?.role != "admin" && !loginedUser?.permissions?.billing}
                                     onChange={(value) =>
                                         setPermissions({
                                             ...permissions,
-                                            dashboard: value,
+                                            billing: value,
                                         })
                                     }
                                     label="Billing"
-                                    defaultChecked={permissions.dashboard}
+                                    defaultChecked={permissions.billing}
                                 />
                             </div>
                         </div>

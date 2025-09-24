@@ -1,4 +1,4 @@
-import { billingType } from "@/app/(project)/dashboard/page";
+import { billingType } from "@/app/(project)/billing/page";
 import { TrendLogType } from "@/app/(project)/trend-log/page";
 import InputField from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";

@@ -16,7 +16,7 @@ export async function PUT(
 
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== 'admin' && session.user.permissions?.dashboard === false) {
+    if (!session || session.user.role !== 'admin' && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const { trendLogsData, name, price, currency } = await request.json();
@@ -115,7 +115,7 @@ export async function DELETE(
     console.log('Session object:', JSON.stringify(session, null, 2));
     
     // Yetki kontrolü
-    if (!session || session.user.role !== 'admin' && session.user.permissions?.dashboard === false) {
+    if (!session || session.user.role !== 'admin' && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     

@@ -24,7 +24,7 @@ export interface billingType {
   updatedAt: string;
 }
 
-export default function Dashboard() {
+export default function billing() {
   const [billings, setbillings] = useState<billingType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [buildings, setBuildings] = useState<any[]>([]);
@@ -36,7 +36,7 @@ export default function Dashboard() {
   const [selectedbilling, setSelectedbilling] = useState<billingType | undefined>(undefined);
   const { user, isAdmin, isLoading: isAuthLoading } = useAuth();
   useEffect(() => {
-    if (!isAuthLoading && (isAdmin || user?.permissions?.dashboard === true)) {
+    if (!isAuthLoading && (isAdmin || user?.permissions?.billing === true)) {
       fetchBuildings().then(() => {
         fetchbillings().then(() => {
           setIsLoading(false);

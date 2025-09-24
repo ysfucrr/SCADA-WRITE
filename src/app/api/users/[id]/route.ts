@@ -31,7 +31,7 @@ export async function PUT(
     const updateData: any = {
       // username artık düzenlenmiyor
       permissions: permissions || {
-        dashboard: false,
+        billing: false,
         users: false,
         units: false,
         trendLog: false

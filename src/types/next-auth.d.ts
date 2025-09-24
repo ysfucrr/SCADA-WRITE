@@ -5,7 +5,7 @@ declare module "next-auth" {
     username?: string;
     role?: string;
     permissions?: {
-      dashboard?: boolean;
+      billing?: boolean;
       users?: boolean;
       units?: boolean;
       trendLog?: boolean;
@@ -24,7 +24,7 @@ declare module "next-auth" {
       username?: string;
       role?: string;
       permissions?: {
-        dashboard?: boolean;
+        billing?: boolean;
         users?: boolean;
         units?: boolean;
         trendLog?: boolean;
@@ -39,7 +39,7 @@ declare module "next-auth" {
     interface JWT {
       role?: string;
       permissions?: {
-        dashboard?: boolean;
+        billing?: boolean;
         users?: boolean;
         units?: boolean;
         trendLog?: boolean;

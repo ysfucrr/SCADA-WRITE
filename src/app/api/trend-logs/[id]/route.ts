@@ -12,7 +12,7 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false && session.user.permissions?.dashboard === false) {
+    if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const { id } = await params;
@@ -41,7 +41,7 @@ export async function PUT(
     const session = await getServerSession(authOptions);
 
     // Yetki kontrolü
-    if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false && session.user.permissions?.dashboard === false) {
+    if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const body = await request.json();

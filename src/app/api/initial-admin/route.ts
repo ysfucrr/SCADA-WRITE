@@ -31,7 +31,7 @@ export async function POST(req: NextRequest
         username,
         role: 'admin',
         password: hashed,
-        permissions: { dashboard: true, users: true, units: true, trendLog: true },
+        permissions: { billing: true, users: true, units: true, trendLog: true },
         createdAt: new Date()
     };
     await db.collection('users').insertOne(doc);

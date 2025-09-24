@@ -61,12 +61,12 @@ export const authOptions: NextAuthOptions = {
             name: user.username, 
             role: user.role,
             permissions: user.permissions || (user.role === 'admin' ? {
-              dashboard: true,
+              billing: true,
               users: true,
               units: true,
               trendLog: true
             } : {
-              dashboard: false,
+              billing: false,
               users: false,
               units: false,
               trendLog: false

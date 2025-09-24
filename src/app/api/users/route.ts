@@ -61,12 +61,12 @@ export async function POST(request: Request) {
       password: hashedPassword,
       role: role || 'user',
       permissions: permissions || (role === 'admin' ? {
-        dashboard: true,
+        billing: true,
         users: true,
         units: true,
         trendLog: true
       } : {
-        dashboard: false,
+        billing: false,
         users: false,
         units: false,
         trendLog: false

@@ -11,7 +11,7 @@ export async function GET() {
     const session = await getServerSession(authOptions);
 
     // Yetki kontrolü
-    if (!session || session.user.role !== 'admin' && session.user.permissions?.dashboard === false) {
+    if (!session || session.user.role !== 'admin' && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
 
     // Yetki kontrolü
-    if (!session || session.user.role !== 'admin' && session.user.permissions?.dashboard === false) {
+    if (!session || session.user.role !== 'admin' && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
