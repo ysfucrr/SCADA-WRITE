@@ -65,32 +65,36 @@ export async function POST(
     let success = false;
 
     if (report.format === 'pdf') {
-      // Generate PDF
-      const trendLogDataForPdf = new Map();
+      // Generate separate PDFs for each trend log
+      const attachments = [];
       for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
         const trendLog = trendLogMap.get(trendLogId);
         if (trendLog) {
           const analyzer = analyzerMap.get(trendLog.analyzerId);
           const title = analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
-          trendLogDataForPdf.set(title, entries);
+          const pdfBuffer = await generateSinglePdfReport(title, entries, report.name);
+
+          // Create unique filename
+          const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '_');
+          const filename = `${report.name.replace(/ /g, '_')}_${safeTitle}.pdf`;
+
+          attachments.push({
+            filename: filename,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          });
         }
       }
 
-      const pdfBuffer = await generatePdfReport(report.name, trendLogDataForPdf);
-
-      // Send PDF as attachment
-      const notificationHtml = `<p>Please find the attached report: <strong>${report.name}</strong></p>`;
+      // Send PDFs as attachments
+      const notificationHtml = `<p>Please find the attached reports: <strong>${report.name}</strong></p>`;
 
       success = await mailService.sendMail(
         reportSubject,
-        "Please find the attached PDF report.",
+        "Please find the attached PDF reports.",
         notificationHtml,
         3,
-        [{
-          filename: `${report.name.replace(/ /g, '_')}.pdf`,
-          content: pdfBuffer,
-          contentType: 'application/pdf'
-        }]
+        attachments
       );
     } else {
       // Send HTML email
@@ -291,7 +295,39 @@ async function generateReportContent(
   };
 }
 
-// Helper function to generate PDF report
+// Helper function to generate a single PDF report for one trend log
+async function generateSinglePdfReport(title: string, entries: any[], reportName: string): Promise<Buffer> {
+  const doc = new jsPDF();
+  const reportDate = new Date();
+
+  doc.setFontSize(20);
+  doc.text(reportName, doc.internal.pageSize.getWidth() / 2, 20, { align: 'center' });
+  doc.setFontSize(12);
+  doc.text(`Report Date: ${reportDate.toLocaleDateString()}`, doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+
+  let startY = 40;
+
+  doc.setFontSize(14);
+  doc.text(title, 14, startY);
+  startY += 10;
+
+  autoTable(doc, {
+    head: [['Timestamp', 'Value']],
+    body: entries.map(entry => [
+      new Date(entry.timestamp).toLocaleString(),
+      entry.value
+    ]),
+    startY: startY,
+    theme: 'grid',
+    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
+    styles: { fontSize: 10 },
+  });
+
+  const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+  return pdfBuffer;
+}
+
+// Helper function to generate PDF report (legacy, kept for compatibility)
 async function generatePdfReport(reportName: string, trendLogData: Map<string, any[]>): Promise<Buffer> {
   const doc = new jsPDF();
   const reportDate = new Date();
