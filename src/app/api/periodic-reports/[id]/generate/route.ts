@@ -137,10 +137,7 @@ export async function POST(
         3,
         finalAttachments
       );
-    } else {
-      // Send HTML email
-      success = await mailService.sendMail(reportSubject, reportText, reportHtml);
-    }
+      }
 
     if (!success) {
       return NextResponse.json({ error: 'Failed to send the report email' }, { status: 500 });

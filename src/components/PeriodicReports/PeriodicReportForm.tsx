@@ -38,7 +38,7 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
     const [dayOfMonth, setDayOfMonth] = useState(report?.schedule?.dayOfMonth || 1);
     const [hour, setHour] = useState(report?.schedule?.hour || 8); // 8 AM default
     const [minute, setMinute] = useState(report?.schedule?.minute || 0);
-    const [format, setFormat] = useState<'html' | 'pdf'>(report?.format || 'html');
+    const [format, setFormat] = useState<'pdf'>('pdf');
     const [last24HoursOnly, setLast24HoursOnly] = useState<boolean>(report?.last24HoursOnly || false);
     const [selectedTrendLogs, setSelectedTrendLogs] = useState<{id: string, label: string}[]>(report?.trendLogs || []);
     
@@ -212,15 +212,10 @@ const PeriodicReportForm: React.FC<PeriodicReportFormProps> = ({ report, onSubmi
                     </div>
                     
                     <div className="space-y-2">
-                        <Label htmlFor="format">Report Format</Label>
-                        <Select
-                            options={[
-                                { value: "html", label: "HTML Email" },
-                                { value: "pdf", label: "PDF Attachment" }
-                            ]}
-                            onChange={(value) => setFormat(value as 'html' | 'pdf')}
-                            defaultValue={format}
-                        />
+                        <Label>Report Format</Label>
+                        <div className="px-3 py-2 border rounded-md bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                            PDF Attachment
+                        </div>
                     </div>
                 </div>
 

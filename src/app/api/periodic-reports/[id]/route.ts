@@ -132,7 +132,7 @@ export async function PUT(
           description: description || '',
           frequency,
           schedule,
-          format: format || 'html',
+          format: 'pdf',
           last24HoursOnly: last24HoursOnly !== undefined ? last24HoursOnly : existingReport.last24HoursOnly,
           trendLogs,
           active: active !== undefined ? active : existingReport.active,
