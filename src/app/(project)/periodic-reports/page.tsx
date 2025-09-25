@@ -15,7 +15,6 @@ import PeriodicReportForm from "@/components/PeriodicReports/PeriodicReportForm"
 // Types
 interface PeriodicReportType {
   _id: string;
-  name: string;
   description: string;
   frequency: string; // daily, weekly, monthly
   schedule: {
@@ -24,11 +23,10 @@ interface PeriodicReportType {
     hour: number; // 0-23
     minute: number; // 0-59
   };
-  format: 'html' | 'pdf';
+  format: 'pdf';
   last24HoursOnly?: boolean;
   // Recipients now managed through centralized mail settings
-  trendLogIds: string[];
-  trendLogs?: any[]; // Populated data
+  trendLogs: { id: string; label: string }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +47,9 @@ export default function PeriodicReportsPage() {
     recipients: string[];
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [isGenerationModalOpen, setIsGenerationModalOpen] = useState(false);
 
   // Fetch trend logs to use in report configuration
   const fetchTrendLogs = async () => {
@@ -236,18 +237,42 @@ export default function PeriodicReportsPage() {
   // Generate and download report manually
   const generateReport = async (report: PeriodicReportType) => {
     try {
-      showToast("Generating report, please wait...");
+      setIsGenerationModalOpen(true);
+      setGenerationProgress(0);
+
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setGenerationProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
       const response = await fetch(`/api/periodic-reports/${report._id}/generate`, {
         method: "POST",
       });
+
+      clearInterval(progressInterval);
+      setGenerationProgress(100);
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Could not generate report");
       }
 
-      showToast("Report generated and sent successfully");
+      // Show success message after a short delay
+      setTimeout(() => {
+        setIsGenerationModalOpen(false);
+        setGenerationProgress(0);
+        showToast("Report generated and sent successfully");
+      }, 1000);
+
     } catch (error: any) {
+      setIsGenerationModalOpen(false);
+      setGenerationProgress(0);
       showToast(error.message || "Could not generate report", "error");
     }
   };
@@ -358,7 +383,7 @@ export default function PeriodicReportsPage() {
                   periodicReports.map((report) => (
                     <tr key={report._id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30">
                       <td className="px-4 sm:px-6 py-4">
-                        <div className="font-medium text-gray-800 dark:text-gray-300">{report.name}</div>
+                        <div className="font-medium text-gray-800 dark:text-gray-300">Periodic Report</div>
                         <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{report.description}</div>
                         
                         {/* Mobile view details */}
@@ -514,6 +539,33 @@ export default function PeriodicReportsPage() {
               Report preview could not be loaded. Please try again.
             </Paragraph>
           )}
+        </div>
+      </Modal>
+
+      {/* Generation Progress Modal */}
+      <Modal
+        isOpen={isGenerationModalOpen}
+        onClose={() => {}}
+        className="max-w-md"
+      >
+        <div className="p-6">
+          <div className="text-center">
+            <Heading3 className="mb-4">Generating Report</Heading3>
+            <div className="mb-4">
+              <div className="w-full bg-gray-200 rounded-full h-4 dark:bg-gray-700">
+                <div
+                  className="bg-blue-600 h-4 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${generationProgress}%` }}
+                ></div>
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                {generationProgress}% Complete
+              </div>
+            </div>
+            <Paragraph className="text-gray-600 dark:text-gray-400">
+              Please wait while we generate and send your report...
+            </Paragraph>
+          </div>
         </div>
       </Modal>
     </div>
