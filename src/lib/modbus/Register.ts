@@ -105,11 +105,9 @@ export class Register {
             //console.log(`[REGISTER-GETVALUE] Boolean register: value=${this.value}, bit=${this.bit}`);
         }
 
-        // Sayısal değer ise ölçeklendir
+        // Sayısal değer ise doğrudan döndür (decode'da zaten ölçeklendirildi)
         if (typeof this.value === 'number') {
-            // Apply the formula: (Raw Value + Offset) * Scale
-            const scaledValue = (this.value + this.offset) * this.scale;
-            return Number(scaledValue.toFixed(2));
+            return Number(this.value.toFixed(2));
         }
         
         //console.log(`[REGISTER-GETVALUE] Ham değer döndürülüyor: ${this.value}`);
