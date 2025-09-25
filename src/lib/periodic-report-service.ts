@@ -40,7 +40,7 @@ class PeriodicReportService {
 
       for (const report of reports) {
         if (this.shouldSendReport(report, now)) {
-          backendLogger.info(`Sending scheduled report: ${report.name}`, 'PeriodicReportService');
+          backendLogger.info(`Sending scheduled report: ${report.description || 'Periodic Report'}`, 'PeriodicReportService');
           await this.sendConfiguredReport(report, db);
         }
       }
@@ -89,7 +89,7 @@ class PeriodicReportService {
   private async sendConfiguredReport(report: any, db: any) {
     try {
       // Convert string IDs to ObjectIds
-      const trendLogIds = report.trendLogIds.map((id: string) => new ObjectId(id));
+      const trendLogIds = report.trendLogs.map((item: any) => new ObjectId(item.id));
       
       // Note: Email recipients are now managed through centralized mail settings
       
@@ -106,7 +106,7 @@ class PeriodicReportService {
       const entries = await db.collection('trend_log_entries').find(query).sort({ timestamp: 1 }).toArray();
       
       if (entries.length === 0) {
-        backendLogger.info(`No trend logs found for report: ${report.name}. Skipping.`, 'PeriodicReportService');
+        backendLogger.info(`No trend logs found for report: ${report.description || 'Periodic Report'}. Skipping.`, 'PeriodicReportService');
         return;
       }
       
@@ -180,9 +180,9 @@ class PeriodicReportService {
       }
       
       // Generate report content
-      const reportSubject = `${report.name} - ${new Date().toLocaleDateString()}`;
-      
-      let reportText = `${report.name}\n\nDate: ${new Date().toLocaleDateString()}\n\n`;
+      const reportSubject = `Periodic Report - ${new Date().toLocaleDateString()}`;
+
+      let reportText = `Periodic Report\n\nDate: ${new Date().toLocaleDateString()}\n\n`;
       let reportHtml = `
         <html>
         <head>
@@ -196,7 +196,7 @@ class PeriodicReportService {
           </style>
         </head>
         <body>
-          <h1>${report.name}</h1>
+          <h1>Periodic Report</h1>
           <p>Date: ${new Date().toLocaleDateString()}</p>
       `;
       
@@ -289,18 +289,18 @@ class PeriodicReportService {
             }
         }
 
-        const pdfBuffer = await this.generatePdfReport(report.name, trendLogDataForPdf);
-        
+        const pdfBuffer = await this.generatePdfReport("Periodic Report", trendLogDataForPdf);
+
         // When sending a PDF, the HTML body should be a simple notification, not the full report.
-        const notificationHtml = `<p>Please find the attached report: <strong>${report.name}</strong></p>`;
-        
+        const notificationHtml = `<p>Please find the attached report: <strong>Periodic Report</strong></p>`;
+
         success = await mailService.sendMail(
           reportSubject,
           "Please find the attached PDF report.", // Simple text body for non-html clients
           notificationHtml, // Simple HTML body
           3, // retry count
           [{ // Attachment object
-            filename: `${report.name.replace(/ /g, '_')}.pdf`,
+            filename: `Periodic_Report.pdf`,
             content: pdfBuffer,
             contentType: 'application/pdf'
           }]
@@ -327,12 +327,12 @@ class PeriodicReportService {
           }
         );
         
-        backendLogger.info(`Report "${report.name}" sent successfully.`, 'PeriodicReportService');
+        backendLogger.info(`Report "Periodic Report" sent successfully.`, 'PeriodicReportService');
       } else {
-        backendLogger.error(`Failed to send report "${report.name}".`, 'PeriodicReportService');
+        backendLogger.error(`Failed to send report "Periodic Report".`, 'PeriodicReportService');
       }
     } catch (error) {
-      backendLogger.error(`An error occurred while sending report "${report.name}".`, 'PeriodicReportService', {
+      backendLogger.error(`An error occurred while sending report "Periodic Report".`, 'PeriodicReportService', {
         error: (error as Error).message,
         stack: (error as Error).stack
       });
