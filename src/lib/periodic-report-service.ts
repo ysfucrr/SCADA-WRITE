@@ -7,6 +7,8 @@ import { ObjectId } from 'mongodb';
 // a an import and a an import are missing
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as archiver from 'archiver';
+import { Readable } from 'stream';
 
 
 class PeriodicReportService {
@@ -179,6 +181,9 @@ class PeriodicReportService {
         entriesByTrendLog.get(trendLogId).push(entry);
       }
       
+      // Create label map from report.trendLogs
+      const labelMap = new Map<string, string>(report.trendLogs.map((item: any) => [item.id, item.label]));
+
       // Generate report content
       const reportSubject = `Periodic Report - ${new Date().toLocaleDateString()}`;
 
@@ -200,48 +205,36 @@ class PeriodicReportService {
           <p>Date: ${new Date().toLocaleDateString()}</p>
       `;
       
-      // Add sections for each trend log
+      // Add sections for each trend log (for HTML content, though we only use PDF now)
       for (const [trendLogId, logEntries] of entriesByTrendLog.entries()) {
         const trendLog = trendLogMap.get(trendLogId);
-        
+
         if (trendLog) {
-          let reportTitle;
-          
-          try {
-            // Güvenli bir şekilde analyzer bilgisini alalım
-            const registerId = trendLog.registerId || 'Unknown Register';
-            let analyzerInfo = 'Unknown Analyzer';
-            
-            if (trendLog.analyzerId && analyzerMap.has(trendLog.analyzerId)) {
-              const analyzer = analyzerMap.get(trendLog.analyzerId);
-              if (analyzer && analyzer.name) {
-                analyzerInfo = `${analyzer.name} ${analyzer.slaveId ? `(Slave: ${analyzer.slaveId})` : ''}`;
-              }
-            }
-            
-            reportTitle = `${analyzerInfo}`;
-          } catch (error) {
-            // Fallback to original registerId display if there's any error
-            reportTitle = trendLog.registerId || 'Unknown Register';
-          }
-          
+          const customLabel = labelMap.get(trendLogId);
+          const defaultTitle = (() => {
+            const analyzer = analyzerMap.get(trendLog.analyzerId);
+            return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+          })();
+
+          const reportTitle = customLabel || defaultTitle;
+
           // Text formatında rapor
           reportText += `Trend Log: ${reportTitle}\n`;
           reportText += `Entries: ${logEntries.length}\n\n`;
-          
+
           for (const entry of logEntries) {
             const timestamp = new Date(entry.timestamp).toLocaleString();
             reportText += `${timestamp} - Value: ${entry.value}\n`;
           }
-          
+
           reportText += '\n';
-          
-          // HTML formatında rapor
+
+          // HTML formatında rapor (kept for compatibility)
           reportHtml += `
             <div class="section">
               <h2>Trend Log: ${reportTitle}</h2>
               <p>Entries: ${logEntries.length}</p>
-              
+
               <table>
                 <thead>
                   <tr>
@@ -251,7 +244,7 @@ class PeriodicReportService {
                 </thead>
                 <tbody>
           `;
-          
+
           for (const entry of logEntries) {
             const timestamp = new Date(entry.timestamp).toLocaleString();
             reportHtml += `
@@ -261,7 +254,7 @@ class PeriodicReportService {
               </tr>
             `;
           }
-          
+
           reportHtml += `
                 </tbody>
               </table>
@@ -275,45 +268,74 @@ class PeriodicReportService {
         </html>
       `;
       
-      // Send the report based on format
+      // Send the report - only PDF format supported
       let success = false;
-      
-      if (report.format === 'pdf') {
-        const trendLogDataForPdf = new Map();
-        for (const [trendLogId, logEntries] of entriesByTrendLog.entries()) {
-            const trendLog = trendLogMap.get(trendLogId);
-            if (trendLog) {
-                const analyzer = analyzerMap.get(trendLog.analyzerId);
-                const title = analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
-                trendLogDataForPdf.set(title, logEntries);
-            }
-        }
 
-        const pdfBuffer = await this.generatePdfReport("Periodic Report", trendLogDataForPdf);
+      // Generate separate PDFs for each trend log
+      const attachments = [];
+      for (const [trendLogId, logEntries] of entriesByTrendLog.entries()) {
+        const trendLog = trendLogMap.get(trendLogId);
+        if (trendLog) {
+          const customLabel = labelMap.get(trendLogId);
+          const defaultTitle = (() => {
+            const analyzer = analyzerMap.get(trendLog.analyzerId);
+            return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+          })();
 
-        // When sending a PDF, the HTML body should be a simple notification, not the full report.
-        const notificationHtml = `<p>Please find the attached report: <strong>Periodic Report</strong></p>`;
+          const title = customLabel || defaultTitle;
+          const pdfBuffer = await this.generateSinglePdfReport(title, logEntries, "Periodic Report");
 
-        success = await mailService.sendMail(
-          reportSubject,
-          "Please find the attached PDF report.", // Simple text body for non-html clients
-          notificationHtml, // Simple HTML body
-          3, // retry count
-          [{ // Attachment object
-            filename: `Periodic_Report.pdf`,
+          // Create unique filename
+          const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '_');
+          const filename = `Periodic_Report_${safeTitle}.pdf`;
+
+          attachments.push({
+            filename: filename,
             content: pdfBuffer,
             contentType: 'application/pdf'
-          }]
-        );
-
-      } else {
-        success = await mailService.sendMail(
-          reportSubject,
-          reportText,
-          reportHtml,
-          3, // retry count
-        );
+          });
+        }
       }
+
+      let finalAttachments = attachments;
+
+      // If multiple PDFs, create a ZIP file
+      if (attachments.length > 1) {
+        const zipBuffer = await this.createZipFromBuffers(attachments);
+        finalAttachments = [{
+          filename: `Periodic_Report_${new Date().toISOString().split('T')[0]}.zip`,
+          content: zipBuffer,
+          contentType: 'application/zip'
+        }];
+      }
+
+      // Send attachments
+      const notificationHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+          <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h2 style="color: #2563eb; margin-bottom: 10px;">Periodic Report</h2>
+            <p style="color: #374151; font-size: 16px; line-height: 1.5;">
+              Please find the attached ${attachments.length > 1 ? 'ZIP file containing PDF reports' : 'PDF report'} generated on ${new Date().toLocaleDateString()}.
+            </p>
+            <div style="margin-top: 20px; padding: 15px; background-color: #e0f2fe; border-left: 4px solid #2563eb; border-radius: 4px;">
+              <p style="margin: 0; color: #1e40af; font-weight: bold;">Report Details:</p>
+              <ul style="margin: 10px 0 0 20px; color: #374151;">
+                <li>Generated: ${new Date().toLocaleString()}</li>
+                <li>Format: ${attachments.length > 1 ? 'ZIP (Multiple PDFs)' : 'PDF'}</li>
+                <li>Number of reports: ${attachments.length}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      `;
+
+      success = await mailService.sendMail(
+        reportSubject,
+        `Please find the attached ${attachments.length > 1 ? 'ZIP file with PDF reports' : 'PDF report'}.`,
+        notificationHtml,
+        3,
+        finalAttachments
+      );
       
       if (success) {
         // Update the lastSent timestamp
@@ -340,6 +362,99 @@ class PeriodicReportService {
   }
 
 
+  private async generateSinglePdfReport(title: string, entries: any[], reportName: string): Promise<Buffer> {
+    const doc = new jsPDF();
+    const reportDate = new Date();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Header with background
+    doc.setFillColor(102, 126, 234); // Blue background
+    doc.rect(0, 0, pageWidth, 40, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.text(reportName, pageWidth / 2, 20, { align: 'center' });
+
+    doc.setFontSize(12);
+    doc.text(`Generated: ${reportDate.toLocaleDateString()}`, pageWidth / 2, 30, { align: 'center' });
+
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+
+    let startY = 50;
+
+    // Section title with styling
+    doc.setFillColor(241, 245, 249); // Light gray background
+    doc.rect(14, startY - 5, pageWidth - 28, 15, 'F');
+
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59); // Dark blue
+    doc.text(title, 20, startY + 5);
+
+    startY += 20;
+
+    // Table with better styling
+    autoTable(doc, {
+      head: [['Timestamp', 'Value']],
+      body: entries.map(entry => [
+        new Date(entry.timestamp).toLocaleString(),
+        entry.value
+      ]),
+      startY: startY,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [71, 85, 105], // Dark slate
+        textColor: [255, 255, 255],
+        fontStyle: 'bold'
+      },
+      styles: {
+        fontSize: 10,
+        cellPadding: 8
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252] // Very light gray
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // Footer
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139); // Gray
+    doc.text('Periodic Report - Confidential', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+    return pdfBuffer;
+  }
+
+  private async createZipFromBuffers(attachments: any[]): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const archive = archiver.create('zip', {
+        zlib: { level: 9 } // Maximum compression
+      });
+
+      const buffers: Buffer[] = [];
+
+      archive.on('data', (chunk: Buffer) => {
+        buffers.push(chunk);
+      });
+
+      archive.on('end', () => {
+        resolve(Buffer.concat(buffers));
+      });
+
+      archive.on('error', reject);
+
+      // Add each PDF buffer to the ZIP
+      attachments.forEach((attachment) => {
+        const bufferStream = Readable.from(attachment.content);
+        archive.append(bufferStream, { name: attachment.filename });
+      });
+
+      archive.finalize();
+    });
+  }
+
   private async generatePdfReport(reportName: string, trendLogData: Map<string, any[]>): Promise<Buffer> {
     const doc = new jsPDF();
     const reportDate = new Date();
@@ -356,7 +471,7 @@ class PeriodicReportService {
         doc.addPage();
         startY = 20;
       }
-      
+
       doc.setFontSize(14);
       doc.text(title, 14, startY);
       startY += 10;
@@ -372,10 +487,10 @@ class PeriodicReportService {
         headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
         styles: { fontSize: 10 },
       });
-      
+
       startY = (doc as any).lastAutoTable.finalY + 15;
     }
-    
+
     const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
     return pdfBuffer;
   }
