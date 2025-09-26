@@ -36,6 +36,7 @@ export interface TrendLogType {
 
 export default function TrendLogPage() {
     const [trendLogs, setTrendLogs] = useState<TrendLogType[]>([]);
+    const [groupedTrendLogs, setGroupedTrendLogs] = useState<Record<string, TrendLogType[]>>({});
     const [isLoading, setIsLoading] = useState(false);
 
     // Modal durumları
@@ -211,6 +212,17 @@ export default function TrendLogPage() {
             }
             //console.log("trendlogs data: ", data)
             setTrendLogs(data);
+
+            // Group by analyzerId
+            const grouped = data.reduce((acc: Record<string, TrendLogType[]>, log: TrendLogType) => {
+                const analyzerId = log.analyzerId;
+                if (!acc[analyzerId]) {
+                    acc[analyzerId] = [];
+                }
+                acc[analyzerId].push(log);
+                return acc;
+            }, {});
+            setGroupedTrendLogs(grouped);
         } catch (error) {
             console.error("Error fetching  trend logs:", error);
             showToast("Error fetching trend logs", "error");
@@ -457,142 +469,81 @@ export default function TrendLogPage() {
                     <Spinner variant="bars" fullPage />
                 </div>
             ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <div className="overflow-x-auto w-full">
-                            <table className="w-full">
-                                <thead className="bg-gray-100 dark:bg-black/50">
-                                    <tr>
-                                        <th className="px-4 sm:px-6 py-3 text-left">
-                                            <SmallText className="font-bold uppercase tracking-wider">Unit</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-left hidden lg:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">Analyzer</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-left hidden lg:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">Gateway</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-left hidden lg:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">Address</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-left hidden lg:table-cell">
-                                            <SmallText className="font-bold uppercase tracking-wider">Interval</SmallText>
-                                        </th>
-                                        <th className="px-4 sm:px-6 py-3 text-right">
-                                            <SmallText className="font-bold uppercase tracking-wider">Actions</SmallText>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {trendLogs.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={4} className="px-4 sm:px-6 py-4 text-center">
-                                                <SmallText className="text-gray-500 dark:text-gray-400">No TrendLogs found</SmallText>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        trendLogs.map((TrendLog) => (
-                                            <tr key={TrendLog._id} className="hover:bg-gray-50 dark:bg-gray-800/30">
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                                                    <div className="hidden lg:block font-medium text-gray-800 dark:text-gray-300">{TrendLog.unit}</div>
-                                                    <div className="lg:hidden mt-1 space-y-1">
-                                                        <div
-                                                            className="p-2 cursor-pointer grid grid-cols-[1fr_3fr] text-xs space-y-2 w-full"
-                                                        >
-
-                                                            <div className="font-bold"> Unit </div>
-                                                            <div className="font-normal">{TrendLog.unit}</div>
-                                                            <div className="font-bold"> Analyzer </div>
-                                                            <div className="font-normal">{TrendLog.analyzer.name} (Slave: {TrendLog.analyzer.slaveId})</div>
-                                                            <div className="font-bold"> gateway </div>
-                                                            <div className="font-normal">{TrendLog.gateway.name} </div>
-                                                            <div className="font-bold"> Address </div>
-                                                            <div className="font-normal">{TrendLog.register.address}</div>
-                                                            <div className="font-bold"> Interval </div>
-                                                            <div className="font-normal">{TrendLog.interval}</div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
-                                                    <Paragraph className="font-medium text-gray-500 dark:text-gray-400">
-                                                        {TrendLog.analyzer.name} (Slave: {TrendLog.analyzer.slaveId})
-                                                    </Paragraph>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
-                                                    <span className={`inline-block px-2 py-1 rounded-full text-blue-600 dark:text-blue-400`}>
-                                                        {TrendLog.gateway.name}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
-                                                    <span className={`inline-block px-2 py-1 rounded-full text-blue-600 dark:text-blue-400`}>
-                                                        {TrendLog.register.address}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
-                                                    <span className={`inline-block px-2 py-1 rounded-full text-blue-600 dark:text-blue-400`}>
-                                                        {TrendLog.interval} {TrendLog.period}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 sm:px-6 whitespace-nowrap text-right">
-                                                    <div className="flex justify-end space-x-1 sm:space-x-2 h-full ">
-                                                        {/* Show logs ve export to xls butonları */}
-                                                        <IconButton
-                                                            size="sm"
-                                                            onClick={() => openShowLogsModal(TrendLog)}
-                                                            icon={<Eye size={14} />}
-                                                            variant="secondary"
-                                                            shape="circle"
-                                                            className="p-2 sm:p-3"
-                                                        />
-                                                        {/* Show chart */}
-                                                        <IconButton
-                                                            size="sm"
-                                                            onClick={() => openShowChartModal(TrendLog)}
-                                                            icon={<ChartLine size={14} />}
-                                                            variant="primary"
-                                                            shape="circle"
-                                                            className="p-2 sm:p-3"
-                                                        />
-                                                        {/* <IconButton
-                                                            size="sm"
-                                                            onClick={() => exportToXls(TrendLog)}
-                                                            icon={<FileText size={14} />}
-                                                            variant="primary"
-                                                            shape="circle"
-                                                            className="px-2 sm:px-3"
-                                                        /> */}
-                                                        {/* Düzenleme butonu sadece admin kullanıcılar tarafından görülür */}
-                                                        {isAdmin && (
-                                                            <IconButton
-                                                                size="sm"
-                                                                onClick={() => openEditTrendLogModal(TrendLog)}
-                                                                icon={<Pencil size={14} />}
-                                                                variant="warning"
-                                                                shape="circle"
-                                                                className="px-2 sm:px-3"
-                                                            />
-                                                        )}
-                                                        {/* Silme butonu sadece admin kullanıcılar tarafından görülür */}
-                                                        {isAdmin && (
-                                                            <IconButton
-                                                                disabled={deleting}
-                                                                size="sm"
-                                                                onClick={() => handleDeleteTrendLog(TrendLog)}
-                                                                icon={<Trash2 size={14} />}
-                                                                variant="error"
-                                                                shape="circle"
-                                                                className="px-2 sm:px-3"
-                                                            />
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {Object.keys(groupedTrendLogs).length === 0 ? (
+                        <div className="col-span-full text-center py-8">
+                            <SmallText className="text-gray-500 dark:text-gray-400">No TrendLogs found</SmallText>
                         </div>
-                    </div>
+                    ) : (
+                        Object.entries(groupedTrendLogs).map(([analyzerId, logs]) => {
+                            const analyzer = logs[0].analyzer;
+                            return (
+                                <div key={analyzerId} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                                    <div className="mb-4">
+                                        <Heading3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                                            {analyzer.name} (Slave: {analyzer.slaveId})
+                                        </Heading3>
+                                        <Paragraph className="text-sm text-gray-600 dark:text-gray-400">
+                                            {logs.length} Trend Log{logs.length > 1 ? 's' : ''}
+                                        </Paragraph>
+                                    </div>
+                                    <div className={`space-y-4 ${logs.length > 3 ? 'max-h-96 overflow-y-auto' : ''}`}>
+                                        {logs.map((TrendLog) => (
+                                            <div key={TrendLog._id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/50">
+                                                <div className="mb-3">
+                                                    <div className="font-medium text-gray-800 dark:text-gray-300 text-sm">
+                                                        {TrendLog.unit}
+                                                    </div>
+                                                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                                        Address: {TrendLog.register.address} | Interval: {TrendLog.interval} {TrendLog.period}
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-end space-x-2">
+                                                    <IconButton
+                                                        size="sm"
+                                                        onClick={() => openShowLogsModal(TrendLog)}
+                                                        icon={<Eye size={14} />}
+                                                        variant="secondary"
+                                                        shape="circle"
+                                                        className="p-2"
+                                                    />
+                                                    <IconButton
+                                                        size="sm"
+                                                        onClick={() => openShowChartModal(TrendLog)}
+                                                        icon={<ChartLine size={14} />}
+                                                        variant="primary"
+                                                        shape="circle"
+                                                        className="p-2"
+                                                    />
+                                                    {isAdmin && (
+                                                        <IconButton
+                                                            size="sm"
+                                                            onClick={() => openEditTrendLogModal(TrendLog)}
+                                                            icon={<Pencil size={14} />}
+                                                            variant="warning"
+                                                            shape="circle"
+                                                            className="p-2"
+                                                        />
+                                                    )}
+                                                    {isAdmin && (
+                                                        <IconButton
+                                                            disabled={deleting}
+                                                            size="sm"
+                                                            onClick={() => handleDeleteTrendLog(TrendLog)}
+                                                            icon={<Trash2 size={14} />}
+                                                            variant="error"
+                                                            shape="circle"
+                                                            className="p-2"
+                                                        />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
             )}
             {/* Show Logs Modal */}
