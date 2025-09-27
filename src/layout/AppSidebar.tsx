@@ -3,7 +3,7 @@ import EditableTitle from "@/components/ui/EditableTitle";
 import { Spinner } from "@/components/ui/spinner";
 import { Typography } from "@/components/ui/typography";
 import { useAuth } from "@/hooks/use-auth";
-import { Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users, Info, Receipt } from "lucide-react";
+import { BarChart2, Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users, Info, Receipt } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -131,6 +131,11 @@ const AppSidebar: React.FC = () => {
           path: "/trend-log",
         },
         {
+          icon: <BarChart2 />,
+          name: "Multi Log",
+          path: "/multi-log",
+        },
+        {
           icon: <FileText />,
           name: "Periodic Reports",
           path: "/periodic-reports",
@@ -185,6 +190,13 @@ const AppSidebar: React.FC = () => {
         icon: <Logs />,
         name: "Trend Log",
         path: "/trend-log",
+      });
+      
+      // Add Multi Log right after Trend Log
+      items.push({
+        icon: <BarChart2 />,
+        name: "Multi Log",
+        path: "/multi-log",
       });
     }
 

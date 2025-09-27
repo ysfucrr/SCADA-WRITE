@@ -12,20 +12,28 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Get limit parameter from URL query
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false && session.user.permissions?.billing === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const { id } = await params;
-        if (redisClient.isReady) {
-            const cachedLogs = await redisClient.lRange(`trendlog:${id}`, 0, -1);
-            if (cachedLogs && cachedLogs.length > 0) {
-                const trendLogData = cachedLogs.map(log => JSON.parse(log));
-                const { db } = await connectToDatabase();
-                const trendLog = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });
-                return NextResponse.json({ trendLog, trendLogData });
-            }
+    
+    // If Redis is available and no limit is specified, try to get from cache
+    if (redisClient.isReady && !limit) {
+        const cachedLogs = await redisClient.lRange(`trendlog:${id}`, 0, -1);
+        if (cachedLogs && cachedLogs.length > 0) {
+            const trendLogData = cachedLogs.map(log => JSON.parse(log));
+            const { db } = await connectToDatabase();
+            const trendLog = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });
+            return NextResponse.json({ trendLog, trendLogData });
         }
+    }
+    
     const { db } = await connectToDatabase();
     const trendLog = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });
     if (!trendLog) {
@@ -35,8 +43,24 @@ export async function GET(
     // onChange için farklı koleksiyon kullan
     const collectionName = trendLog.period === 'onChange' ?
       'trend_log_entries_onchange' : 'trend_log_entries';
-      
-    const trendLogData = await db.collection(collectionName).find({ trendLogId: new ObjectId(id)}).toArray();
+    
+    // Create query builder
+    let query = db.collection(collectionName)
+      .find({ trendLogId: new ObjectId(id) })
+      .sort({ timestamp: -1 }); // Sort by newest first
+    
+    // Apply limit if specified
+    if (limit) {
+      query = query.limit(limit);
+    }
+    
+    // Execute query
+    const trendLogData = await query.toArray();
+    
+    // If we limited and sorted, we need to reverse to get chronological order
+    if (limit) {
+      trendLogData.reverse();
+    }
     
     return NextResponse.json({ trendLog, trendLogData });
   } catch (error) {
@@ -207,13 +231,83 @@ export async function DELETE(
     
     backendLogger.info(`Trend log removal impact: ${deletedReportsCount} reports deleted, ${updatedReportsCount} reports updated.`, 'TrendLogAPI');
 
-    // 4. Son olarak normal ve onChange koleksiyonlarından tüm kayıtları sil
+    // 4. Multi-log configurations ile ilgili işlemler
+    
+    // 4.1. Önce bu trend log'u içeren multi-log konfigürasyonlarını bul
+    const multiLogConfigsWithThisLog = await db.collection('multi_log_configs').find({
+      trendLogIds: id
+    }).toArray();
+    
+    // 4.2. Bu konfigürasyonları güncelle veya sil
+    let deletedConfigsCount = 0;
+    let updatedConfigsCount = 0;
+    
+    for (const config of multiLogConfigsWithThisLog) {
+        try {
+            // Eğer konfigürasyonda sadece bu trend log varsa, konfigürasyonu sil
+            if (config.trendLogIds.length === 1 && config.trendLogIds[0] === id) {
+                backendLogger.info(`Deleting multi-log configuration ${config._id} because it contained only the deleted trend log.`, 'TrendLogAPI');
+                const deleteResult = await db.collection('multi_log_configs').deleteOne({
+                    _id: config._id
+                });
+                
+                if (deleteResult.deletedCount > 0) {
+                    deletedConfigsCount++;
+                    backendLogger.info(`Successfully deleted multi-log configuration ${config._id}`, 'TrendLogAPI');
+                } else {
+                    backendLogger.info(`Failed to delete multi-log configuration ${config._id}`, 'TrendLogAPI');
+                }
+            } else {
+                // Birden fazla trend log içeriyorsa, sadece silinen trend log'u kaldır
+                backendLogger.info(`Updating multi-log configuration ${config._id} to remove deleted trend log.`, 'TrendLogAPI');
+                
+                // $pull operatörünü kullanarak doğrudan güncelleme yap
+                // Bu, önce konfigürasyonu okuma ve sonra güncelleme ihtiyacını ortadan kaldırır
+                // MongoDB $pull operatörünü doğru format ile kullan
+                const updateResult = await db.collection('multi_log_configs').updateOne(
+                    { _id: config._id },
+                    { $set: { trendLogIds: config.trendLogIds.filter((logId: string) => logId !== id) } }
+                );
+                
+                if (updateResult && updateResult.modifiedCount > 0) {
+                    updatedConfigsCount++;
+                    backendLogger.info(`Successfully updated multi-log configuration ${config._id}`, 'TrendLogAPI');
+                } else {
+                    backendLogger.info(`Failed to update multi-log configuration ${config._id}`, 'TrendLogAPI');
+                }
+            }
+        } catch (error) {
+            console.error(`Error processing multi-log config ${config._id}:`, error);
+            backendLogger.error(`Error processing multi-log config ${config._id}: ${error}`, 'TrendLogAPI');
+        }
+    }
+    
+    if (deletedConfigsCount > 0 || updatedConfigsCount > 0) {
+      backendLogger.info(`Multi-log configurations impact: ${deletedConfigsCount} configs deleted, ${updatedConfigsCount} configs updated.`, 'TrendLogAPI');
+    }
+
+    // 5. Son olarak normal ve onChange koleksiyonlarından tüm kayıtları sil
     const normalEntries = await db.collection('trend_log_entries').deleteMany({ trendLogId: new ObjectId(id) });
     const onChangeEntries = await db.collection('trend_log_entries_onchange').deleteMany({ trendLogId: new ObjectId(id) });
     
     const totalDeleted = (normalEntries.deletedCount || 0) + (onChangeEntries.deletedCount || 0);
     backendLogger.info(`${totalDeleted} trend log entries deleted for trend log ${id}.`, 'TrendLogAPI');
-    return NextResponse.json({ success: true, message: 'Trend log and its entries deleted successfully' });
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Trend log and its entries deleted successfully',
+      impactSummary: {
+        entriesDeleted: totalDeleted,
+        periodicReports: {
+          deleted: deletedReportsCount,
+          updated: updatedReportsCount
+        },
+        multiLogConfigs: {
+          deleted: deletedConfigsCount,
+          updated: updatedConfigsCount
+        }
+      }
+    });
   } catch (error) {
     console.error('Trend log deletion failed:', error);
     return NextResponse.json({ error: 'Trend log deletion failed' }, { status: 500 });
