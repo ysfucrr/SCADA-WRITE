@@ -104,16 +104,10 @@ export class TrendLoggerService {
                     // Sadece değer gerçekten değiştiğinde kaydet (ya da ilk değer ise)
                     const lastValue = trendLogger.lastStoredValue;
                     if (lastValue === undefined || lastValue !== data.value) {
-                        backendLogger.debug(
-                            `[TREND-LOGGER] onChange value changed for register ${data.id}: ${lastValue} -> ${data.value}`,
-                            "TrendLoggerService"
-                        );
+
                         trendLogger.storeRegisterValue(data.value);
                     } else {
-                        backendLogger.debug(
-                            `[TREND-LOGGER] Skipping unchanged value for register ${data.id}: ${data.value}`,
-                            "TrendLoggerService"
-                        );
+                        // Değer değişmediğinde sessizce geç
                     }
                 } else {
                     const intervalMs = trendLogger.getIntervalMs();
