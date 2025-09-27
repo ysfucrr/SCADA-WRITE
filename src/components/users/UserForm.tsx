@@ -235,7 +235,7 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
                             <div className="switch-container">
                                 <Switch
                                     disabled={loginedUser?.role != "admin" && !loginedUser?.permissions?.trendLog}
-                                    label="Trend Log"
+                                    label="Trend Log / Multi log"
                                     defaultChecked={permissions.trendLog}
                                     onChange={(value) =>
                                         setPermissions({
