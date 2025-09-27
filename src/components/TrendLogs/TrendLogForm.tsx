@@ -25,6 +25,7 @@ interface TrendLogFormProps {
         byteOrder: string;
         scale: number;
         cleanupPeriod?: number; // onChange için otomatik temizleme süresi
+        percentageThreshold?: number; // onChange için yüzde eşiği
     }) => void;
     onCancel: () => void;
     analyzers: any[];
@@ -39,6 +40,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
     const [isKWHCounter, setIsKWHCounter] = useState(trendLog?.isKWHCounter || false);
     const [interval, setInterval] = useState(trendLog?.interval || 1);
     const [cleanupPeriod, setCleanupPeriod] = useState<number>(trendLog?.cleanupPeriod || 1);
+    const [percentageThreshold, setPercentageThreshold] = useState<number>(trendLog?.percentageThreshold || 0.5);
     const [registers, setRegisters] = useState<any[]>([]);
     const { isLoading: isAuthLoading, isAdmin, user } = useAuth();
     const [selectedRegister, setSelectedRegister] = useState<any>(null);
@@ -57,6 +59,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             setInterval(trendLog.interval);
             setIsKWHCounter(trendLog.isKWHCounter);
             setCleanupPeriod(trendLog.cleanupPeriod || 1);
+            setPercentageThreshold(trendLog.percentageThreshold || 1);
         }
     }, [trendLog]);
     const fetchBuildings = async (gateways: any[]) => {
@@ -242,6 +245,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             byteOrder: selectedRegister.registerInfo.byteOrder,
             scale: selectedRegister.registerInfo.scale,
             cleanupPeriod: period === 'onChange' ? cleanupPeriod : undefined, // onChange ise temizleme süresi ekle
+            percentageThreshold: period === 'onChange' ? percentageThreshold : undefined, // onChange ise yüzde eşiği ekle
         });
         setSaving(false);
     };
@@ -398,7 +402,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                     <div className="space-y-2">
                         <Label htmlFor="cleanupPeriod">Auto Cleanup Period</Label>
                         <Select
-                            
+
                             options={[
                                 { value: "1", label: "1 Month" },
                                 { value: "2", label: "2 Months" },
@@ -411,6 +415,24 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                         />
                         <SmallText className="text-gray-500 dark:text-gray-400">
                             onChange log entries will be automatically deleted after this period.
+                        </SmallText>
+                    </div>
+                )}
+                {/* onChange için percentage threshold seçimi */}
+                {period === "onChange" && (
+                    <div className="space-y-2">
+                        <Label htmlFor="percentageThreshold">Percentage Threshold (%)</Label>
+                        <InputField
+                            id="percentageThreshold"
+                            type="number"
+                            placeholder="0.5"
+                            value={percentageThreshold}
+                            onChange={(e) => setPercentageThreshold(Number(e.target.value))}
+                            min="0.5"
+                            max="100"
+                        />
+                        <SmallText className="text-gray-500 dark:text-gray-400">
+                            Minimum: 0.5%. Values will be logged when they change by ± this percentage.
                         </SmallText>
                     </div>
                 )}

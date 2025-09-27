@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
       dataType,
       byteOrder,
       scale,
-      cleanupPeriod, // Yeni parametre
+      cleanupPeriod, // onChange için otomatik temizleme süresi
+      percentageThreshold, // onChange için yüzde eşiği
     } = body;
    
     const session = await getServerSession(authOptions);
@@ -72,6 +73,11 @@ export async function POST(request: NextRequest) {
     // onChange için cleanupPeriod gerekli
     if (period === 'onChange' && !cleanupPeriod) {
         return NextResponse.json({ error: 'Auto Cleanup Period is required for onChange mode' }, { status: 400 });
+    }
+
+    // onChange için percentageThreshold gerekli
+    if (period === 'onChange' && (!percentageThreshold || percentageThreshold < 0.5)) {
+        return NextResponse.json({ error: 'Percentage Threshold is required for onChange mode and must be at least 0.5%' }, { status: 400 });
     }
     
     //end date must be in the future
@@ -111,9 +117,10 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
     };
     
-    // Sadece onChange modunda cleanupPeriod ekle
+    // Sadece onChange modunda cleanupPeriod ve percentageThreshold ekle
     if (period === 'onChange') {
       insertData.cleanupPeriod = cleanupPeriod;
+      insertData.percentageThreshold = percentageThreshold;
     }
     
     const trendLog = await db.collection('trendLogs').insertOne(insertData);

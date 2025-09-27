@@ -131,7 +131,7 @@ export class TrendLoggerService {
             const changeStream = db.collection('trendLogs').watch();
 
             changeStream.on('change', (change) => {
-                backendLogger.info('Change detected in trendLogs collection, reloading definitions.', 'TrendLoggerService', { changeType: change.operationType });
+                //backendLogger.info('Change detected in trendLogs collection, reloading definitions.', 'TrendLoggerService', { changeType: change.operationType });
                 if (this.configUpdateTimeout) {
                     clearTimeout(this.configUpdateTimeout);
                 }
@@ -169,13 +169,11 @@ export class TrendLoggerService {
                 }
 
                 if (trendLogger.period === 'onChange') {
-                    // Sadece değer gerçekten değiştiğinde kaydet (ya da ilk değer ise)
-                    const lastValue = trendLogger.lastStoredValue;
-                    if (lastValue === undefined || lastValue !== data.value) {
-
+                    // Yüzde eşiği aşıldı mı kontrol et (ya da ilk değer ise)
+                    if (trendLogger.hasPercentageThresholdExceeded(data.value)) {
                         trendLogger.storeRegisterValue(data.value);
                     } else {
-                        // Değer değişmediğinde sessizce geç
+                        // Yüzde eşiği aşılmadığında sessizce geç
                     }
                 } else {
                     const intervalMs = trendLogger.getIntervalMs();
@@ -204,7 +202,8 @@ export class TrendLoggerService {
                 trendLog.period,
                 trendLog.interval,
                 trendLog.endDate,
-                trendLog.cleanupPeriod  // Yeni parametre
+                trendLog.cleanupPeriod,  // onChange için otomatik temizleme süresi
+                trendLog.percentageThreshold  // onChange için yüzde eşiği
             );
             
             const existingLogger = activeTrendLoggers.get(registerId);
@@ -256,8 +255,9 @@ class TrendLogger {
     lastSaveTimestamp: number = 0;
     lastStoredValue?: number; // Son kaydedilen değer - onChange modunda değişiklikleri takip etmek için
     cleanupPeriod?: number; // Ay cinsinden otomatik temizleme süresi (onChange modunda kullanılır)
+    percentageThreshold?: number; // Yüzde eşiği (onChange modunda kullanılır)
     
-    constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date, cleanupPeriod?: number) {
+    constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date, cleanupPeriod?: number, percentageThreshold?: number) {
         this._id = _id;
         this.registerId = registerId;
         this.analyzerId = analyzerId;
@@ -268,6 +268,7 @@ class TrendLogger {
             this.endDate = new Date(endDate);
         }
         this.cleanupPeriod = cleanupPeriod;
+        this.percentageThreshold = percentageThreshold;
     }
 
     getIntervalMs(): number {
@@ -288,6 +289,18 @@ class TrendLogger {
             default:
                 return this.interval * 60 * 1000;
         }
+    }
+
+    // Yüzde eşiği aşıldı mı kontrol et
+    public hasPercentageThresholdExceeded(currentValue: number): boolean {
+        if (!this.lastStoredValue || !this.percentageThreshold) {
+            return true; // İlk değer her zaman kaydedilir
+        }
+
+        const threshold = Math.abs(this.lastStoredValue * (this.percentageThreshold / 100));
+        const difference = Math.abs(currentValue - this.lastStoredValue);
+
+        return difference >= threshold;
     }
 
     async storeRegisterValue(value: number | null) {

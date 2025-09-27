@@ -30,6 +30,7 @@ export interface TrendLogType {
     interval: number;
     endDate: string;
     cleanupPeriod?: number; // onChange modunda kullanılan otomatik temizleme süresi (ay)
+    percentageThreshold?: number; // onChange modunda kullanılan yüzde eşiği
     unit: any;
     analyzer: any;
     register: any;
