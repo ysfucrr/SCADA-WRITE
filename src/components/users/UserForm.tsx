@@ -33,7 +33,6 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
         units: user?.permissions?.units || false,
         trendLog: user?.permissions?.trendLog || false,
         periodicReports: user?.permissions?.periodicReports || false,
-        multiLog: user?.permissions?.multiLog || false,
     });
     const [buildingPermissions, setBuildingPermissions] = useState<{ [key: string]: boolean }>({});
     const [buildings, setBuildings] = useState<Array<{ _id: string, name: string }>>([]);
@@ -259,23 +258,6 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
                                         setPermissions({
                                             ...permissions,
                                             periodicReports: value,
-                                        })
-                                    }
-                                />
-                            </div>
-                        </div>
-
-                        {/* Multi Log permission */}
-                        <div className="flex items-center space-x-2">
-                            <div className="switch-container">
-                                <Switch
-                                    disabled={loginedUser?.role !== "admin"}
-                                    label="Multi Log"
-                                    defaultChecked={permissions.multiLog}
-                                    onChange={(value) =>
-                                        setPermissions({
-                                            ...permissions,
-                                            multiLog: value,
                                         })
                                     }
                                 />

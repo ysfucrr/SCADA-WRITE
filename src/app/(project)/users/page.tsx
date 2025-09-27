@@ -25,7 +25,6 @@ export interface UserType {
         trendLog: boolean;
         periodicReports: boolean;
         billing: boolean;
-        multiLog: boolean;
     };
     buildingPermissions?: {
         [buildingId: string]: boolean;

@@ -34,8 +34,7 @@ export async function PUT(
         billing: false,
         users: false,
         units: false,
-        trendLog: false,
-        multiLog: false
+        trendLog: false
       },
       buildingPermissions: buildingPermissions || {}
     };

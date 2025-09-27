@@ -64,14 +64,12 @@ export async function POST(request: Request) {
         billing: true,
         users: true,
         units: true,
-        trendLog: true,
-        multiLog: true
+        trendLog: true
       } : {
         billing: false,
         users: false,
         units: false,
-        trendLog: false,
-        multiLog: false
+        trendLog: false
       }),
       buildingPermissions: buildingPermissions,
       createdAt: new Date()
