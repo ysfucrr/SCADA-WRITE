@@ -134,9 +134,9 @@ export async function DELETE(
     if (billing) {
       return NextResponse.json({ error: 'Cannot delete this trend log because it is used in a billing' }, { status: 400 });
     }
-    const result = await db.collection('trendLogs').deleteOne({ _id: new ObjectId(id) });
-    
-    // Express API'sini çağırarak trend logger'ı durdur
+
+    // 1. Önce trend logger'ı servis üzerinde durdur
+    backendLogger.info(`Stopping trend logger service for ID: ${id}`, 'TrendLogAPI');
     const stopLoggerResponse = await fetch(`http://localhost:${process.env.SERVICE_PORT}/express-api/stop-logger`, {
       method: 'POST',
       headers: {
@@ -147,12 +147,20 @@ export async function DELETE(
     
     if (!stopLoggerResponse.ok) {
       console.error('Trend logger could not be stopped via Express API');
+      return NextResponse.json({ error: 'Trend logger could not be stopped. Please try again.' }, { status: 500 });
     }
+    
+    // Servisin trend log durdurma işlemini tamamlaması için kısa bir süre bekle
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // 2. Sonra trend log kaydını sil
+    const result = await db.collection('trendLogs').deleteOne({ _id: new ObjectId(id) });
     
     if (result.deletedCount === 0) {
       return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
-    // Also delete all associated log entries
+    
+    // 3. Son olarak tüm kayıtları sil
     const trendLogEntries = await db.collection('trend_log_entries').deleteMany({ trendLogId: new ObjectId(id) });
     backendLogger.info(`${trendLogEntries.deletedCount} trend log entries deleted for trend log ${id}.`, 'TrendLogAPI');
     return NextResponse.json({ success: true, message: 'Trend log and its entries deleted successfully' });
