@@ -1,6 +1,7 @@
 import { connectToDatabase } from "./mongodb";
 import { backendLogger } from './logger/BackendLogger';
 import { ObjectId } from "mongodb";
+import { redisClient } from "./redis";
 
 // This map will hold trend definitions, and the service will react to events
 const activeTrendLoggers = new Map<string, TrendLogger>();
@@ -15,7 +16,14 @@ export class TrendLoggerService {
     constructor() {
         backendLogger.info("[TREND-LOGGER] Service created", "TrendLoggerService");
         this.setupShutdownHandlers();
+        this.setupRedisSubscriptions();
         this.listenForDbChanges();
+    }
+
+    private setupRedisSubscriptions(): void {
+        // No need to set up event handlers here, as they are now handled in redis.ts
+        // This method is kept for backward compatibility and potential future Redis-specific subscriptions
+        backendLogger.info("[TREND-LOGGER] Redis subscription setup delegated to redis.ts", "TrendLoggerService");
     }
 
     private setupShutdownHandlers(): void {
@@ -92,10 +100,14 @@ export class TrendLoggerService {
                     return; // Stop processing for this logger
                 }
 
-                const intervalMs = trendLogger.getIntervalMs();
-                if (now.getTime() - trendLogger.lastSaveTimestamp >= intervalMs) {
+                if (trendLogger.period === 'onChange') {
                     trendLogger.storeRegisterValue(data.value);
-                    trendLogger.lastSaveTimestamp = now.getTime();
+                } else {
+                    const intervalMs = trendLogger.getIntervalMs();
+                    if (now.getTime() - trendLogger.lastSaveTimestamp >= intervalMs) {
+                        trendLogger.storeRegisterValue(data.value);
+                        trendLogger.lastSaveTimestamp = now.getTime();
+                    }
                 }
             }
         });
@@ -194,17 +206,44 @@ class TrendLogger {
         if (value === null || value === undefined) {
             return;
         }
+
+        const entry = {
+            trendLogId: new ObjectId(this._id),
+            value: value,
+            timestamp: new Date(),
+            analyzerId: this.analyzerId,
+            registerId: this.registerId
+        };
+
+        // MongoDB'ye kaydet
         try {
             const { db } = await connectToDatabase();
-            await db.collection('trend_log_entries').insertOne({
-                trendLogId: new ObjectId(this._id),
-                value: value,
-                timestamp: new Date(),
-                analyzerId: this.analyzerId,
-                registerId: this.registerId
-            });
-        } catch (error) {
-            backendLogger.error(`[TREND-LOGGER] Error storing trend log entry: ` + (error instanceof Error ? error.message : String(error)), "TrendLogger", { error: error instanceof Error ? error.stack : String(error) });
+            await db.collection('trend_log_entries').insertOne(entry);
+        } catch (dbError) {
+            backendLogger.error(`[TREND-LOGGER] MongoDB error storing trend log entry: ` +
+                (dbError instanceof Error ? dbError.message : String(dbError)),
+                "TrendLogger",
+                { error: dbError instanceof Error ? dbError.stack : String(dbError) }
+            );
+            // MongoDB hatası kritik - devam etmeyelim
+            return;
+        }
+
+        // Redis'e kaydet (eğer mümkünse)
+        if (redisClient.isReady) {
+            try {
+                await redisClient.lPush(`trendlog:${this._id}`, JSON.stringify(entry));
+            } catch (redisError) {
+                // Redis hatası kritik değil - sadece loglayalım ve devam edelim
+                backendLogger.info(`[TREND-LOGGER] Redis error, trend log entry saved to MongoDB only: ` +
+                    (redisError instanceof Error ? redisError.message : String(redisError)),
+                    "TrendLogger"
+                );
+            }
+        } else {
+            // Redis not ready - log at debug level to avoid spamming logs
+            backendLogger.debug(`[TREND-LOGGER] Redis not ready, trend log entry saved to MongoDB only`,
+                "TrendLogger");
         }
     }
 }

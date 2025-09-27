@@ -50,3 +50,6 @@ electron-dist
 logs
 dist-service
 license-server
+
+# redis
+redis

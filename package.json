@@ -29,9 +29,11 @@
     "electron:package:mac": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --mac",
     "electron:package:win": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --win",
     "electron:package:linux": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --linux",
-    "electron:package": "cross-env NODE_ENV=production yarn electron-build && electron-builder build -mwl"
+    "electron:package": "cross-env NODE_ENV=production yarn electron-build && electron-builder build -mwl",
+    "setup-redis": "node scripts/setup-redis.js"
   },
   "dependencies": {
+    "redis": "^4.6.15",
     "@fullcalendar/core": "^6.1.15",
     "@fullcalendar/daygrid": "^6.1.15",
     "@fullcalendar/interaction": "^6.1.15",
@@ -163,6 +165,10 @@
       {
         "from": "license-server/license-server.exe",
         "to": "app/license-server.exe"
+      },
+      {
+        "from": "redis",
+        "to": "app/redis"
       }
     ],
     "directories": {

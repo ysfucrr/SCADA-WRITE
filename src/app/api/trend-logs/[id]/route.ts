@@ -4,6 +4,7 @@ import { ObjectId } from 'mongodb';
 import { getServerSession } from 'next-auth';
 import { NextResponse } from 'next/server';
 import { backendLogger } from '@/lib/logger/BackendLogger';
+import { redisClient } from '@/lib/redis';
 // Trend logger servisini doğrudan import et
 
 export async function GET(
@@ -16,6 +17,15 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const { id } = await params;
+        if (redisClient.isReady) {
+            const cachedLogs = await redisClient.lRange(`trendlog:${id}`, 0, -1);
+            if (cachedLogs && cachedLogs.length > 0) {
+                const trendLogData = cachedLogs.map(log => JSON.parse(log));
+                const { db } = await connectToDatabase();
+                const trendLog = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });
+                return NextResponse.json({ trendLog, trendLogData });
+            }
+        }
     const { db } = await connectToDatabase();
     const trendLog = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });
     if (!trendLog) {
@@ -48,8 +58,8 @@ export async function PUT(
     const { period, endDate, isKWHCounter, interval } = body;
 
     // Basic validation for fields that can be updated.
-    if (!endDate || !period || !interval) {
-      return NextResponse.json({ error: 'Period, end date, and interval are required' }, { status: 400 });
+    if (!endDate || !period || (period !== 'onChange' && !interval)) {
+        return NextResponse.json({ error: 'Period, end date, and interval are required' }, { status: 400 });
     }
     //end date must be in the future
     if (new Date(endDate) < new Date()) {

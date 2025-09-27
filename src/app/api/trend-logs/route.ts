@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     //end date must be in the future
-    if (!endDate || !analyzerId || !registerId || !period || !interval) {
-      return NextResponse.json({ error: 'Period, end date, register and interval are required' }, { status: 400 });
+    if (!endDate || !analyzerId || !registerId || !period || (period !== 'onChange' && !interval)) {
+        return NextResponse.json({ error: 'Period, end date, register, and interval are required' }, { status: 400 });
     }
     //end date must be in the future
     if (new Date(endDate) < new Date()) {

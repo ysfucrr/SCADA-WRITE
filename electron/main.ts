@@ -24,6 +24,7 @@ let loadingWindow: BrowserWindow | null = null;
 let nextProcess: ChildProcess | null = null;
 let serviceProcess: ChildProcess | null = null;
 let licenseServerProcess: ChildProcess | null = null;
+let redisServerProcess: ChildProcess | null = null;
 
 // Setup logging
 const logsDir = path.join(app.getPath("userData"), "logs");
@@ -106,9 +107,58 @@ async function createWindow() {
   });
 
   //
-  // 1. Service ve Lisans Sunucusunu başlat
+  // 1. Redis, Service ve Lisans Sunucusunu başlat
   //
-  // Önce her durumda lisans sunucusunu başlat
+  // Önce Redis sunucusunu başlat
+  const startRedisServer = () => {
+    const redisPath = isDev
+      ? path.join(process.cwd(), "redis", "redis-server.exe")
+      : path.join(process.resourcesPath, "app", "redis", "redis-server.exe");
+    
+    const redisConfigPath = isDev
+      ? path.join(process.cwd(), "redis", "redis.conf")
+      : path.join(process.resourcesPath, "app", "redis", "redis.conf");
+
+    if (fs.existsSync(redisPath) && fs.existsSync(redisConfigPath)) {
+      log(`Starting Redis server from: ${redisPath}`);
+      
+      redisServerProcess = spawn(redisPath, [redisConfigPath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+      
+      redisServerProcess.stdout?.on('data', (data) => {
+        log(`[Redis Server STDOUT]: ${data.toString().trim()}`);
+      });
+      
+      redisServerProcess.stderr?.on('data', (data) => {
+        log(`[Redis Server STDERR]: ${data.toString().trim()}`);
+      });
+      
+      redisServerProcess.on('exit', (code) => {
+        log(`Redis server process exited with code: ${code}`);
+        redisServerProcess = null;
+      });
+      
+      return true;
+    } else {
+      log(`Redis server executable or config not found at ${redisPath}`);
+      return false;
+    }
+  };
+
+  // Start Redis
+  const redisStarted = startRedisServer();
+  if (!redisStarted) {
+    log("Failed to start Redis server, continuing without Redis");
+  } else {
+    log("Redis server started successfully");
+    
+    // Add a small delay to ensure Redis is ready before other services
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  // Sonra lisans sunucusunu başlat
   if (process.env.NODE_ENV === "development") {
     // Development modunda
     log("Development environment detected. Starting license server...");
@@ -305,6 +355,12 @@ function stopProcesses() {
       log("Killing License Server process: " + licenseServerProcess!.pid!);
       treeKill(licenseServerProcess!.pid!, "SIGKILL");
       licenseServerProcess = null;
+    }
+    // Redis'i en son durdur - diğer servisler bağımlı olabilir
+    if (redisServerProcess) {
+      log("Killing Redis Server process: " + redisServerProcess!.pid!);
+      treeKill(redisServerProcess!.pid!, "SIGKILL");
+      redisServerProcess = null;
     }
   } catch (err) {
     console.error("Kill error:", err);

@@ -345,16 +345,6 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
 
                 <div className="flex flex-row space-x-2">
                     <div className="space-y-2">
-                        <Label htmlFor="interval">Interval</Label>
-                        <InputField
-                            id="interval"
-                            type="number"
-                            placeholder="Interval"
-                            value={interval}
-                            onChange={(e) => setInterval(Number(e.target.value))}
-                        />
-                    </div>
-                    <div className="space-y-2">
                         <Label htmlFor="period">Period</Label>
                         <Select
                             options={[
@@ -362,20 +352,36 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                                 { value: "hour", label: "Hour" },
                                 { value: "day", label: "Day" },
                                 { value: "week", label: "Week" },
-                                { value: "month", label: "Month" }]}
+                                { value: "month", label: "Month" },
+                                { value: "onChange", label: "On Change" },
+                            ]}
                             onChange={(value) => setPeriod(value)}
                             defaultValue={period}
                         />
                     </div>
+                    {period !== "onChange" && (
+                        <div className="space-y-2">
+                            <Label htmlFor="interval">Interval</Label>
+                            <InputField
+                                id="interval"
+                                type="number"
+                                placeholder="Interval"
+                                value={interval}
+                                onChange={(e) => setInterval(Number(e.target.value))}
+                            />
+                        </div>
+                    )}
                 </div>
-                <div className="flex flex-row space-x-2 items-center">
-                    <Checkbox
-                        id="is-kwh-counter"
-                        checked={isKWHCounter}
-                        onChange={setIsKWHCounter}
-                    />
-                    <Label htmlFor="is-kwh-counter">Is KWH Counter</Label>
-                </div>
+                {period !== "onChange" && (
+                    <div className="flex flex-row space-x-2 items-center">
+                        <Checkbox
+                            id="is-kwh-counter"
+                            checked={isKWHCounter}
+                            onChange={setIsKWHCounter}
+                        />
+                        <Label htmlFor="is-kwh-counter">Is KWH Counter</Label>
+                    </div>
+                )}
                 <div className="space-y-2">
                     <Label htmlFor="end-date-picker">End date</Label>
                     <DatePicker

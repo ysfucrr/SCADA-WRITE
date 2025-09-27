@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 import path from 'path';
 import fs from 'fs';
 import { fileLogger } from './src/lib/logger/FileLogger';
+import { redisClient, connectRedis, disconnectRedis } from './src/lib/redis';
 
 // Loglama başlangıcı
 fileLogger.info('--- Service Process Starting ---');
@@ -38,6 +39,9 @@ import { backendLogger } from "./src/lib/logger/BackendLogger";
 import { periodicReportService } from "./src/lib/periodic-report-service";
 
 import { mailService } from "./src/lib/mail-service";
+
+// Re-export redisClient for other modules
+export { redisClient };
 import { alertManager } from "./src/lib/alert-manager";
 import { Socket } from 'socket.io';
 import express, { Request, Response, NextFunction } from 'express';
@@ -245,6 +249,14 @@ server.listen(Number(port), '0.0.0.0', () => {
   });
 
   try {
+    // Connect to Redis first
+    connectRedis().then((connected) => {
+      if (connected) {
+        fileLogger.info("Redis client connected successfully.", "Server");
+      } else {
+        fileLogger.warn("Redis client connection failed, continuing without Redis caching.", "Server");
+      }
+    });
     modbusPoller.start().then(() => {
         fileLogger.info("Modbus Poller Orchestrator started successfully.", "Server");
     }).catch(err => {
@@ -331,20 +343,23 @@ const forceCloseAllComPorts = (reason: string) => {
   }
 };
 
-// Sunucu dururken COM portlarını temizlemek için - multiple event handlers
-process.on('SIGTERM', () => {
+// Sunucu dururken kaynakları temizlemek için - multiple event handlers
+process.on('SIGTERM', async () => {
   forceCloseAllComPorts("SIGTERM received");
+  await disconnectRedis();
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   forceCloseAllComPorts("SIGINT received");
+  await disconnectRedis();
   process.exit(0);
 });
 
 process.on('exit', (code) => {
   console.log(`Process exiting with code: ${code}`);
   forceCloseAllComPorts("Process exit");
+  // We can't use await in exit handler, but disconnect will be attempted in SIGTERM/SIGINT
 });
 
 process.on('beforeExit', (code) => {
