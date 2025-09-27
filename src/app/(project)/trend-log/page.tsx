@@ -479,67 +479,96 @@ export default function TrendLogPage() {
                         Object.entries(groupedTrendLogs).map(([analyzerId, logs]) => {
                             const analyzer = logs[0].analyzer;
                             return (
-                                <div key={analyzerId} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                                    <div className="mb-4">
-                                        <Heading3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                                            {analyzer.name} (Slave: {analyzer.slaveId})
+                                <div key={analyzerId} className="bg-gradient-to-br from-white to-blue-50 dark:from-gray-800 dark:to-blue-900/20 rounded-xl shadow-md border border-blue-100 dark:border-blue-900/30 overflow-hidden">
+                                    {/* Analyzer başlık kısmı - Ortalanmış */}
+                                    <div className="bg-blue-600/10 dark:bg-blue-800/30 px-6 py-4 border-b border-blue-100 dark:border-blue-800/30 text-center">
+                                        <Heading3 className="text-lg font-semibold text-blue-700 dark:text-blue-300">
+                                            {analyzer.name} <span className="text-blue-500 dark:text-blue-400 font-normal">(Slave: {analyzer.slaveId})</span>
                                         </Heading3>
-                                        <Paragraph className="text-sm text-gray-600 dark:text-gray-400">
-                                            {logs.length} Trend Log{logs.length > 1 ? 's' : ''}
-                                        </Paragraph>
+                                        <div className="flex items-center justify-center mt-2">
+                                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 text-sm font-medium mr-2">
+                                                {logs.length}
+                                            </span>
+                                            <Paragraph className="text-sm text-blue-600 dark:text-blue-400">
+                                                Trend Log{logs.length > 1 ? 's' : ''}
+                                            </Paragraph>
+                                        </div>
                                     </div>
-                                    <div className={`space-y-4 ${logs.length > 3 ? 'max-h-96 overflow-y-auto' : ''}`}>
-                                        {logs.map((TrendLog) => (
-                                            <div key={TrendLog._id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/50">
-                                                <div className="mb-3">
-                                                    <div className="font-medium text-gray-800 dark:text-gray-300 text-sm">
-                                                        {TrendLog.unit}
+                                    
+                                    {/* İçerik kısmı */}
+                                    <div className="p-6">
+                                        <div className={`space-y-4 ${logs.length > 3 ? 'max-h-96 overflow-y-auto pr-1' : ''}`}>
+                                            {logs.map((TrendLog) => (
+                                                <div key={TrendLog._id} className="border border-blue-100 dark:border-blue-900/30 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 bg-blue-50/80 dark:bg-blue-900/20">
+                                                    {/* Trend log başlık - Ortalanmış ve Daha Belirgin */}
+                                                    <div className="py-3 border-b border-blue-100 dark:border-blue-800/30 text-center bg-blue-50 dark:bg-blue-900/30">
+                                                        <div className="text-center font-medium text-blue-700 dark:text-blue-400 text-base">
+                                                            Register
+                                                        </div>
                                                     </div>
-                                                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                                        Address: {TrendLog.register.address} | Interval: {TrendLog.interval} {TrendLog.period}
+                                                    
+                                                    {/* Trend log bilgi kısmı - Daha düzenli */}
+                                                    <div className="p-4">
+                                                        {/* İki satır halinde bilgi etiketleri */}
+                                                        <div className="grid grid-cols-2 gap-2 mb-4">
+                                                            <div className="col-span-1 text-center">
+                                                                <div className="bg-white dark:bg-gray-800 py-2 px-3 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 h-full flex flex-col justify-center">
+                                                                    <span className="font-medium text-gray-500 dark:text-gray-400 text-xs block mb-1">Address:</span>
+                                                                    <span className="font-medium text-blue-600 dark:text-blue-300 text-sm">{TrendLog.register.address}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-span-1 text-center">
+                                                                <div className="bg-white dark:bg-gray-800 py-2 px-3 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 h-full flex flex-col justify-center">
+                                                                    <span className="font-medium text-gray-500 dark:text-gray-400 text-xs block mb-1">Interval:</span>
+                                                                    <span className="font-medium text-blue-600 dark:text-blue-300 text-sm">{TrendLog.interval} {TrendLog.period}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Aksiyon butonları - ortalanmış ve daha modern */}
+                                                        <div className="flex justify-center space-x-3">
+                                                            <IconButton
+                                                                size="sm"
+                                                                onClick={() => openShowLogsModal(TrendLog)}
+                                                                icon={<Eye size={14} />}
+                                                                variant="secondary"
+                                                                shape="circle"
+                                                                className="p-2 shadow-sm hover:shadow transition-shadow"
+                                                            />
+                                                            <IconButton
+                                                                size="sm"
+                                                                onClick={() => openShowChartModal(TrendLog)}
+                                                                icon={<ChartLine size={14} />}
+                                                                variant="primary"
+                                                                shape="circle"
+                                                                className="p-2 shadow-sm hover:shadow transition-shadow"
+                                                            />
+                                                            {isAdmin && (
+                                                                <IconButton
+                                                                    size="sm"
+                                                                    onClick={() => openEditTrendLogModal(TrendLog)}
+                                                                    icon={<Pencil size={14} />}
+                                                                    variant="warning"
+                                                                    shape="circle"
+                                                                    className="p-2 shadow-sm hover:shadow transition-shadow"
+                                                                />
+                                                            )}
+                                                            {isAdmin && (
+                                                                <IconButton
+                                                                    disabled={deleting}
+                                                                    size="sm"
+                                                                    onClick={() => handleDeleteTrendLog(TrendLog)}
+                                                                    icon={<Trash2 size={14} />}
+                                                                    variant="error"
+                                                                    shape="circle"
+                                                                    className="p-2 shadow-sm hover:shadow transition-shadow"
+                                                                />
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div className="flex justify-end space-x-2">
-                                                    <IconButton
-                                                        size="sm"
-                                                        onClick={() => openShowLogsModal(TrendLog)}
-                                                        icon={<Eye size={14} />}
-                                                        variant="secondary"
-                                                        shape="circle"
-                                                        className="p-2"
-                                                    />
-                                                    <IconButton
-                                                        size="sm"
-                                                        onClick={() => openShowChartModal(TrendLog)}
-                                                        icon={<ChartLine size={14} />}
-                                                        variant="primary"
-                                                        shape="circle"
-                                                        className="p-2"
-                                                    />
-                                                    {isAdmin && (
-                                                        <IconButton
-                                                            size="sm"
-                                                            onClick={() => openEditTrendLogModal(TrendLog)}
-                                                            icon={<Pencil size={14} />}
-                                                            variant="warning"
-                                                            shape="circle"
-                                                            className="p-2"
-                                                        />
-                                                    )}
-                                                    {isAdmin && (
-                                                        <IconButton
-                                                            disabled={deleting}
-                                                            size="sm"
-                                                            onClick={() => handleDeleteTrendLog(TrendLog)}
-                                                            icon={<Trash2 size={14} />}
-                                                            variant="error"
-                                                            shape="circle"
-                                                            className="p-2"
-                                                        />
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             );
