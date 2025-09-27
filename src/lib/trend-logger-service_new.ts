@@ -101,7 +101,20 @@ export class TrendLoggerService {
                 }
 
                 if (trendLogger.period === 'onChange') {
-                    trendLogger.storeRegisterValue(data.value);
+                    // Sadece değer gerçekten değiştiğinde kaydet (ya da ilk değer ise)
+                    const lastValue = trendLogger.lastStoredValue;
+                    if (lastValue === undefined || lastValue !== data.value) {
+                        backendLogger.debug(
+                            `[TREND-LOGGER] onChange value changed for register ${data.id}: ${lastValue} -> ${data.value}`,
+                            "TrendLoggerService"
+                        );
+                        trendLogger.storeRegisterValue(data.value);
+                    } else {
+                        backendLogger.debug(
+                            `[TREND-LOGGER] Skipping unchanged value for register ${data.id}: ${data.value}`,
+                            "TrendLoggerService"
+                        );
+                    }
                 } else {
                     const intervalMs = trendLogger.getIntervalMs();
                     if (now.getTime() - trendLogger.lastSaveTimestamp >= intervalMs) {
@@ -126,9 +139,11 @@ export class TrendLoggerService {
             
             const existingLogger = activeTrendLoggers.get(registerId);
             
-            // If a logger for this register already exists and its timing is unchanged, preserve its last save time to avoid resetting the schedule.
+            // If a logger for this register already exists and its timing is unchanged, preserve its last save time and last value
+            // to avoid resetting the schedule and to maintain onChange comparison
             if (existingLogger && existingLogger.period === newLogger.period && existingLogger.interval === newLogger.interval) {
                 newLogger.lastSaveTimestamp = existingLogger.lastSaveTimestamp;
+                newLogger.lastStoredValue = existingLogger.lastStoredValue;
             }
             
             newConfigMap.set(registerId, newLogger);
@@ -169,6 +184,7 @@ class TrendLogger {
     interval: number;
     endDate?: Date; // endDate is now a Date object and optional
     lastSaveTimestamp: number = 0;
+    lastStoredValue?: number; // Son kaydedilen değer - onChange modunda değişiklikleri takip etmek için
     
     constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date) {
         this._id = _id;
@@ -206,6 +222,9 @@ class TrendLogger {
         if (value === null || value === undefined) {
             return;
         }
+        
+        // Değeri kaydet - bir sonraki onChange karşılaştırması için
+        this.lastStoredValue = value;
 
         const entry = {
             trendLogId: new ObjectId(this._id),
