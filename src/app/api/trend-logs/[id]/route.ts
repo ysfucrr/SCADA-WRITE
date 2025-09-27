@@ -31,8 +31,13 @@ export async function GET(
     if (!trendLog) {
       return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
-    const trendLogData = await db.collection('trend_log_entries').find({ trendLogId: new ObjectId(id)}).toArray();
-    // const trendLogData = await db.collection('trend_log_entries').find({ trendLogId: new ObjectId(id), $or: [{ exported: { $exists: false } }, { exported: false } ] }).toArray();
+    
+    // onChange için farklı koleksiyon kullan
+    const collectionName = trendLog.period === 'onChange' ?
+      'trend_log_entries_onchange' : 'trend_log_entries';
+      
+    const trendLogData = await db.collection(collectionName).find({ trendLogId: new ObjectId(id)}).toArray();
+    
     return NextResponse.json({ trendLog, trendLogData });
   } catch (error) {
     console.error('Trend log fetch failed:', error);
@@ -160,9 +165,54 @@ export async function DELETE(
       return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
     
-    // 3. Son olarak tüm kayıtları sil
-    const trendLogEntries = await db.collection('trend_log_entries').deleteMany({ trendLogId: new ObjectId(id) });
-    backendLogger.info(`${trendLogEntries.deletedCount} trend log entries deleted for trend log ${id}.`, 'TrendLogAPI');
+    // 3. Periyodik raporlar ile ilgili işlemler
+    
+    // 3.1. Önce bu trend log'u kullanan periyodik raporları bul
+    const periodicReportsWithThisLog = await db.collection('periodicReports').find({ 'trendLogs.id': id }).toArray();
+    
+    // 3.2. Bu raporlar içinde sadece 1 adet trend log içerenleri belirle
+    const reportsToDelete: ObjectId[] = [];
+    const reportsToUpdate: ObjectId[] = [];
+    
+    periodicReportsWithThisLog.forEach(report => {
+      if (report.trendLogs && report.trendLogs.length === 1 && report.trendLogs[0].id === id) {
+        // Raporda sadece bu trend log var, raporu sil
+        reportsToDelete.push(report._id);
+      } else {
+        // Raporda başka trend loglar da var, sadece ilgili log'u kaldır
+        reportsToUpdate.push(report._id);
+      }
+    });
+    
+    // 3.3. Tek trend log içeren raporları sil
+    let deletedReportsCount = 0;
+    if (reportsToDelete.length > 0) {
+      const deleteResult = await db.collection('periodicReports').deleteMany({
+        _id: { $in: reportsToDelete }
+      });
+      deletedReportsCount = deleteResult.deletedCount;
+      backendLogger.info(`Deleted ${deletedReportsCount} periodic reports that had only this trend log.`, 'TrendLogAPI');
+    }
+    
+    // 3.4. Birden fazla trend log içeren raporlardan sadece ilgili log'u kaldır
+    let updatedReportsCount = 0;
+    if (reportsToUpdate.length > 0) {
+      const updateResult = await db.collection('periodicReports').updateMany(
+        { _id: { $in: reportsToUpdate } },
+        { $pull: { trendLogs: { id: id } } } as any
+      );
+      updatedReportsCount = updateResult.modifiedCount;
+      backendLogger.info(`Updated ${updatedReportsCount} periodic reports by removing this trend log.`, 'TrendLogAPI');
+    }
+    
+    backendLogger.info(`Trend log removal impact: ${deletedReportsCount} reports deleted, ${updatedReportsCount} reports updated.`, 'TrendLogAPI');
+
+    // 4. Son olarak normal ve onChange koleksiyonlarından tüm kayıtları sil
+    const normalEntries = await db.collection('trend_log_entries').deleteMany({ trendLogId: new ObjectId(id) });
+    const onChangeEntries = await db.collection('trend_log_entries_onchange').deleteMany({ trendLogId: new ObjectId(id) });
+    
+    const totalDeleted = (normalEntries.deletedCount || 0) + (onChangeEntries.deletedCount || 0);
+    backendLogger.info(`${totalDeleted} trend log entries deleted for trend log ${id}.`, 'TrendLogAPI');
     return NextResponse.json({ success: true, message: 'Trend log and its entries deleted successfully' });
   } catch (error) {
     console.error('Trend log deletion failed:', error);

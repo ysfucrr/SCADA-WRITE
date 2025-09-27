@@ -24,6 +24,7 @@ interface TrendLogFormProps {
         dataType: string;
         byteOrder: string;
         scale: number;
+        cleanupPeriod?: number; // onChange için otomatik temizleme süresi
     }) => void;
     onCancel: () => void;
     analyzers: any[];
@@ -37,6 +38,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
     const [period, setPeriod] = useState(trendLog?.period || "minute");
     const [isKWHCounter, setIsKWHCounter] = useState(trendLog?.isKWHCounter || false);
     const [interval, setInterval] = useState(trendLog?.interval || 1);
+    const [cleanupPeriod, setCleanupPeriod] = useState<number>(trendLog?.cleanupPeriod || 1);
     const [registers, setRegisters] = useState<any[]>([]);
     const { isLoading: isAuthLoading, isAdmin, user } = useAuth();
     const [selectedRegister, setSelectedRegister] = useState<any>(null);
@@ -54,6 +56,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             setPeriod(trendLog.period);
             setInterval(trendLog.interval);
             setIsKWHCounter(trendLog.isKWHCounter);
+            setCleanupPeriod(trendLog.cleanupPeriod || 1);
         }
     }, [trendLog]);
     const fetchBuildings = async (gateways: any[]) => {
@@ -217,6 +220,13 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             showToast("Please select a register", "error");
             return;
         }
+        
+        // onChange için cleanupPeriod'u kontrol et
+        if (period === 'onChange' && !cleanupPeriod) {
+            showToast("Auto Cleanup Period is required for onChange mode", "error");
+            return;
+        }
+        
         console.log("end date", endDate)
         console.log("selected register on submit: ", selectedRegister)
 
@@ -231,6 +241,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             dataType: selectedRegister.registerInfo.dataType,
             byteOrder: selectedRegister.registerInfo.byteOrder,
             scale: selectedRegister.registerInfo.scale,
+            cleanupPeriod: period === 'onChange' ? cleanupPeriod : undefined, // onChange ise temizleme süresi ekle
         });
         setSaving(false);
     };
@@ -380,6 +391,27 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                             onChange={setIsKWHCounter}
                         />
                         <Label htmlFor="is-kwh-counter">Is KWH Counter</Label>
+                    </div>
+                )}
+                {/* onChange için cleanupPeriod seçimi */}
+                {period === "onChange" && (
+                    <div className="space-y-2">
+                        <Label htmlFor="cleanupPeriod">Auto Cleanup Period</Label>
+                        <Select
+                            
+                            options={[
+                                { value: "1", label: "1 Month" },
+                                { value: "2", label: "2 Months" },
+                                { value: "3", label: "3 Months" },
+                                { value: "6", label: "6 Months" },
+                                { value: "12", label: "12 Months (1 Year)" }
+                            ]}
+                            onChange={(value) => setCleanupPeriod(Number(value))}
+                            defaultValue={cleanupPeriod ? cleanupPeriod.toString() : "1"}
+                        />
+                        <SmallText className="text-gray-500 dark:text-gray-400">
+                            onChange log entries will be automatically deleted after this period.
+                        </SmallText>
                     </div>
                 )}
                 <div className="space-y-2">

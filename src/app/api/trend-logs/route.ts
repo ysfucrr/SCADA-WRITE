@@ -56,16 +56,24 @@ export async function POST(request: NextRequest) {
       dataType,
       byteOrder,
       scale,
+      cleanupPeriod, // Yeni parametre
     } = body;
    
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'admin' && session.user.permissions?.trendLog === false) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
+    
     //end date must be in the future
     if (!endDate || !analyzerId || !registerId || !period || (period !== 'onChange' && !interval)) {
         return NextResponse.json({ error: 'Period, end date, register, and interval are required' }, { status: 400 });
     }
+    
+    // onChange için cleanupPeriod gerekli
+    if (period === 'onChange' && !cleanupPeriod) {
+        return NextResponse.json({ error: 'Auto Cleanup Period is required for onChange mode' }, { status: 400 });
+    }
+    
     //end date must be in the future
     if (new Date(endDate) < new Date()) {
       return NextResponse.json({ error: 'End date must be in the future' }, { status: 400 });
@@ -87,7 +95,8 @@ export async function POST(request: NextRequest) {
         // We don't fail the whole operation, just log the error and proceed.
     }
 
-    const trendLog = await db.collection('trendLogs').insertOne({
+    // Eklenecek alanları belirle
+    const insertData: any = {
       period,
       interval,
       endDate,
@@ -100,17 +109,58 @@ export async function POST(request: NextRequest) {
       scale,
       status: 'running', // Explicitly set status
       createdAt: new Date(),
-    });
+    };
+    
+    // Sadece onChange modunda cleanupPeriod ekle
+    if (period === 'onChange') {
+      insertData.cleanupPeriod = cleanupPeriod;
+    }
+    
+    const trendLog = await db.collection('trendLogs').insertOne(insertData);
 
-    // If we have an initial value, write it to the entries collection immediately.
+    // If we have an initial value, write it to the appropriate collection immediately.
     if (initialValue !== null) {
-        await db.collection('trend_log_entries').insertOne({
+        // Hangi koleksiyona yazılacağını belirle
+        const collectionName = period === 'onChange' ?
+            'trend_log_entries_onchange' : 'trend_log_entries';
+        
+        // Entry oluştur
+        const entryData: any = {
             trendLogId: trendLog.insertedId,
             value: initialValue,
             timestamp: new Date(),
             analyzerId: analyzerId,
             registerId: registerId
-        });
+        };
+        
+        // Sadece onChange modunda expiresAt ekle
+        if (period === 'onChange' && cleanupPeriod) {
+            const expiresAt = new Date();
+            expiresAt.setMonth(expiresAt.getMonth() + cleanupPeriod);
+            entryData.expiresAt = expiresAt;
+        }
+            
+        await db.collection(collectionName).insertOne(entryData);
+        
+        // onChange modundaysa TTL indeksi varlığını kontrol et
+        if (period === 'onChange' && cleanupPeriod) {
+            try {
+                const indexes = await db.collection('trend_log_entries_onchange').listIndexes().toArray();
+                const ttlIndexExists = indexes.some((idx) => idx.name === 'expiresAt_ttl_index');
+                
+                if (!ttlIndexExists) {
+                    await db.collection('trend_log_entries_onchange').createIndex(
+                        { expiresAt: 1 },
+                        {
+                            expireAfterSeconds: 0,
+                            name: 'expiresAt_ttl_index'
+                        }
+                    );
+                }
+            } catch (indexError) {
+                console.error('Failed to ensure TTL index:', indexError);
+            }
+        }
     }
 
     return NextResponse.json({ ...trendLog, insertedId: trendLog.insertedId.toString() }, { status: 201 });

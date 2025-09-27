@@ -29,6 +29,7 @@ export interface TrendLogType {
     period: string;
     interval: number;
     endDate: string;
+    cleanupPeriod?: number; // onChange modunda kullanılan otomatik temizleme süresi (ay)
     unit: any;
     analyzer: any;
     register: any;

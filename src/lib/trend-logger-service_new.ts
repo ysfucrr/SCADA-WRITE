@@ -18,6 +18,74 @@ export class TrendLoggerService {
         this.setupShutdownHandlers();
         this.setupRedisSubscriptions();
         this.listenForDbChanges();
+        this.ensureCollectionsExist();
+    }
+    
+    // Gerekli koleksiyonların ve indekslerin varlığını kontrol et
+    private async ensureCollectionsExist() {
+        try {
+            const { db } = await connectToDatabase();
+            
+            // Koleksiyonların listesini al
+            const collections = await db.listCollections().toArray();
+            const collectionNames = collections.map((c: any) => c.name);
+            
+            // onChange trend logları için koleksiyon yoksa oluştur
+            if (!collectionNames.includes('trend_log_entries_onchange')) {
+                await db.createCollection('trend_log_entries_onchange');
+                backendLogger.info('Created trend_log_entries_onchange collection', 'TrendLoggerService');
+                
+                // TTL indeksi oluştur
+                await db.collection('trend_log_entries_onchange').createIndex(
+                    { expiresAt: 1 },
+                    { expireAfterSeconds: 0, name: 'expiresAt_ttl_index' }
+                );
+                backendLogger.info('Created TTL index on trend_log_entries_onchange collection', 'TrendLoggerService');
+                
+                // Mevcut onChange loglarını migrasyon yap
+                await this.migrateExistingOnChangeTrendLogs();
+            }
+        } catch (error) {
+            backendLogger.error('Error ensuring collections exist', 'TrendLoggerService', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }
+    
+    // Mevcut onChange trend loglarını güncelleme
+    private async migrateExistingOnChangeTrendLogs() {
+        try {
+            const { db } = await connectToDatabase();
+            
+            // onChange modundaki tüm trend logları bul (cleanupPeriod alanı olmayanlar)
+            const onChangeTrendLogs = await db.collection('trendLogs')
+                .find({ period: 'onChange', cleanupPeriod: { $exists: false } })
+                .toArray();
+                
+            if (onChangeTrendLogs.length === 0) {
+                backendLogger.info('No onChange trend logs need migration', 'TrendLoggerService');
+                return;
+            }
+            
+            backendLogger.info(`Found ${onChangeTrendLogs.length} onChange trend logs to migrate`, 'TrendLoggerService');
+            
+            // Her birine varsayılan cleanupPeriod ekle (3 ay)
+            const updateOperations = onChangeTrendLogs.map((log: any) => ({
+                updateOne: {
+                    filter: { _id: log._id },
+                    update: { $set: { cleanupPeriod: 3 } } // Varsayılan: 3 ay
+                }
+            }));
+            
+            // Toplu güncelleme yap
+            const result = await db.collection('trendLogs').bulkWrite(updateOperations);
+            backendLogger.info(`Migration completed: ${result.modifiedCount} trend logs updated`, 'TrendLoggerService');
+            
+        } catch (error) {
+            backendLogger.error('Error during onChange trend logs migration', 'TrendLoggerService', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
     }
 
     private setupRedisSubscriptions(): void {
@@ -129,7 +197,15 @@ export class TrendLoggerService {
 
         for (const trendLog of trendLogs) {
             const registerId = trendLog.registerId;
-            const newLogger = new TrendLogger(trendLog._id.toString(), registerId, trendLog.analyzerId, trendLog.period, trendLog.interval, trendLog.endDate);
+            const newLogger = new TrendLogger(
+                trendLog._id.toString(),
+                registerId,
+                trendLog.analyzerId,
+                trendLog.period,
+                trendLog.interval,
+                trendLog.endDate,
+                trendLog.cleanupPeriod  // Yeni parametre
+            );
             
             const existingLogger = activeTrendLoggers.get(registerId);
             
@@ -179,8 +255,9 @@ class TrendLogger {
     endDate?: Date; // endDate is now a Date object and optional
     lastSaveTimestamp: number = 0;
     lastStoredValue?: number; // Son kaydedilen değer - onChange modunda değişiklikleri takip etmek için
+    cleanupPeriod?: number; // Ay cinsinden otomatik temizleme süresi (onChange modunda kullanılır)
     
-    constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date) {
+    constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date, cleanupPeriod?: number) {
         this._id = _id;
         this.registerId = registerId;
         this.analyzerId = analyzerId;
@@ -190,6 +267,7 @@ class TrendLogger {
         if (endDate) {
             this.endDate = new Date(endDate);
         }
+        this.cleanupPeriod = cleanupPeriod;
     }
 
     getIntervalMs(): number {
@@ -220,18 +298,42 @@ class TrendLogger {
         // Değeri kaydet - bir sonraki onChange karşılaştırması için
         this.lastStoredValue = value;
 
-        const entry = {
+        const now = new Date();
+        let expiresAt: Date | undefined = undefined;
+        
+        // Eğer onChange modunda ve cleanupPeriod tanımlanmışsa son kullanma tarihi hesapla
+        if (this.period === 'onChange' && this.cleanupPeriod && this.cleanupPeriod > 0) {
+            expiresAt = new Date();
+            expiresAt.setMonth(expiresAt.getMonth() + this.cleanupPeriod);
+        }
+
+        // Temel entry nesnesini oluştur
+        const entry: any = {
             trendLogId: new ObjectId(this._id),
             value: value,
-            timestamp: new Date(),
+            timestamp: now,
             analyzerId: this.analyzerId,
             registerId: this.registerId
         };
+        
+        // Sadece onChange modunda expiresAt ekle
+        if (this.period === 'onChange' && expiresAt) {
+            entry.expiresAt = expiresAt;
+        }
+
+        // Hangi koleksiyona yazılacağını belirle
+        const collectionName = this.period === 'onChange' ?
+            'trend_log_entries_onchange' : 'trend_log_entries';
 
         // MongoDB'ye kaydet
         try {
             const { db } = await connectToDatabase();
-            await db.collection('trend_log_entries').insertOne(entry);
+            await db.collection(collectionName).insertOne(entry);
+            
+            // onChange modundaysa TTL indeksini kontrol et
+            if (this.period === 'onChange' && expiresAt) {
+                await this.ensureTTLIndex(db);
+            }
         } catch (dbError) {
             backendLogger.error(`[TREND-LOGGER] MongoDB error storing trend log entry: ` +
                 (dbError instanceof Error ? dbError.message : String(dbError)),
@@ -257,6 +359,29 @@ class TrendLogger {
             // Redis not ready - log at debug level to avoid spamming logs
             backendLogger.debug(`[TREND-LOGGER] Redis not ready, trend log entry saved to MongoDB only`,
                 "TrendLogger");
+        }
+    }
+    
+    // TTL indeksi oluşturmak için yardımcı fonksiyon
+    private async ensureTTLIndex(db: any) {
+        try {
+            const indexes = await db.collection('trend_log_entries_onchange').listIndexes().toArray();
+            const ttlIndexExists = indexes.some((idx: any) => idx.name === 'expiresAt_ttl_index');
+            
+            if (!ttlIndexExists) {
+                await db.collection('trend_log_entries_onchange').createIndex(
+                    { expiresAt: 1 },
+                    {
+                        expireAfterSeconds: 0,  // expiresAt alanına göre otomatik sil
+                        name: 'expiresAt_ttl_index'
+                    }
+                );
+                backendLogger.info('Created TTL index on trend_log_entries_onchange collection', 'TrendLogger');
+            }
+        } catch (error) {
+            backendLogger.error('Failed to create TTL index', 'TrendLogger', {
+                error: error instanceof Error ? error.message : String(error)
+            });
         }
     }
 }

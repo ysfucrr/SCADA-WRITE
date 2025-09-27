@@ -90,12 +90,56 @@ async function fetchTrendLogData(db: any, trendLogIds: string[]) {
     // Get the last 24 hours of data for each trend log
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const entries = await db.collection('trend_log_entries').find({
-      trendLogId: { $in: objectIds },
-      timestamp: { $gte: twentyFourHoursAgo }
-    }).sort({ timestamp: 1 }).toArray();
+    // Fetch trend log information to determine which collection to use
+    const trendLogsInfo = await db.collection('trendLogs').find({
+      _id: { $in: objectIds }
+    }, { projection: { _id: 1, period: 1 }}).toArray();
 
-    return entries;
+    // Create maps for onChange and regular trend logs
+    const onChangeTrendLogIds = new Set();
+    const regularTrendLogIds = new Set();
+
+    trendLogsInfo.forEach((log: any) => {
+      if (log.period === 'onChange') {
+        onChangeTrendLogIds.add(log._id.toString());
+      } else {
+        regularTrendLogIds.add(log._id.toString());
+      }
+    });
+
+    // Prepare array to collect all entries
+    let allEntries: any[] = [];
+
+    // Fetch from trend_log_entries if we have regular trend logs
+    if (regularTrendLogIds.size > 0) {
+      const regularQuery = {
+        trendLogId: { $in: Array.from(regularTrendLogIds).map(id => new ObjectId(id as string)) },
+        timestamp: { $gte: twentyFourHoursAgo }
+      };
+      const regularEntries = await db.collection('trend_log_entries')
+        .find(regularQuery)
+        .sort({ timestamp: 1 })
+        .toArray();
+      allEntries = allEntries.concat(regularEntries);
+    }
+
+    // Fetch from trend_log_entries_onchange if we have onChange trend logs
+    if (onChangeTrendLogIds.size > 0) {
+      const onChangeQuery = {
+        trendLogId: { $in: Array.from(onChangeTrendLogIds).map(id => new ObjectId(id as string)) },
+        timestamp: { $gte: twentyFourHoursAgo }
+      };
+      const onChangeEntries = await db.collection('trend_log_entries_onchange')
+        .find(onChangeQuery)
+        .sort({ timestamp: 1 })
+        .toArray();
+      allEntries = allEntries.concat(onChangeEntries);
+    }
+
+    // Sort all entries by timestamp
+    allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    return allEntries;
   } catch (error) {
     console.error('Error fetching trend log data:', error);
     return [];
