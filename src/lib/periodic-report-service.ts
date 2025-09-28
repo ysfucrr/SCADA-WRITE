@@ -88,25 +88,83 @@ class PeriodicReportService {
     return false;
   }
 
-  private async sendConfiguredReport(report: any, db: any) {
+  private async fetchTrendLogDataForAutoReport(db: any, trendLogIds: ObjectId[], timeLimit?: Date | null) {
     try {
-      // Convert string IDs to ObjectIds
-      const trendLogIds = report.trendLogs.map((item: any) => new ObjectId(item.id));
-      
-      // Note: Email recipients are now managed through centralized mail settings
-      
-      // Fetch trend log entries based on report settings
+      // Build query
       const query: any = {
         trendLogId: { $in: trendLogIds }
       };
 
-      if (report.last24HoursOnly) {
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        query.timestamp = { $gte: twentyFourHoursAgo };
+      // Add time limit if specified
+      if (timeLimit) {
+        query.timestamp = { $gte: timeLimit };
       }
 
-      const entries = await db.collection('trend_log_entries').find(query).sort({ timestamp: 1 }).toArray();
-      
+      // Fetch trend log information to determine which collection to use
+      const trendLogsInfo = await db.collection('trendLogs').find({
+        _id: { $in: trendLogIds }
+      }, { projection: { _id: 1, period: 1 }}).toArray();
+
+      // Create maps for onChange and regular trend logs
+      const onChangeTrendLogIds = new Set();
+      const regularTrendLogIds = new Set();
+
+      trendLogsInfo.forEach((log: any) => {
+        if (log.period === 'onChange') {
+          onChangeTrendLogIds.add(log._id.toString());
+        } else {
+          regularTrendLogIds.add(log._id.toString());
+        }
+      });
+
+      // Prepare array to collect all entries
+      let allEntries: any[] = [];
+
+      // Fetch from trend_log_entries if we have regular trend logs
+      if (regularTrendLogIds.size > 0) {
+        const regularQuery = { ...query };
+        regularQuery.trendLogId = { $in: Array.from(regularTrendLogIds).map(id => new ObjectId(id as string)) };
+        const regularEntries = await db.collection('trend_log_entries')
+          .find(regularQuery)
+          .sort({ timestamp: 1 })
+          .toArray();
+        allEntries = allEntries.concat(regularEntries);
+      }
+
+      // Fetch from trend_log_entries_onchange if we have onChange trend logs
+      if (onChangeTrendLogIds.size > 0) {
+        const onChangeQuery = { ...query };
+        onChangeQuery.trendLogId = { $in: Array.from(onChangeTrendLogIds).map(id => new ObjectId(id as string)) };
+        const onChangeEntries = await db.collection('trend_log_entries_onchange')
+          .find(onChangeQuery)
+          .sort({ timestamp: 1 })
+          .toArray();
+        allEntries = allEntries.concat(onChangeEntries);
+      }
+
+      // Sort all entries by timestamp
+      allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      return allEntries;
+    } catch (error) {
+      backendLogger.error('Error fetching trend log data for auto report', 'PeriodicReportService', {
+        error: (error as Error).message
+      });
+      return [];
+    }
+  }
+
+  private async sendConfiguredReport(report: any, db: any) {
+    try {
+      // Convert string IDs to ObjectIds
+      const trendLogIds = report.trendLogs.map((item: any) => new ObjectId(item.id));
+
+      // Note: Email recipients are now managed through centralized mail settings
+
+      // Fetch trend log entries based on report settings using the same logic as manual generation
+      const timeLimit = report.last24HoursOnly ? new Date(Date.now() - 24 * 60 * 60 * 1000) : null;
+      const entries = await this.fetchTrendLogDataForAutoReport(db, trendLogIds, timeLimit);
+
       if (entries.length === 0) {
         backendLogger.info(`No trend logs found for report: ${report.description || 'Periodic Report'}. Skipping.`, 'PeriodicReportService');
         return;
