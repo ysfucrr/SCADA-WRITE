@@ -300,6 +300,12 @@ class TrendLogger {
         const threshold = Math.abs(this.lastStoredValue * (this.percentageThreshold / 100));
         const difference = Math.abs(currentValue - this.lastStoredValue);
 
+        // 0 değerler için threshold 0 ise, minimum değişim eşiği uygula
+        if (this.lastStoredValue === 0 && currentValue === 0) {
+            // 0'dan 0'a değişim için minimum 0.0001 threshold uygula
+            return difference >= 0.0001;
+        }
+
         return difference >= threshold;
     }
 
