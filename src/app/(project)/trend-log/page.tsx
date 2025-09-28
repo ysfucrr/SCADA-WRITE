@@ -480,7 +480,7 @@ export default function TrendLogPage() {
                         Object.entries(groupedTrendLogs).map(([analyzerId, logs]) => {
                             const analyzer = logs[0].analyzer;
                             return (
-                                <div key={analyzerId} className="bg-gradient-to-br from-white to-blue-50 dark:from-gray-800 dark:to-blue-900/20 rounded-xl shadow-md border border-blue-100 dark:border-blue-900/30 overflow-hidden">
+                                <div key={analyzerId} className="bg-gradient-to-br from-white to-blue-50 dark:from-gray-800 dark:to-blue-900/20 rounded-xl shadow-md border border-blue-100 dark:border-blue-900/30 overflow-hidden flex flex-col h-full">
                                     {/* Analyzer başlık kısmı - Ortalanmış */}
                                     <div className="bg-blue-600/10 dark:bg-blue-800/30 px-6 py-4 border-b border-blue-100 dark:border-blue-800/30 text-center">
                                         <Heading3 className="text-lg font-semibold text-blue-700 dark:text-blue-300">
@@ -498,7 +498,7 @@ export default function TrendLogPage() {
                                     
                                     {/* İçerik kısmı */}
                                     <div className="p-6">
-                                        <div className={`space-y-4 ${logs.length >= 4 ? 'max-h-[500px] overflow-y-auto pr-2' : ''}`}>
+                                        <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                                             {logs.map((TrendLog) => (
                                                 <div key={TrendLog._id} className="border border-blue-100 dark:border-blue-900/30 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 bg-blue-50/80 dark:bg-blue-900/20">
                                                     {/* Trend log başlık - Ortalanmış ve Daha Belirgin */}

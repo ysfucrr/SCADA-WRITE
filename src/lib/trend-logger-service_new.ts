@@ -170,7 +170,7 @@ export class TrendLoggerService {
 
                 if (trendLogger.period === 'onChange') {
                     // Yüzde eşiği aşıldı mı kontrol et (ya da ilk değer ise)
-                    if (trendLogger.hasPercentageThresholdExceeded(data.value)) {
+                    if (data.value !== trendLogger.lastStoredValue && trendLogger.hasPercentageThresholdExceeded(data.value)) {
                         trendLogger.storeRegisterValue(data.value);
                     } else {
                         // Yüzde eşiği aşılmadığında sessizce geç
@@ -293,18 +293,18 @@ class TrendLogger {
 
     // Yüzde eşiği aşıldı mı kontrol et
     public hasPercentageThresholdExceeded(currentValue: number): boolean {
-        if (!this.lastStoredValue || !this.percentageThreshold) {
-            return true; // İlk değer her zaman kaydedilir
+        // if `lastStoredValue` is not set (it's the first time), or percentage threshold is not defined, always save.
+        if (this.lastStoredValue === undefined || !this.percentageThreshold) {
+            return true;
         }
 
+        // If the last stored value is 0, any change should be recorded.
+        if (this.lastStoredValue === 0) {
+            return currentValue !== 0;
+        }
+        
         const threshold = Math.abs(this.lastStoredValue * (this.percentageThreshold / 100));
         const difference = Math.abs(currentValue - this.lastStoredValue);
-
-        // 0 değerler için threshold 0 ise, minimum değişim eşiği uygula
-        if (this.lastStoredValue === 0 && currentValue === 0) {
-            // 0'dan 0'a değişim için minimum 0.0001 threshold uygula
-            return difference >= 0.0001;
-        }
 
         return difference >= threshold;
     }
