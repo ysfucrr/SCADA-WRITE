@@ -54,3 +54,6 @@ license-server
 # redis
 redis
 dump.rdb
+
+# ios mobil
+scada-mobil
