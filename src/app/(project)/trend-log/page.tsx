@@ -498,7 +498,7 @@ export default function TrendLogPage() {
                                     
                                     {/* İçerik kısmı */}
                                     <div className="p-6">
-                                        <div className={`space-y-4 ${logs.length > 3 ? 'max-h-96 overflow-y-auto pr-1' : ''}`}>
+                                        <div className={`space-y-4 ${logs.length >= 4 ? 'max-h-[500px] overflow-y-auto pr-2' : ''}`}>
                                             {logs.map((TrendLog) => (
                                                 <div key={TrendLog._id} className="border border-blue-100 dark:border-blue-900/30 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 bg-blue-50/80 dark:bg-blue-900/20">
                                                     {/* Trend log başlık - Ortalanmış ve Daha Belirgin */}
