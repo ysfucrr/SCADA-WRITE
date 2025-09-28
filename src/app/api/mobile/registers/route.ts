@@ -6,6 +6,15 @@ export async function GET(request: NextRequest) {
   try {
     const { db } = await connectToDatabase();
     
+    // Önce tüm analyzer'ları getir (ID -> Name mapping için)
+    const analyzers = await db.collection('analyzers').find({}).toArray();
+    const analyzerMap = new Map();
+    analyzers.forEach(analyzer => {
+      analyzerMap.set(analyzer._id.toString(), analyzer.name);
+    });
+    
+    console.log(`Found ${analyzers.length} analyzers`);
+    
     // Tüm building'leri getir
     const buildings = await db.collection('buildings').find({}).toArray();
     
@@ -26,12 +35,16 @@ export async function GET(request: NextRequest) {
         console.log(`Building ${building.name}: ${registerNodes.length} register nodes`);
         
         registerNodes.forEach((node: any) => {
+          const analyzerId = node.data.analyzerId;
+          const analyzerName = analyzerMap.get(analyzerId) || `Unknown Analyzer (${analyzerId})`;
+          
           const register = {
             _id: node.id,
             name: node.data.label || `Register ${node.data.address}`,
             buildingId: building._id.toString(),
             buildingName: building.name,
-            analyzerId: node.data.analyzerId,
+            analyzerId: analyzerId,
+            analyzerName: analyzerName, // Analyzer ismini ekle
             address: node.data.address,
             dataType: node.data.dataType,
             scale: node.data.scale || 1,
