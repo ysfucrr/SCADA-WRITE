@@ -29,19 +29,38 @@ export class TrendLoggerService {
             // Koleksiyonların listesini al
             const collections = await db.listCollections().toArray();
             const collectionNames = collections.map((c: any) => c.name);
+
+            // 'trend_log_entries' koleksiyonunu kontrol et ve optimize et
+            if (!collectionNames.includes('trend_log_entries')) {
+                await db.createCollection('trend_log_entries', {
+                    storageEngine: {
+                        wiredTiger: {
+                            configString: 'block_compressor=zstd'
+                        }
+                    }
+                });
+                backendLogger.info('Created trend_log_entries collection with zstd compression', 'TrendLoggerService');
+            }
             
             // onChange trend logları için koleksiyon yoksa oluştur
             if (!collectionNames.includes('trend_log_entries_onchange')) {
-                await db.createCollection('trend_log_entries_onchange');
-                backendLogger.info('Created trend_log_entries_onchange collection', 'TrendLoggerService');
-                
+                // Koleksiyonu 'zstd' sıkıştırmasıyla oluştur
+                await db.createCollection('trend_log_entries_onchange', {
+                    storageEngine: {
+                        wiredTiger: {
+                            configString: 'block_compressor=zstd'
+                        }
+                    }
+                });
+                backendLogger.info('Created trend_log_entries_onchange collection with zstd compression', 'TrendLoggerService');
+
                 // TTL indeksi oluştur
                 await db.collection('trend_log_entries_onchange').createIndex(
                     { expiresAt: 1 },
                     { expireAfterSeconds: 0, name: 'expiresAt_ttl_index' }
                 );
                 backendLogger.info('Created TTL index on trend_log_entries_onchange collection', 'TrendLoggerService');
-                
+
                 // Mevcut onChange loglarını migrasyon yap
                 await this.migrateExistingOnChangeTrendLogs();
             }
