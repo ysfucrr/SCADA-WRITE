@@ -400,7 +400,7 @@ const AppSidebar: React.FC = () => {
               >
                 <div className="flex items-center gap-3">
                   {item.icon && <span className="w-5 h-5 flex-shrink-0">{item.icon}</span>}
-                  {<span className="truncate">{item.name}</span>}
+                  <span className={`truncate transition-all duration-200 ${isExpanded || isHovered || isMobileOpen ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`}>{item.name}</span>
                 </div>
               </Link>
             ) : (
@@ -410,7 +410,7 @@ const AppSidebar: React.FC = () => {
                 } ${level > 0 ? 'pl-8' : ''}`}>
                 <div className="flex items-center gap-3">
                   {item.icon && <span className="w-5 h-5 flex-shrink-0">{item.icon}</span>}
-                  {<span className="truncate">{item.name}</span>}
+                  <span className={`truncate transition-all duration-200 ${isExpanded || isHovered || isMobileOpen ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`}>{item.name}</span>
                 </div>
               </div>
             )}
@@ -637,7 +637,7 @@ const AppSidebar: React.FC = () => {
           >
             <div className="flex items-center gap-3">
               <Info className="w-5 h-5 flex-shrink-0" />
-              {(isExpanded || isHovered || isMobileOpen) && <span className="truncate">About</span>}
+              <span className={`truncate transition-all duration-200 ${isExpanded || isHovered || isMobileOpen ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`}>About</span>
             </div>
           </Link>
         </div>
