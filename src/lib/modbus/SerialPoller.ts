@@ -18,12 +18,12 @@ export class SerialPoller extends EventEmitter {
     private registers: Map<string, Register> = new Map();
     private blocks: Map<string, PollerBlock[]> = new Map();
     private connections: Map<string, ModbusConnection> = new Map();
-    private pollingTimers: Map<string, NodeJS.Timeout> = new Map(); // Anahtar: connectionId
+    private pollingTimers: Map<string, number> = new Map(); // Anahtar: connectionId
     private connectionPollState: Map<string, { nextAnalyzerIndex: number; nextBlockIndex: number }> = new Map();
-    private configUpdateTimeout: NodeJS.Timeout | null = null;
+    private configUpdateTimeout: number | null = null;
     private isReloading: boolean = false;
     private connectionLossLoggedConnections: Set<string> = new Set(); // Connection loss log spam'ini önlemek için
-    private portReconnectTimers: Map<string, NodeJS.Timeout> = new Map(); // COM port bazlı reconnect timer'ları
+    private portReconnectTimers: Map<string, number> = new Map(); // COM port bazlı reconnect timer'ları
     private activeReconnects: Set<string> = new Set(); // Aktif reconnect işlemleri
 
     constructor() {
@@ -91,12 +91,12 @@ export class SerialPoller extends EventEmitter {
             } catch (err) {
                 // Errors are handled inside pollConnection
             } finally {
-                const timer = setTimeout(pollLoop, intervalMs);
+                const timer = setTimeout(pollLoop, intervalMs) as any;
                 this.pollingTimers.set(connectionId, timer);
             }
         };
 
-        const initialTimer = setTimeout(pollLoop, intervalMs);
+        const initialTimer = setTimeout(pollLoop, intervalMs) as any;
         this.pollingTimers.set(connectionId, initialTimer);
     }
     
@@ -257,7 +257,7 @@ export class SerialPoller extends EventEmitter {
                         this.startPollingForConnection(firstAnalyzer.getConnectionId());
                     }
                     
-                }, 30000);
+                }, 30000) as any;
                 
                 this.portReconnectTimers.set(portName, reconnectTimer);
             }
@@ -380,7 +380,7 @@ export class SerialPoller extends EventEmitter {
                 const changeStream = db.collection(collectionName).watch([], { fullDocumentBeforeChange: "whenAvailable" });
                 changeStream.on("change", (change) => {
                     if (this.configUpdateTimeout) clearTimeout(this.configUpdateTimeout);
-                    this.configUpdateTimeout = setTimeout(() => handler(change), 1500);
+                    this.configUpdateTimeout = setTimeout(() => handler(change), 1500) as any;
                 });
                 changeStream.on('error', (err) => {
                     backendLogger.error(`Change stream error on ${collectionName} for SerialPoller: ${err.message}`, "SerialPoller");

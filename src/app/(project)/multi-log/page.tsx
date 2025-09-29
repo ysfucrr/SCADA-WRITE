@@ -38,7 +38,7 @@ export default function MultiLogPage() {
         series: { name: string; data: number[] }[];
         categories: string[];
     }>({ series: [], categories: [] });
-    const [updateInterval, setUpdateInterval] = useState<NodeJS.Timeout | null>(null);
+    const [updateInterval, setUpdateInterval] = useState<number | null>(null);
     const [refreshRate, setRefreshRate] = useState(30); // seconds
     const [analyzers, setAnalyzers] = useState<any[]>([]);
     const [gateways, setGateways] = useState<any[]>([]);
@@ -279,7 +279,7 @@ export default function MultiLogPage() {
             fetchSelectedLogsData();
         }, refreshRate * 1000);
 
-        setUpdateInterval(interval);
+        setUpdateInterval(interval as any);
 
         // Clean up interval when component unmounts or selectedLogs/refreshRate changes
         return () => {

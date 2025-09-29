@@ -10,7 +10,7 @@ const lastKnownValues = new Map<string, number>();
 
 export class TrendLoggerService {
     public isShuttingDown: boolean = false;
-    private configUpdateTimeout: NodeJS.Timeout | null = null;
+    private configUpdateTimeout: number | null = null;
 
 
     constructor() {
@@ -156,7 +156,7 @@ export class TrendLoggerService {
                 }
                 this.configUpdateTimeout = setTimeout(() => {
                     this.loadAllTrendLoggers();
-                }, 500); // 500ms debounce window
+                }, 500) as any; // 500ms debounce window
             });
             //backendLogger.info('Watching trendLogs collection for changes.', 'TrendLoggerService');
         } catch (error) {

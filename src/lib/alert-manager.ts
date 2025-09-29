@@ -19,7 +19,7 @@ class AlertManager {
   private connectionStates: Map<string, ConnectionState> = new Map(); // Tracks the state of each gateway
   private processingRules: Set<string> = new Set(); // Tracks rule IDs currently being processed to prevent race conditions
   private valueRuleCooldowns: Map<string, Date> = new Map(); // In-memory cooldowns for value rules
-  private configUpdateTimeout: NodeJS.Timeout | null = null;
+  private configUpdateTimeout: number | null = null;
 
   constructor() {
     this.loadRules();
@@ -106,7 +106,7 @@ class AlertManager {
             }
             this.configUpdateTimeout = setTimeout(() => {
                 this.reloadRules();
-            }, 500); // 500ms debounce window
+            }, 500) as any; // 500ms debounce window
         });
         //backendLogger.info('Watching alert_rules collection for changes.', 'AlertManager');
     } catch (error) {

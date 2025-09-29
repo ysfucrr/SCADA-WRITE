@@ -15,7 +15,7 @@ const numWorkers = Math.max(1, os.cpus().length - 1);
 export class ModbusPoller extends EventEmitter {
     private workers: Worker[] = [];
     private analyzerToWorker: Map<string, number> = new Map();
-    private configUpdateTimeout: NodeJS.Timeout | null = null;
+    private configUpdateTimeout: number | null = null;
     private isReloading: boolean = false;
     private allKnownRegisters: Map<string, any> = new Map();
     private lastWorkerPayloads: string[] = [];
@@ -308,7 +308,7 @@ export class ModbusPoller extends EventEmitter {
                 const changeStream = db.collection(collectionName).watch([], { fullDocumentBeforeChange: "whenAvailable" });
                 changeStream.on("change", (change) => {
                     if (this.configUpdateTimeout) clearTimeout(this.configUpdateTimeout);
-                    this.configUpdateTimeout = setTimeout(() => handler(change), 1000);
+                    this.configUpdateTimeout = setTimeout(() => handler(change), 1000) as any;
                 });
                 changeStream.on('error', (err) => {
                     backendLogger.error(`Change stream error for ${collectionName}: ${err}`, "ModbusPoller");

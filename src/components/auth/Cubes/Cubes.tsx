@@ -47,7 +47,7 @@ const Cubes: React.FC<CubesProps> = ({
 }) => {
   const sceneRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
-  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const idleTimerRef = useRef<number | null>(null);
   const userActiveRef = useRef(false);
   const simPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const simTargetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -120,7 +120,7 @@ const Cubes: React.FC<CubesProps> = ({
 
       idleTimerRef.current = setTimeout(() => {
         userActiveRef.current = false;
-      }, 3000);
+      }, 3000) as any;
     },
     [gridSize, tiltAt]
   );
