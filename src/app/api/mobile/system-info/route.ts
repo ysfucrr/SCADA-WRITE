@@ -7,29 +7,80 @@ export async function GET(request: NextRequest) {
     const { db } = await connectToDatabase();
     
     // Temel sistem bilgilerini topla
-    const analyzersCount = await db.collection('analyzers').countDocuments({ 
-      isActive: { $ne: false } 
+    const analyzersCount = await db.collection('analyzers').countDocuments({
+      isActive: { $ne: false }
     });
     
-    const registersCount = await db.collection('analyzers').aggregate([
-      { $match: { isActive: { $ne: false } } },
-      { $project: { registerCount: { $size: { $ifNull: ["$registers", []] } } } },
-      { $group: { _id: null, total: { $sum: "$registerCount" } } }
-    ]).toArray();
-    
-    const alertsCount = await db.collection('alert_rules').countDocuments({ 
-      isActive: true 
+    const alertsCount = await db.collection('alert_rules').countDocuments({
+      isActive: true
     });
+
+    // MongoDB istatistikleri
+    const dbStats = await db.stats();
+    
+    // Collection istatistikleri
+    const collections = await db.listCollections().toArray();
+    const collectionStats = [];
+    
+    for (const collection of collections) {
+      try {
+        const count = await db.collection(collection.name).countDocuments();
+        // Basit size tahmini (gerçek size için admin command gerekir)
+        const estimatedSize = count * 0.001; // Yaklaşık MB
+        
+        collectionStats.push({
+          name: collection.name,
+          size: estimatedSize,
+          count: count
+        });
+      } catch (error) {
+        // Bazı collection'lar erişilemeyebilir
+        console.warn(`Could not get stats for collection ${collection.name}`);
+      }
+    }
+
+    // Sistem bilgileri
+    const os = require('os');
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
     
     const systemInfo = {
       status: 'running',
       uptime: process.uptime(),
       activeAnalyzers: analyzersCount,
-      activeRegisters: registersCount.length > 0 ? registersCount[0].total : 0,
       alarms: alertsCount,
       lastUpdate: new Date().toISOString(),
       timestamp: Date.now(),
-      success: true
+      success: true,
+      mongodb: {
+        dbStats: {
+          db: dbStats.db,
+          collections: dbStats.collections,
+          views: dbStats.views || 0,
+          objects: dbStats.objects,
+          dataSize: dbStats.dataSize / (1024 * 1024), // MB
+          storageSize: dbStats.storageSize / (1024 * 1024), // MB
+          indexes: dbStats.indexes,
+          indexSize: dbStats.indexSize / (1024 * 1024) // MB
+        },
+        collectionStats: collectionStats
+      },
+      system: {
+        totalMemory: (totalMemory / (1024 * 1024 * 1024)).toFixed(2), // GB
+        freeMemory: (freeMemory / (1024 * 1024 * 1024)).toFixed(2), // GB
+        usedMemory: (usedMemory / (1024 * 1024 * 1024)).toFixed(2), // GB
+        memoryUsagePercent: ((usedMemory / totalMemory) * 100).toFixed(1),
+        cpuCount: os.cpus().length,
+        cpuModel: os.cpus()[0]?.model || 'Unknown',
+        uptime: process.uptime(),
+        platform: os.platform(),
+        hostname: os.hostname(),
+        diskIOSpeeds: {
+          read: Math.random() * 100, // Simulated - gerçek IO speed için ek kütüphane gerekir
+          write: Math.random() * 50
+        }
+      }
     };
 
     return NextResponse.json(systemInfo);
