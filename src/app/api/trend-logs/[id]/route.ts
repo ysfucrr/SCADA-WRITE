@@ -103,25 +103,36 @@ export async function PUT(
         return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
 
-    // Only allow updating specific fields. Critical identifiers are preserved.
-    const updateData: any = {
-      ...existingLog, // Start with existing data
-      period,
-      endDate,
-      isKWHCounter,
-      interval,
-      cleanupPeriod,
-      percentageThreshold,
-      updatedAt: new Date()
+    // Start building the update operation
+    const updateOperation: { $set: any, $unset?: any } = {
+      $set: {
+        period,
+        endDate,
+        isKWHCounter,
+        interval,
+        updatedAt: new Date()
+      }
     };
-    
-    //We need to delete _id from updateData because it cannot be updated.
-    delete updateData._id;
 
+    // Conditionally add fields for 'onChange' mode
+    if (period === 'onChange') {
+      if (body.hasOwnProperty('percentageThreshold')) {
+        updateOperation.$set.percentageThreshold = parseFloat(body.percentageThreshold);
+      }
+      if (body.hasOwnProperty('cleanupPeriod')) {
+        updateOperation.$set.cleanupPeriod = parseInt(body.cleanupPeriod, 10);
+      }
+    } else {
+      // If the mode is not 'onChange', remove these fields to keep data clean
+      updateOperation.$unset = {
+        percentageThreshold: "",
+        cleanupPeriod: ""
+      };
+    }
 
     const result = await db.collection('trendLogs').updateOne(
       { _id: new ObjectId(id) },
-      { $set: updateData }
+      updateOperation
     );
 
     if (result.matchedCount === 0) {

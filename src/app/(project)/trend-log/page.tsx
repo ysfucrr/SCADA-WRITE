@@ -294,6 +294,8 @@ export default function TrendLogPage() {
         dataType: string;
         byteOrder: string;
         scale: number;
+        cleanupPeriod?: number;
+        percentageThreshold?: number;
     }) => {
         if (!selectedTrendLog) return;
 
@@ -310,6 +312,8 @@ export default function TrendLogPage() {
                 dataType: TrendLogData.dataType,
                 byteOrder: TrendLogData.byteOrder,
                 scale: TrendLogData.scale,
+                cleanupPeriod: TrendLogData.cleanupPeriod,
+                percentageThreshold: TrendLogData.percentageThreshold,
             };
             //console.log("dataToSend", dataToSend)
             const response = await fetch(`/api/trend-logs/${selectedTrendLog._id}`, {

@@ -59,7 +59,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             setInterval(trendLog.interval);
             setIsKWHCounter(trendLog.isKWHCounter);
             setCleanupPeriod(trendLog.cleanupPeriod || 1);
-            setPercentageThreshold(trendLog.percentageThreshold || 1);
+            setPercentageThreshold(trendLog.percentageThreshold || 0.5);
         }
     }, [trendLog]);
     const fetchBuildings = async (gateways: any[]) => {
@@ -245,7 +245,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             byteOrder: selectedRegister.registerInfo.byteOrder,
             scale: selectedRegister.registerInfo.scale,
             cleanupPeriod: period === 'onChange' ? cleanupPeriod : undefined, // onChange ise temizleme süresi ekle
-            percentageThreshold: period === 'onChange' ? percentageThreshold : undefined, // onChange ise yüzde eşiği ekle
+            percentageThreshold: period === 'onChange' ? parseFloat(percentageThreshold as any) : undefined, // onChange ise yüzde eşiği ekle
         });
         setSaving(false);
     };
@@ -427,10 +427,11 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                             type="number"
                             placeholder="0.5"
                             value={percentageThreshold}
-                            onChange={(e) => setPercentageThreshold(Number(e.target.value))}
+                            onChange={(e) => setPercentageThreshold(parseFloat(e.target.value))}
                             min="0.5"
                             max="100"
-                        />
+                            step={0.5}
+                         />
                         <SmallText className="text-gray-500 dark:text-gray-400">
                             Minimum: 0.5%. Values will be logged when they change by ± this percentage.
                         </SmallText>
