@@ -32,8 +32,8 @@ export class PollingEngine extends EventEmitter {
     private analyzerPollState: Map<string, { nextBlockIndex: number; pollVersion: number }> = new Map();
     private analyzerToConnectionIndex: Map<string, number> = new Map(); // Hangi analizörün hangi havuz indexini kullanacağı
     // Aktif zamanlayıcıları (timer) yönetmek için bir map.
-    private pollingTimers: Map<string, number> = new Map();
-    private reconnectTimers: Map<string, number> = new Map(); // Gateway ID -> Timer
+    private pollingTimers: Map<string, any> = new Map();
+    private reconnectTimers: Map<string, any> = new Map(); // Gateway ID -> Timer
     private reconnectingConnections: Set<string> = new Set(); // Yeniden bağlanma sürecindeki bağlantılar
     private connectionMismatchLogged: Set<string> = new Set(); // Connection mismatch loglarını takip etmek için
 
@@ -124,7 +124,7 @@ export class PollingEngine extends EventEmitter {
                     connection.updateDeviceCount(deviceCount);
 
                     connection.attemptReconnect();
-                }, 60000) as any;
+                }, 60000);
     
                 this.reconnectTimers.set(connectionId, timer);
             } else {

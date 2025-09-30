@@ -1189,12 +1189,12 @@ export function UnitFlow({ building, floor, room }: { building: string, floor?: 
 
     // Debounce fonksiyonu - belirli bir süre içinde tekrar çağrılırsa önceki çağrıyı iptal eder
     const debounce = (func: Function, delay: number) => {
-        let timeoutId: number;
+        let timeoutId: any;
         return (...args: any[]) => {
             clearTimeout(timeoutId);
             timeoutId = setTimeout(() => {
                 func(...args);
-            }, delay) as any;
+            }, delay);
         };
     };
 

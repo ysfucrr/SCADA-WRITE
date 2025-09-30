@@ -84,7 +84,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
     const body = await request.json();
-    const { period, endDate, isKWHCounter, interval } = body;
+    const { period, endDate, isKWHCounter, interval, cleanupPeriod, percentageThreshold } = body;
 
     // Basic validation for fields that can be updated.
     if (!endDate || !period || (period !== 'onChange' && !interval)) {
@@ -110,6 +110,8 @@ export async function PUT(
       endDate,
       isKWHCounter,
       interval,
+      cleanupPeriod,
+      percentageThreshold,
       updatedAt: new Date()
     };
     

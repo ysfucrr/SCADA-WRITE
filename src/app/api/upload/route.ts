@@ -13,10 +13,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
   }
 
-  const data = await request.formData();
-  const file = (data as any).get('file') as File;
+  const data = await (request as any).formData() as FormData;
+  const file = data.get('file');
 
-  if (!file) {
+  if (!file || !(file instanceof File)) {
     return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
   }
 

@@ -6,10 +6,10 @@ const LICENSE_SERVER_URL = "http://localhost:3002";
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = (formData as any).get('file') as File;
+    const formData = await (req as any).formData() as FormData;
+    const file = formData.get('file');
 
-    if (!file) {
+    if (!file || !(file instanceof File)) {
       return NextResponse.json({ success: false, error: 'Missing license file' });
     }
 

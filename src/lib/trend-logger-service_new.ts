@@ -8,6 +8,9 @@ import { redisClient } from "./redis";
 const activeTrendLoggers = new Map<string, TrendLogger>();
 // This map will cache the latest value for every register received from the poller
 const lastKnownValues = new Map<string, number>();
+// Veritabanına en son kaydedilen değeri her bir logger için ayrı ayrı tutar.
+// Key: "registerId:analyzerId", Value: number
+const lastStoredValuesPerLogger = new Map<string, number>();
 
 export class TrendLoggerService {
     public isShuttingDown: boolean = false;
@@ -196,8 +199,11 @@ export class TrendLoggerService {
                 }
 
                 if (trendLogger.period === 'onChange') {
+                    const mapKey = `${data.id}:${data.analyzerId}`;
+                    const lastStoredValue = lastStoredValuesPerLogger.get(mapKey);
+                    
                     // Yüzde eşiği aşıldı mı kontrol et (ya da ilk değer ise)
-                    if (data.value !== trendLogger.lastStoredValue && trendLogger.hasPercentageThresholdExceeded(data.value)) {
+                    if (data.value !== lastStoredValue && trendLogger.hasPercentageThresholdExceeded(data.value, lastStoredValue)) {
                         trendLogger.storeRegisterValue(data.value);
                     } else {
                         // Yüzde eşiği aşılmadığında sessizce geç
@@ -242,7 +248,6 @@ export class TrendLoggerService {
             // to avoid resetting the schedule and to maintain onChange comparison
             if (existingLogger && existingLogger.period === newLogger.period && existingLogger.interval === newLogger.interval) {
                 newLogger.lastSaveTimestamp = existingLogger.lastSaveTimestamp;
-                newLogger.lastStoredValue = existingLogger.lastStoredValue;
             }
 
             newConfigMap.set(mapKey, newLogger);
@@ -283,7 +288,6 @@ class TrendLogger {
     interval: number;
     endDate?: Date; // endDate is now a Date object and optional
     lastSaveTimestamp: number = 0;
-    lastStoredValue?: number; // Son kaydedilen değer - onChange modunda değişiklikleri takip etmek için
     cleanupPeriod?: number; // Ay cinsinden otomatik temizleme süresi (onChange modunda kullanılır)
     percentageThreshold?: number; // Yüzde eşiği (onChange modunda kullanılır)
     
@@ -322,19 +326,19 @@ class TrendLogger {
     }
 
     // Yüzde eşiği aşıldı mı kontrol et
-    public hasPercentageThresholdExceeded(currentValue: number): boolean {
+    public hasPercentageThresholdExceeded(currentValue: number, lastStoredValue: number | undefined): boolean {
         // if `lastStoredValue` is not set (it's the first time), or percentage threshold is not defined, always save.
-        if (this.lastStoredValue === undefined || !this.percentageThreshold) {
+        if (lastStoredValue === undefined || !this.percentageThreshold) {
             return true;
         }
 
         // If the last stored value is 0, any change should be recorded.
-        if (this.lastStoredValue === 0) {
+        if (lastStoredValue === 0) {
             return currentValue !== 0;
         }
         
-        const threshold = Math.abs(this.lastStoredValue * (this.percentageThreshold / 100));
-        const difference = Math.abs(currentValue - this.lastStoredValue);
+        const threshold = Math.abs(lastStoredValue * (this.percentageThreshold / 100));
+        const difference = Math.abs(currentValue - lastStoredValue);
 
         return difference >= threshold;
     }
@@ -344,9 +348,6 @@ class TrendLogger {
             return;
         }
         
-        // Değeri kaydet - bir sonraki onChange karşılaştırması için
-        this.lastStoredValue = value;
-
         const now = new Date();
         let expiresAt: Date | undefined = undefined;
         
@@ -378,6 +379,12 @@ class TrendLogger {
         try {
             const { db } = await connectToDatabase();
             await db.collection(collectionName).insertOne(entry);
+
+            // Değeri başarıyla kaydettikten sonra, merkezi haritayı güncelle.
+            if (this.period === 'onChange') {
+                const mapKey = `${this.registerId}:${this.analyzerId}`;
+                lastStoredValuesPerLogger.set(mapKey, value);
+            }
             
             // onChange modundaysa TTL indeksini kontrol et
             if (this.period === 'onChange' && expiresAt) {
