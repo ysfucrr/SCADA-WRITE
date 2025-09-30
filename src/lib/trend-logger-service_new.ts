@@ -4,6 +4,7 @@ import { ObjectId } from "mongodb";
 import { redisClient } from "./redis";
 
 // This map will hold trend definitions, and the service will react to events
+// Key format: "registerId:analyzerId" to support multiple analyzers for same register
 const activeTrendLoggers = new Map<string, TrendLogger>();
 // This map will cache the latest value for every register received from the poller
 const lastKnownValues = new Map<string, number>();
@@ -172,10 +173,17 @@ export class TrendLoggerService {
     }
 
     public listenToPoller(poller: import('./modbus/ModbusPoller').ModbusPoller): void {
-        poller.on('registerUpdated', (data: { id: string; value: number }) => {
+        poller.on('registerUpdated', (data: { id: string; value: number; analyzerId?: string }) => {
             lastKnownValues.set(data.id, data.value);
-            
-            const trendLogger = activeTrendLoggers.get(data.id);
+
+            // Try to find logger for this specific register+analyzer combination
+            let trendLogger = activeTrendLoggers.get(`${data.id}:${data.analyzerId}`);
+
+            // If not found with analyzerId, try just registerId for backward compatibility
+            if (!trendLogger) {
+                trendLogger = activeTrendLoggers.get(data.id);
+            }
+
             if (trendLogger) {
                 const now = new Date();
                 
@@ -214,27 +222,30 @@ export class TrendLoggerService {
 
         for (const trendLog of trendLogs) {
             const registerId = trendLog.registerId;
+            const analyzerId = trendLog.analyzerId;
+            const mapKey = `${registerId}:${analyzerId}`;
+
             const newLogger = new TrendLogger(
                 trendLog._id.toString(),
                 registerId,
-                trendLog.analyzerId,
+                analyzerId,
                 trendLog.period,
                 trendLog.interval,
                 trendLog.endDate,
                 trendLog.cleanupPeriod,  // onChange için otomatik temizleme süresi
                 trendLog.percentageThreshold  // onChange için yüzde eşiği
             );
-            
-            const existingLogger = activeTrendLoggers.get(registerId);
-            
-            // If a logger for this register already exists and its timing is unchanged, preserve its last save time and last value
+
+            const existingLogger = activeTrendLoggers.get(mapKey);
+
+            // If a logger for this register+analyzer combination already exists and its timing is unchanged, preserve its last save time and last value
             // to avoid resetting the schedule and to maintain onChange comparison
             if (existingLogger && existingLogger.period === newLogger.period && existingLogger.interval === newLogger.interval) {
                 newLogger.lastSaveTimestamp = existingLogger.lastSaveTimestamp;
                 newLogger.lastStoredValue = existingLogger.lastStoredValue;
             }
-            
-            newConfigMap.set(registerId, newLogger);
+
+            newConfigMap.set(mapKey, newLogger);
         }
         
         // Atomically update the active loggers map.
@@ -246,7 +257,7 @@ export class TrendLoggerService {
         //backendLogger.info(`[TREND-LOGGER] ${activeTrendLoggers.size} trend logger definitions reloaded.`, "TrendLoggerService");
     }
 
-    public getLastKnownValue(registerId: string): number | undefined {
+    public getLastKnownValue(registerId: string, analyzerId?: string): number | undefined {
         return lastKnownValues.get(registerId);
     }
 }
