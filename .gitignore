@@ -58,3 +58,4 @@ dump.rdb
 go.mod
 license-server.exe
 scada-mobil
+cloud-server
