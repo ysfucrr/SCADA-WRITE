@@ -43,6 +43,141 @@ import { mailService } from "./src/lib/mail-service";
 // Re-export redisClient for other modules
 export { redisClient };
 import { alertManager } from "./src/lib/alert-manager";
+
+// Cloud bridge scheduler
+let cloudSyncInterval: any = null;
+
+const startCloudSync = () => {
+  if (cloudSyncInterval) {
+    clearInterval(cloudSyncInterval);
+  }
+
+  if (!cloudSettings?.isEnabled) {
+    return;
+  }
+
+  // Her 30 saniyede bir SCADA verilerini cloud'a senkronize et
+  cloudSyncInterval = setInterval(async () => {
+    try {
+      await syncAllDataToCloud();
+    } catch (error) {
+      fileLogger.error('Cloud sync error', { error: (error as Error).message });
+    }
+  }, 30000);
+
+  fileLogger.info('Cloud sync scheduler started', { interval: '30 seconds' });
+};
+
+const stopCloudSync = () => {
+  if (cloudSyncInterval) {
+    clearInterval(cloudSyncInterval);
+    cloudSyncInterval = null;
+    fileLogger.info('Cloud sync scheduler stopped');
+  }
+};
+
+const syncAllDataToCloud = async () => {
+  if (!cloudSettings?.isEnabled || !cloudSocket?.connected) {
+    return;
+  }
+
+  try {
+    const { db } = await connectToDatabase();
+
+    // Buildings ve registerları al
+    const buildings = await db.collection('buildings').find({}).toArray();
+    if (buildings.length > 0) {
+      await sendRegistersToCloud(buildings);
+    }
+
+    // Analyzers'ı al
+    const analyzers = await db.collection('analyzers').find({}).toArray();
+    if (analyzers.length > 0) {
+      await sendAnalyzersToCloud(analyzers);
+    }
+
+    // Widgets'ı al
+    const widgets = await db.collection('widgets').find({}).toArray();
+    if (widgets.length > 0) {
+      sendDataToCloud('/api/scada/widgets', { widgets });
+    }
+
+    // Trend logs'u al
+    const trendLogs = await db.collection('trendLogs').find({}).toArray();
+    if (trendLogs.length > 0) {
+      sendDataToCloud('/api/scada/trend-logs', { trendLogs });
+    }
+
+    fileLogger.info('All SCADA data synced to cloud', {
+      buildings: buildings.length,
+      analyzers: analyzers.length,
+      widgets: widgets.length,
+      trendLogs: trendLogs.length
+    });
+
+  } catch (error) {
+    fileLogger.error('Failed to sync data to cloud', { error: (error as Error).message });
+  }
+};
+
+const watchCloudSettings = async () => {
+  try {
+    const { db } = await connectToDatabase();
+    const changeStream = db.collection('cloud_settings').watch([
+      { $match: { operationType: { $in: ['insert', 'update', 'replace'] } } }
+    ]);
+
+    changeStream.on('change', async (change) => {
+      if (change.operationType === 'insert' || change.operationType === 'update' || change.operationType === 'replace') {
+        const newSettings = change.fullDocument || change.documentKey;
+        
+        // IP adresindeki boşlukları temizle
+        if (newSettings.serverIP) {
+          newSettings.serverIP = newSettings.serverIP.trim();
+        }
+
+        fileLogger.info('Cloud settings changed', {
+          operation: change.operationType,
+          isEnabled: newSettings.isEnabled,
+          serverIP: newSettings.serverIP
+        });
+
+        // Önceki bağlantıyı temizle
+        if (cloudSocket) {
+          cloudSocket.disconnect();
+          cloudSocket = null;
+        }
+
+        stopCloudSync();
+
+        // Yeni ayarları yükle
+        if (newSettings.isEnabled && newSettings.serverIP) {
+          cloudSettings = newSettings;
+          connectToCloudServer();
+          startCloudSync();
+
+          // Yeni bağlantı ile tüm veriyi senkronize et
+          setTimeout(() => {
+            syncAllDataToCloud();
+          }, 2000);
+        } else {
+          cloudSettings = null;
+        }
+      }
+    });
+
+    changeStream.on('error', (err) => {
+      fileLogger.error(`Cloud settings change stream error: ${err.message}`, "CloudWatcher");
+      // Bir süre sonra yeniden bağlanmayı dene
+      setTimeout(watchCloudSettings, 5000);
+    });
+
+  } catch (err) {
+    fileLogger.error(`Failed to watch cloud settings: ${(err as Error).message}`, "CloudWatcher");
+    // Bir süre sonra yeniden bağlanmayı dene
+    setTimeout(watchCloudSettings, 5000);
+  }
+};
 import { Socket } from 'socket.io';
 import express, { Request, Response, NextFunction } from 'express';
 import bodyParser from 'body-parser';
@@ -53,6 +188,301 @@ import { ObjectId } from "mongodb";
 import { setServerSocket } from './src/lib/socket-io-server';
 export const modbusPoller = new ModbusPoller();
 const trendLoggerInstance = new TrendLoggerService();
+
+// Cloud bridge için WebSocket client
+let cloudSocket: any = null;
+let cloudSettings: any = null;
+
+// Bridge server bağlantı durumu
+let isConnectedToBridge = false;
+
+// Cloud bridge fonksiyonları
+const initializeCloudBridge = async () => {
+  try {
+    const { db } = await connectToDatabase();
+    const settings = await db.collection('cloud_settings').findOne({ type: 'cloud_settings' });
+
+    if (!settings || !settings.isEnabled || !settings.serverIP) {
+      fileLogger.info('Cloud bridge disabled or not configured');
+      return;
+    }
+    
+    // IP adresindeki boşlukları temizle
+    if (settings.serverIP) {
+      settings.serverIP = settings.serverIP.trim();
+      fileLogger.info(`Cloud bridge settings loaded. IP: ${settings.serverIP}, Port: ${settings.serverPort}`);
+    }
+
+    cloudSettings = settings;
+    connectToCloudServer();
+
+  } catch (error) {
+    fileLogger.error('Failed to initialize cloud bridge', { error: (error as Error).message });
+  }
+};
+
+const connectToCloudServer = () => {
+  if (!cloudSettings || !cloudSettings.isEnabled) {
+    return;
+  }
+
+  try {
+    const { io } = require('socket.io-client');
+
+    // URL oluşturmadan önce protokol kontrolü yap
+    const serverIP = cloudSettings.serverIP.trim();
+    const cloudUrl = serverIP.startsWith('http://') || serverIP.startsWith('https://')
+      ? `${serverIP}:${cloudSettings.serverPort}`
+      : `http://${serverIP}:${cloudSettings.serverPort}`;
+    fileLogger.info(`Connecting to bridge server: ${cloudUrl}`, {
+      serverIP: serverIP, // Temizlenmiş IP adresini kullan
+      serverPort: cloudSettings.serverPort,
+      timestamp: new Date().toISOString()
+    });
+
+    cloudSocket = io(cloudUrl, {
+      transports: ['websocket', 'polling'],
+      timeout: 20000, // 20 saniye timeout
+      reconnection: true,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 2000,
+      forceNew: true,
+      autoConnect: true,
+      upgrade: true,
+      rememberUpgrade: false,
+      rejectUnauthorized: false
+    });
+
+    // Daha detaylı event logging
+    cloudSocket.on('connecting', (transport: any) => {
+      fileLogger.info('Bridge server connecting...', { transport });
+    });
+
+    cloudSocket.on('connect', () => {
+      isConnectedToBridge = true;
+      fileLogger.info('Bridge server connected successfully', {
+        serverIP: cloudSettings.serverIP.trim(), // Temizlenmiş IP adresini kullan
+        serverPort: cloudSettings.serverPort,
+        socketId: cloudSocket.id,
+        transport: (cloudSocket as any).io.engine.transport.name
+      });
+
+      // SCADA olarak kendini tanıt
+      cloudSocket.emit('identify', {
+        type: 'scada',
+        source: `scada-${require('os').hostname()}`
+      });
+
+      // Kısa süre sonra mevcut verileri senkronize et
+      setTimeout(() => {
+        syncAllDataToBridge();
+      }, 1500);
+    });
+
+    cloudSocket.on('disconnect', (reason: string) => {
+      isConnectedToBridge = false;
+      fileLogger.warn('Bridge server disconnected', {
+        reason,
+        serverIP: cloudSettings.serverIP.trim(), // Temizlenmiş IP adresini kullan
+        serverPort: cloudSettings.serverPort
+      });
+    });
+
+    cloudSocket.on('connect_error', (error: any) => {
+      isConnectedToBridge = false;
+      fileLogger.error('Bridge server connection error', {
+        error: error.message,
+        errorType: error.type,
+        description: error.description,
+        context: error.context,
+        serverIP: cloudSettings.serverIP.trim(), // Temizlenmiş IP adresini kullan
+        serverPort: cloudSettings.serverPort,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    cloudSocket.on('reconnect_attempt', (attemptNumber: any) => {
+      fileLogger.info('Bridge server reconnection attempt', { attemptNumber });
+    });
+
+    cloudSocket.on('reconnect', (attemptNumber: any) => {
+      fileLogger.info('Bridge server reconnected successfully', { attemptNumber });
+    });
+
+    cloudSocket.on('reconnect_failed', () => {
+      fileLogger.error('Bridge server reconnection failed after all attempts');
+    });
+
+    // Köprü sunucusundan gelen mobil yazma isteklerini dinle
+    cloudSocket.on('mobile-write-request', (data: any) => {
+      fileLogger.info('Mobile write request received from bridge', {
+        registerId: data.registerId,
+        value: data.value,
+        mobileSocketId: data.mobileSocketId
+      });
+      // SCADA'da register yazma işlemi yap
+      handleMobileWriteRequest(data);
+    });
+
+    // Genel event listener
+    cloudSocket.onAny((eventName: any, ...args: any[]) => {
+      fileLogger.info('Bridge server event received', { eventName, argsLength: args.length });
+    });
+
+  } catch (error) {
+    fileLogger.error('Failed to create bridge socket connection', {
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+      serverIP: cloudSettings.serverIP.trim(), // Temizlenmiş IP adresini kullan
+      serverPort: cloudSettings.serverPort
+    });
+  }
+};
+
+const sendDataToCloud = (endpoint: string, data: any) => {
+  if (!cloudSocket || !cloudSocket.connected || !cloudSettings?.isEnabled) {
+    return false;
+  }
+
+  try {
+    // HTTP POST isteğini WebSocket üzerinden gönder
+    cloudSocket.emit('scada-data', {
+      endpoint,
+      data,
+      timestamp: new Date().toISOString()
+    });
+
+    fileLogger.info('Data sent to bridge', { endpoint, dataSize: JSON.stringify(data).length });
+    return true;
+
+  } catch (error) {
+    fileLogger.error('Failed to send data to bridge', { error: (error as Error).message, endpoint });
+    return false;
+  }
+};
+
+// Köprü sunucusuna tüm verileri senkronize et
+const syncAllDataToBridge = async () => {
+  if (!isConnectedToBridge || !cloudSettings?.isEnabled) {
+    return;
+  }
+
+  try {
+    fileLogger.info('Syncing all data to bridge server');
+
+    const { db } = await connectToDatabase();
+
+    // Buildings ve registerları al ve gönder
+    const buildings = await db.collection('buildings').find({}).toArray();
+    if (buildings.length > 0) {
+      await sendRegistersToCloud(buildings);
+    }
+
+    // Analyzers'ı al ve gönder
+    const analyzers = await db.collection('analyzers').find({}).toArray();
+    if (analyzers.length > 0) {
+      await sendAnalyzersToCloud(analyzers);
+    }
+
+    // Widgets'ı al ve gönder
+    const widgets = await db.collection('widgets').find({}).toArray();
+    if (widgets.length > 0) {
+      sendDataToCloud('/api/scada/widgets', { widgets });
+    }
+
+    // Trend logs'u al ve gönder
+    const trendLogs = await db.collection('trendLogs').find({}).toArray();
+    if (trendLogs.length > 0) {
+      sendDataToCloud('/api/scada/trend-logs', { trendLogs });
+    }
+
+    fileLogger.info('All data synced to bridge server successfully');
+
+  } catch (error) {
+    fileLogger.error('Failed to sync data to bridge', { error: (error as Error).message });
+  }
+};
+
+// Mobil uygulamadan gelen yazma isteklerini işle
+const handleMobileWriteRequest = async (data: any) => {
+  try {
+    const { registerId, value, mobileSocketId } = data;
+
+    fileLogger.info('Processing mobile write request', { registerId, value, mobileSocketId });
+
+    // Önce register'ı bul
+    const { db } = await connectToDatabase();
+    const buildings = await db.collection('buildings').find({}).toArray();
+
+    let targetRegister = null;
+    for (const building of buildings) {
+      if (building.flowData && building.flowData.nodes) {
+        const registerNode = building.flowData.nodes.find((node: any) =>
+          node.type === 'registerNode' && node.id === registerId
+        );
+        if (registerNode) {
+          targetRegister = registerNode;
+          break;
+        }
+      }
+    }
+
+    if (!targetRegister) {
+      fileLogger.error('Register not found for mobile write request', { registerId });
+      // Hata response'u gönder
+      if (cloudSocket && mobileSocketId) {
+        cloudSocket.emit('write-response', {
+          success: false,
+          registerId,
+          error: 'Register not found',
+          timestamp: new Date().toISOString()
+        });
+      }
+      return;
+    }
+
+    // Yazma isteğini oluştur
+    const writeRequest = {
+      registerId,
+      value: Number(value),
+      timestamp: new Date(),
+      source: 'mobile-via-bridge',
+      status: 'pending',
+      mobileSocketId
+    };
+
+    // MongoDB'ye kaydet
+    const result = await db.collection('write_requests').insertOne(writeRequest);
+
+    if (result.insertedId) {
+      fileLogger.info('Mobile write request saved to database', { registerId, value });
+
+      // Köprü sunucusuna başarı response'u gönder
+      if (cloudSocket) {
+        cloudSocket.emit('write-response', {
+          success: true,
+          registerId,
+          value: Number(value),
+          requestId: result.insertedId.toString(),
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+  } catch (error) {
+    fileLogger.error('Failed to handle mobile write request', { error: (error as Error).message });
+
+    // Hata response'u gönder
+    if (cloudSocket) {
+      cloudSocket.emit('write-response', {
+        success: false,
+        registerId: data.registerId,
+        error: (error as Error).message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+};
 
 backendLogger.info('Service starting...', 'Server', {
   authSecret: process.env.NEXTAUTH_SECRET ? 'Loaded' : 'Not Loaded'
@@ -91,11 +521,96 @@ const getRegisterKey = (data: { analyzerId: string | number; address: string | n
     : `${data.analyzerId}-${data.address}`;
 };
 
+// SCADA verilerini cloud'a gönderecek fonksiyonlar
+const sendRegistersToCloud = async (buildings: any[]) => {
+  if (!cloudSettings?.isEnabled) return;
+
+  try {
+    const allRegisters: any[] = [];
+
+    for (const building of buildings) {
+      if (building.flowData && building.flowData.nodes && Array.isArray(building.flowData.nodes)) {
+        const registerNodes = building.flowData.nodes.filter((node: any) =>
+          node.type === 'registerNode' && node.data
+        );
+
+        registerNodes.forEach((node: any) => {
+          const register = {
+            _id: node.id,
+            name: node.data.label || `Register ${node.data.address}`,
+            buildingId: building._id.toString(),
+            buildingName: building.name,
+            analyzerId: node.data.analyzerId,
+            analyzerName: `Analyzer ${node.data.analyzerId}`,
+            address: node.data.address,
+            dataType: node.data.dataType,
+            scale: node.data.scale || 1,
+            scaleUnit: node.data.scaleUnit || '',
+            byteOrder: node.data.byteOrder,
+            unit: node.data.scaleUnit || '',
+            description: `${building.name} - ${node.data.label}`,
+            registerType: node.data.registerType || 'read',
+            offset: node.data.offset || 0,
+            displayMode: node.data.displayMode || 'digit',
+            fontFamily: node.data.fontFamily,
+            textColor: node.data.textColor,
+            backgroundColor: node.data.backgroundColor,
+            opacity: node.data.opacity,
+            status: 'active',
+            position: node.position,
+            style: node.style
+          };
+
+          allRegisters.push(register);
+        });
+      }
+    }
+
+    if (allRegisters.length > 0) {
+      sendDataToCloud('/api/scada/registers', {
+        registers: allRegisters,
+        buildingsProcessed: buildings.length
+      });
+    }
+
+  } catch (error) {
+    fileLogger.error('Failed to send registers to cloud', { error: (error as Error).message });
+  }
+};
+
+const sendAnalyzersToCloud = async (analyzers: any[]) => {
+  if (!cloudSettings?.isEnabled) return;
+
+  try {
+    const formattedAnalyzers = analyzers.map(analyzer => ({
+      _id: analyzer._id.toString(),
+      name: analyzer.name,
+      slaveId: analyzer.slaveId,
+      model: analyzer.model,
+      connection: analyzer.connection,
+      gateway: analyzer.gateway,
+      isActive: analyzer.isActive !== false,
+      registers: analyzer.registers || [],
+      createdAt: analyzer.createdAt ? new Date(analyzer.createdAt).toISOString() : null
+    }));
+
+    if (formattedAnalyzers.length > 0) {
+      sendDataToCloud('/api/scada/analyzers', {
+        analyzers: formattedAnalyzers
+      });
+    }
+
+  } catch (error) {
+    fileLogger.error('Failed to send analyzers to cloud', { error: (error as Error).message });
+  }
+};
+
 modbusPoller.on('registerUpdated', (data) => {
     try {
         const { id, analyzerId, addr, bit, dataType, value } = data;
         const registerKey = getRegisterKey({ analyzerId, address: addr, dataType, bit });
 
+        // Yerel WebSocket client'larına gönder (mevcut işlevsellik)
         const subscriberSocketIds = subscriptions.get(registerKey);
         if (subscriberSocketIds && subscriberSocketIds.size > 0) {
             subscriberSocketIds.forEach(socketId => {
@@ -113,8 +628,28 @@ modbusPoller.on('registerUpdated', (data) => {
                 }
             });
         }
+
+        // Köprü sunucusuna da gönder (yeni işlevsellik)
+        if (isConnectedToBridge && cloudSocket?.connected) {
+            cloudSocket.emit('register-update', {
+                registerId: id,
+                analyzerId,
+                address: addr,
+                value,
+                timestamp: Date.now(),
+                dataType,
+                bit
+            });
+
+            fileLogger.info('Register update sent to bridge', {
+                registerId: id,
+                value,
+                bridgeConnected: true
+            });
+        }
+
     } catch(error) {
-         backendLogger.error('Error processing registerUpdated event', 'SocketIO', { error: (error as Error).message });
+          backendLogger.error('Error processing registerUpdated event', 'SocketIO', { error: (error as Error).message });
     }
 });
 
@@ -179,6 +714,184 @@ expressApp.get('/express-api/get-register-value', async (req: Request, res: Resp
         backendLogger.error('Get register value API error', 'RegisterAPI', { error: (error as Error).message });
         res.status(500).json({ error: 'Register value could not be fetched' });
     }
+});
+
+// ==================== CLOUD BRIDGE API ====================
+
+// POST /express-api/sync-to-cloud - Manuel cloud senkronizasyonu
+expressApp.post('/express-api/sync-to-cloud', async (req: Request, res: Response) => {
+  try {
+    if (!cloudSettings?.isEnabled) {
+      return res.status(400).json({
+        error: 'Cloud bridge is not enabled',
+        success: false
+      });
+    }
+
+    await syncAllDataToCloud();
+
+    res.json({
+      success: true,
+      message: 'Manual sync to cloud completed',
+      timestamp: new Date().toISOString(),
+      cloudSettings: {
+        serverIP: cloudSettings.serverIP,
+        serverPort: cloudSettings.serverPort,
+        connected: cloudSocket?.connected || false
+      }
+    });
+
+  } catch (error) {
+    backendLogger.error('Manual cloud sync error', 'CloudAPI', { error: (error as Error).message });
+    res.status(500).json({
+      error: 'Failed to sync to cloud',
+      success: false
+    });
+  }
+});
+
+// GET /express-api/cloud-status - Cloud bağlantı durumunu kontrol et
+expressApp.get('/express-api/cloud-status', async (req: Request, res: Response) => {
+  try {
+    const { db } = await connectToDatabase();
+    const settings = await db.collection('cloud_settings').findOne({ type: 'cloud_settings' });
+
+    // Geçici basit sayımlar (gerçek verileri almak için daha karmaşık sorgu gerekebilir)
+    const buildingsCount = await db.collection('buildings').countDocuments();
+    const analyzersCount = await db.collection('analyzers').countDocuments();
+    const widgetsCount = await db.collection('widgets').countDocuments();
+    const trendLogsCount = await db.collection('trendLogs').countDocuments();
+
+    res.json({
+      success: true,
+      cloudBridge: {
+        enabled: settings?.isEnabled || false,
+        serverIP: settings?.serverIP || null,
+        serverPort: settings?.serverPort || null,
+        connected: cloudSocket?.connected || false,
+        lastSync: new Date().toISOString(),
+        availableData: {
+          buildings: buildingsCount,
+          analyzers: analyzersCount,
+          widgets: widgetsCount,
+          trendLogs: trendLogsCount
+        }
+      }
+    });
+
+  } catch (error) {
+    backendLogger.error('Cloud status check error', 'CloudAPI', { error: (error as Error).message });
+    res.status(500).json({
+      error: 'Failed to check cloud status',
+      success: false
+    });
+  }
+});
+
+// POST /express-api/send-test-data - Test verisi gönder
+expressApp.post('/express-api/send-test-data', async (req: Request, res: Response) => {
+  try {
+    if (!cloudSettings?.isEnabled) {
+      return res.status(400).json({
+        error: 'Cloud bridge is not enabled',
+        success: false
+      });
+    }
+
+    const testData = {
+      test: true,
+      message: 'Test data from SCADA system',
+      timestamp: new Date().toISOString(),
+      registers: [
+        {
+          _id: 'test-register-1',
+          name: 'Test Register 1',
+          analyzerId: 'test-analyzer',
+          address: 40001,
+          value: Math.random() * 100,
+          dataType: 'float',
+          unit: '°C'
+        }
+      ],
+      analyzers: [
+        {
+          _id: 'test-analyzer',
+          name: 'Test Analyzer',
+          slaveId: 1,
+          model: 'Test Model',
+          isActive: true
+        }
+      ]
+    };
+
+    // Test verilerini cloud'a gönder
+    sendDataToCloud('/api/scada/registers', { registers: testData.registers });
+    sendDataToCloud('/api/scada/analyzers', { analyzers: testData.analyzers });
+
+    res.json({
+      success: true,
+      message: 'Test data sent to cloud',
+      data: testData,
+      cloudConnected: cloudSocket?.connected || false
+    });
+
+  } catch (error) {
+    backendLogger.error('Send test data error', 'CloudAPI', { error: (error as Error).message });
+    res.status(500).json({
+      error: 'Failed to send test data',
+      success: false
+    });
+  }
+});
+
+// POST /express-api/test-cloud-connection - Cloud bağlantısını test et
+expressApp.post('/express-api/test-cloud-connection', async (req: Request, res: Response) => {
+  try {
+    const { serverIP, serverPort } = req.body;
+
+    if (!serverIP || !serverPort) {
+      return res.status(400).json({
+        error: 'Server IP and port are required',
+        success: false
+      });
+    }
+
+    const testSocket = require('socket.io-client')(`http://${serverIP}:${serverPort}`);
+
+    const connectionPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        testSocket.disconnect();
+        reject(new Error('Connection timeout'));
+      }, 5000);
+
+      testSocket.on('connect', () => {
+        clearTimeout(timeout);
+        testSocket.disconnect();
+        resolve({ success: true, message: 'Connection successful' });
+      });
+
+      testSocket.on('connect_error', (error: Error) => {
+        clearTimeout(timeout);
+        testSocket.disconnect();
+        reject(error);
+      });
+    });
+
+    const result = await connectionPromise;
+
+    res.json({
+      success: true,
+      message: 'Cloud connection test successful',
+      result
+    });
+
+  } catch (error) {
+    backendLogger.error('Cloud connection test error', 'CloudAPI', { error: (error as Error).message });
+    res.status(500).json({
+      error: `Connection test failed: ${(error as Error).message}`,
+      success: false
+    });
+  }
 });
 
 io.on('connection', (socket: Socket) => {
@@ -274,6 +987,15 @@ server.listen(Number(port), '0.0.0.0', () => {
 
     // Yazma isteklerini dinlemeye başla
     setupWriteRequestListener();
+
+    // Cloud bridge'i başlat
+    initializeCloudBridge();
+
+    // Cloud sync scheduler'ı başlat
+    startCloudSync();
+
+    // Cloud settings değişikliklerini dinle
+    watchCloudSettings();
 
   } catch (err) {
       fileLogger.error("An error occurred during service initialization.", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
