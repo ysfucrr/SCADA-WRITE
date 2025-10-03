@@ -106,6 +106,54 @@ const syncAllDataToCloud = async () => {
     const trendLogs = await db.collection('trendLogs').find({}).toArray();
     if (trendLogs.length > 0) {
       sendDataToCloud('/api/scada/trend-logs', { trendLogs });
+      
+      // Trend log kayıtlarını al ve gönder
+      try {
+        // Tüm trend loglar için kayıtları topla
+        const trendLogEntries: {
+          onChange: { [key: string]: any[] },
+          periodic: { [key: string]: any[] }
+        } = {
+          onChange: {},
+          periodic: {}
+        };
+        
+        // Her bir trend log için kayıtları getir
+        for (const trendLog of trendLogs) {
+          const trendLogId = trendLog._id.toString();
+          
+          try {
+            // Period tipine göre doğru koleksiyonu seç
+            const collectionName = trendLog.period === 'onChange'
+              ? 'trend_log_entries_onchange'
+              : 'trend_log_entries';
+            
+            // Son 100 kaydı getir
+            const entries = await db.collection(collectionName)
+              .find({ trendLogId: trendLogId })
+              .sort({ timestamp: -1 })
+              .limit(100)
+              .toArray();
+              
+            // Period tipine göre doğru gruba ekle
+            if (trendLog.period === 'onChange') {
+              trendLogEntries.onChange[trendLogId] = entries;
+            } else {
+              trendLogEntries.periodic[trendLogId] = entries;
+            }
+            
+            fileLogger.info(`${entries.length} log entries fetched for trend log ${trendLogId} (${trendLog.period})`);
+          } catch (error) {
+            fileLogger.error(`Failed to fetch log entries for trend log ${trendLogId}`, { error: (error as Error).message });
+          }
+        }
+        
+        // Trend log kayıtlarını bridge server'a gönder
+        sendDataToCloud('/api/scada/trend-log-entries', { trendLogEntries });
+        fileLogger.info('Trend log entries sent to bridge server');
+      } catch (error) {
+        fileLogger.error('Failed to sync trend log entries to bridge', { error: (error as Error).message });
+      }
     }
 
     // Sistem bilgilerini de gönder
@@ -530,6 +578,25 @@ const sendRegistersToCloud = async (buildings: any[]) => {
 
   try {
     const allRegisters: any[] = [];
+    // Analizör isimlerini saklayacağımız bir harita oluşturalım
+    const analyzerNameCache = new Map<string, string>();
+    
+    // MongoDB bağlantısını al
+    const { db } = await connectToDatabase();
+    
+    // Tüm analizörleri öncelikle getir ve cache'le
+    const analyzers = await db.collection('analyzers').find({}).toArray();
+    for (const analyzer of analyzers) {
+      if (analyzer.name && (analyzer._id || analyzer.slaveId)) {
+        const analyzerId = analyzer._id?.toString() || '';
+        const slaveId = analyzer.slaveId?.toString() || '';
+        
+        if (analyzerId) analyzerNameCache.set(analyzerId, analyzer.name);
+        if (slaveId && slaveId !== analyzerId) analyzerNameCache.set(slaveId, analyzer.name);
+        
+        fileLogger.info(`Cached analyzer name: ${analyzer.name} for IDs: ${analyzerId}, ${slaveId}`);
+      }
+    }
 
     for (const building of buildings) {
       if (building.flowData && building.flowData.nodes && Array.isArray(building.flowData.nodes)) {
@@ -537,14 +604,23 @@ const sendRegistersToCloud = async (buildings: any[]) => {
           node.type === 'registerNode' && node.data
         );
 
-        registerNodes.forEach((node: any) => {
+        for (const node of registerNodes) {
+          // Cache'den analizör adını al
+          let analyzerName = `Analyzer ${node.data.analyzerId}`;
+          const analyzerId = node.data.analyzerId?.toString() || '';
+          
+          if (analyzerNameCache.has(analyzerId)) {
+            analyzerName = analyzerNameCache.get(analyzerId) || analyzerName;
+            fileLogger.info(`Using cached analyzer name: ${analyzerName} for ID: ${analyzerId}`);
+          }
+
           const register = {
             _id: node.id,
             name: node.data.label || `Register ${node.data.address}`,
             buildingId: building._id.toString(),
             buildingName: building.name,
             analyzerId: node.data.analyzerId,
-            analyzerName: `Analyzer ${node.data.analyzerId}`,
+            analyzerName: analyzerName, // Gerçek analyzer adını kullanıyoruz
             address: node.data.address,
             dataType: node.data.dataType,
             scale: node.data.scale || 1,
@@ -565,11 +641,12 @@ const sendRegistersToCloud = async (buildings: any[]) => {
           };
 
           allRegisters.push(register);
-        });
+        }
       }
     }
 
     if (allRegisters.length > 0) {
+      fileLogger.info(`Sending ${allRegisters.length} registers with analyzer names to cloud`);
       sendDataToCloud('/api/scada/registers', {
         registers: allRegisters,
         buildingsProcessed: buildings.length
@@ -786,11 +863,6 @@ modbusPoller.on('registerUpdated', (data) => {
                 bit
             });
 
-            fileLogger.info('Register update sent to bridge', {
-                registerId: id,
-                value,
-                bridgeConnected: true
-            });
         }
 
     } catch(error) {
