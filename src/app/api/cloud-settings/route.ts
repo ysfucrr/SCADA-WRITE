@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 interface CloudSettingsData {
   serverIP: string;
   serverPort: string;
+  apiPort?: string;  // API için ikinci port eklendi
   isEnabled: boolean;
   lastConnectionTest?: Date;
   connectionStatus?: 'connected' | 'disconnected' | 'testing';
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest) {
       const defaultSettings: CloudSettingsData = {
         serverIP: '',
         serverPort: '3000',
+        apiPort: '3001',
         isEnabled: false,
         connectionStatus: 'disconnected'
       };

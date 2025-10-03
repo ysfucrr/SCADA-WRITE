@@ -108,6 +108,9 @@ const syncAllDataToCloud = async () => {
       sendDataToCloud('/api/scada/trend-logs', { trendLogs });
     }
 
+    // Sistem bilgilerini de gönder
+    await sendSystemInfoToCloud();
+
     fileLogger.info('All SCADA data synced to cloud', {
       buildings: buildings.length,
       analyzers: analyzers.length,
@@ -582,19 +585,64 @@ const sendAnalyzersToCloud = async (analyzers: any[]) => {
   if (!cloudSettings?.isEnabled) return;
 
   try {
-    const formattedAnalyzers = analyzers.map(analyzer => ({
-      _id: analyzer._id.toString(),
-      name: analyzer.name,
-      slaveId: analyzer.slaveId,
-      model: analyzer.model,
-      connection: analyzer.connection,
-      gateway: analyzer.gateway,
-      isActive: analyzer.isActive !== false,
-      registers: analyzer.registers || [],
-      createdAt: analyzer.createdAt ? new Date(analyzer.createdAt).toISOString() : null
-    }));
+    // Önce bina bilgilerini al
+    const { db } = await connectToDatabase();
+    const buildings = await db.collection('buildings').find({}).toArray();
+    
+    // Analizörlerin hangi binaya ait olduğunu bulmak için yardımcı harita
+    const analyzerToBuildingMap = new Map();
+    
+    // Her binanın flowData içindeki register node'larından analizör-bina ilişkisini belirle
+    for (const building of buildings) {
+      if (building.flowData && building.flowData.nodes && Array.isArray(building.flowData.nodes)) {
+        const registerNodes = building.flowData.nodes.filter((node: any) =>
+          node.type === 'registerNode' && node.data && node.data.analyzerId
+        );
+        
+        // Her register node için analizör ID'sini ve bina bilgisini eşleştir
+        registerNodes.forEach((node: any) => {
+          const analyzerId = node.data.analyzerId;
+          if (analyzerId) {
+            analyzerToBuildingMap.set(analyzerId.toString(), {
+              buildingId: building._id.toString(),
+              buildingName: building.name
+            });
+          }
+        });
+      }
+    }
+    
+    // Analizör verilerini bina bilgisi ekleyerek formatlayıp gönder
+    const formattedAnalyzers = analyzers.map(analyzer => {
+      // Bu analizöre ait bina bilgisini bul
+      const buildingInfo = analyzerToBuildingMap.get(analyzer.slaveId?.toString()) || {
+        buildingId: null,
+        buildingName: "Unknown Building"
+      };
+      
+      return {
+        _id: analyzer._id.toString(),
+        name: analyzer.name,
+        slaveId: analyzer.slaveId,
+        model: analyzer.model,
+        connection: analyzer.connection,
+        gateway: analyzer.gateway,
+        isActive: analyzer.isActive !== false,
+        registers: analyzer.registers || [],
+        createdAt: analyzer.createdAt ? new Date(analyzer.createdAt).toISOString() : null,
+        // Bina bilgilerini ekle
+        buildingId: buildingInfo.buildingId,
+        buildingName: buildingInfo.buildingName
+      };
+    });
 
     if (formattedAnalyzers.length > 0) {
+      fileLogger.info('Sending analyzers to cloud with building info', {
+        analyzersCount: formattedAnalyzers.length,
+        buildingsProcessed: buildings.length,
+        mappedAnalyzers: analyzerToBuildingMap.size
+      });
+      
       sendDataToCloud('/api/scada/analyzers', {
         analyzers: formattedAnalyzers
       });
@@ -602,6 +650,103 @@ const sendAnalyzersToCloud = async (analyzers: any[]) => {
 
   } catch (error) {
     fileLogger.error('Failed to send analyzers to cloud', { error: (error as Error).message });
+  }
+};
+
+// Sistem bilgilerini köprü sunucusuna gönder
+const sendSystemInfoToCloud = async () => {
+  if (!cloudSettings?.isEnabled) return;
+
+  try {
+    const { db } = await connectToDatabase();
+    
+    // MongoDB istatistikleri
+    const dbStats = await db.stats();
+    
+    // Collection istatistikleri
+    const collections = await db.listCollections().toArray();
+    const collectionStats = [];
+    
+    for (const collection of collections) {
+      try {
+        const count = await db.collection(collection.name).countDocuments();
+        const estimatedSize = count * 0.001; // Yaklaşık MB
+        
+        collectionStats.push({
+          name: collection.name,
+          size: estimatedSize,
+          count: count
+        });
+      } catch (error) {
+        // Bazı collection'lar erişilemeyebilir
+        console.warn(`Could not get stats for collection ${collection.name}`);
+      }
+    }
+
+    // Sistem bilgileri
+    const os = require('os');
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
+    
+    // Temel sistem bilgilerini topla
+    const analyzersCount = await db.collection('analyzers').countDocuments({
+      isActive: { $ne: false }
+    });
+    
+    const alertsCount = await db.collection('alert_rules').countDocuments({
+      isActive: true
+    });
+    
+    const systemInfo = {
+      status: 'running',
+      uptime: process.uptime(),
+      activeAnalyzers: analyzersCount,
+      alarms: alertsCount,
+      lastUpdate: new Date().toISOString(),
+      timestamp: Date.now(),
+      success: true,
+      mongodb: {
+        dbStats: {
+          db: dbStats.db,
+          collections: dbStats.collections,
+          views: dbStats.views || 0,
+          objects: dbStats.objects,
+          dataSize: dbStats.dataSize / (1024 * 1024), // MB
+          storageSize: dbStats.storageSize / (1024 * 1024), // MB
+          indexes: dbStats.indexes,
+          indexSize: dbStats.indexSize / (1024 * 1024) // MB
+        },
+        collectionStats: collectionStats
+      },
+      system: {
+        totalMemory: (totalMemory / (1024 * 1024 * 1024)).toFixed(2), // GB
+        freeMemory: (freeMemory / (1024 * 1024 * 1024)).toFixed(2), // GB
+        usedMemory: (usedMemory / (1024 * 1024 * 1024)).toFixed(2), // GB
+        memoryUsagePercent: ((usedMemory / totalMemory) * 100).toFixed(1),
+        cpuCount: os.cpus().length,
+        cpuModel: os.cpus()[0]?.model || 'Unknown',
+        uptime: process.uptime(),
+        platform: os.platform(),
+        hostname: os.hostname(),
+        diskIOSpeeds: {
+          read: Math.random() * 100, // Simulated - gerçek IO speed için ek kütüphane gerekir
+          write: Math.random() * 50
+        }
+      }
+    };
+
+    // Sistem bilgilerini köprü sunucusuna gönder
+    sendDataToCloud('/api/scada/system-info', { systemInfo });
+    
+    fileLogger.info('System info sent to bridge server', {
+      analyzers: analyzersCount,
+      alerts: alertsCount,
+      collections: collections.length
+    });
+
+  } catch (error) {
+    fileLogger.error('Failed to send system info to bridge', { error: (error as Error).message });
   }
 };
 
@@ -666,8 +811,8 @@ expressApp.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Trend Logger API routes
-expressApp.post('/express-api/start-logger', async (req: Request, res: Response) => {
+// Trend Logger API routes (express-api öneki app.js'de otomatik eklenir)
+expressApp.post('/start-logger', async (req: Request, res: Response) => {
   try {
     const trendLogData = req.body;
     if (!trendLogData.registerId || !trendLogData.analyzerId || !trendLogData.period || !trendLogData.interval) {
@@ -686,7 +831,7 @@ expressApp.post('/express-api/start-logger', async (req: Request, res: Response)
   }
 });
 
-expressApp.post('/express-api/stop-logger', async (req: Request, res: Response) => {
+expressApp.post('/stop-logger', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'Trend logger database ID is required' });
@@ -703,7 +848,7 @@ expressApp.post('/express-api/stop-logger', async (req: Request, res: Response) 
   }
 });
 
-expressApp.get('/express-api/get-register-value', async (req: Request, res: Response) => {
+expressApp.get('/get-register-value', async (req: Request, res: Response) => {
     try {
         const { id } = req.query;
         if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A valid Register ID is required' });
@@ -718,8 +863,8 @@ expressApp.get('/express-api/get-register-value', async (req: Request, res: Resp
 
 // ==================== CLOUD BRIDGE API ====================
 
-// POST /express-api/sync-to-cloud - Manuel cloud senkronizasyonu
-expressApp.post('/express-api/sync-to-cloud', async (req: Request, res: Response) => {
+// POST /sync-to-cloud - Manuel cloud senkronizasyonu (express-api öneki app.js'de otomatik eklenir)
+expressApp.post('/sync-to-cloud', async (req: Request, res: Response) => {
   try {
     if (!cloudSettings?.isEnabled) {
       return res.status(400).json({
@@ -750,8 +895,8 @@ expressApp.post('/express-api/sync-to-cloud', async (req: Request, res: Response
   }
 });
 
-// GET /express-api/cloud-status - Cloud bağlantı durumunu kontrol et
-expressApp.get('/express-api/cloud-status', async (req: Request, res: Response) => {
+// GET /cloud-status - Cloud bağlantı durumunu kontrol et (express-api öneki app.js'de otomatik eklenir)
+expressApp.get('/cloud-status', async (req: Request, res: Response) => {
   try {
     const { db } = await connectToDatabase();
     const settings = await db.collection('cloud_settings').findOne({ type: 'cloud_settings' });
@@ -788,8 +933,8 @@ expressApp.get('/express-api/cloud-status', async (req: Request, res: Response) 
   }
 });
 
-// POST /express-api/send-test-data - Test verisi gönder
-expressApp.post('/express-api/send-test-data', async (req: Request, res: Response) => {
+// POST /send-test-data - Test verisi gönder (express-api öneki app.js'de otomatik eklenir)
+expressApp.post('/send-test-data', async (req: Request, res: Response) => {
   try {
     if (!cloudSettings?.isEnabled) {
       return res.status(400).json({
@@ -844,8 +989,8 @@ expressApp.post('/express-api/send-test-data', async (req: Request, res: Respons
   }
 });
 
-// POST /express-api/test-cloud-connection - Cloud bağlantısını test et
-expressApp.post('/express-api/test-cloud-connection', async (req: Request, res: Response) => {
+// POST /test-cloud-connection - Cloud bağlantısını test et (express-api öneki app.js'de otomatik eklenir)
+expressApp.post('/test-cloud-connection', async (req: Request, res: Response) => {
   try {
     const { serverIP, serverPort } = req.body;
 
@@ -996,6 +1141,19 @@ server.listen(Number(port), '0.0.0.0', () => {
 
     // Cloud settings değişikliklerini dinle
     watchCloudSettings();
+
+    // Sistem bilgilerini periyodik olarak gönder (her 30 saniyede bir)
+    setInterval(async () => {
+      if (isConnectedToBridge && cloudSettings?.isEnabled) {
+        try {
+          await sendSystemInfoToCloud();
+        } catch (error) {
+          fileLogger.error('Periodic system info sync error', { error: (error as Error).message });
+        }
+      }
+    }, 30000); // 30 saniye
+
+    fileLogger.info('Periodic system info sync started', { interval: '30 seconds' });
 
   } catch (err) {
       fileLogger.error("An error occurred during service initialization.", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });

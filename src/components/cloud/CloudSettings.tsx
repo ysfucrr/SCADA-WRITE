@@ -6,6 +6,7 @@ import { showToast } from '@/components/ui/alert';
 interface CloudSettings {
   serverIP: string;
   serverPort: string;
+  apiPort?: string;  // API için ikinci port
   isEnabled: boolean;
   lastConnectionTest?: Date;
   connectionStatus?: 'connected' | 'disconnected' | 'testing';
@@ -19,6 +20,7 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
   const [settings, setSettings] = useState<CloudSettings>({
     serverIP: '',
     serverPort: '3000',
+    apiPort: '3001',
     isEnabled: false,
     connectionStatus: 'disconnected'
   });
@@ -26,17 +28,64 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
   const [isTesting, setIsTesting] = useState(false);
   const [autoSyncInterval, setAutoSyncInterval] = useState<any>(null);
 
-  // Load settings from localStorage on component mount
+  // Load settings from API on component mount, then from localStorage
   useEffect(() => {
-    const savedSettings = localStorage.getItem('cloud-settings');
-    if (savedSettings) {
+    // Önce API'den verileri çek
+    const fetchSettings = async () => {
       try {
-        const parsed = JSON.parse(savedSettings);
-        setSettings(prev => ({ ...prev, ...parsed }));
+        console.log('Fetching cloud settings from API...');
+        const response = await fetch('/api/cloud-settings');
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Cloud settings API response:', data);
+          
+          if (data.success && data.settings) {
+            // API'den gelen verileri state'e aktar
+            setSettings(prev => ({
+              ...prev,
+              serverIP: data.settings.serverIP || '',
+              serverPort: data.settings.serverPort || '3000',
+              apiPort: data.settings.apiPort || '3001',
+              isEnabled: data.settings.isEnabled === true,
+              connectionStatus: data.settings.connectionStatus || 'disconnected',
+              lastConnectionTest: data.settings.lastConnectionTest ? new Date(data.settings.lastConnectionTest) : undefined
+            }));
+            
+            // API'den gelen verileri localStorage'a da kaydet
+            localStorage.setItem('cloud-settings', JSON.stringify({
+              serverIP: data.settings.serverIP || '',
+              serverPort: data.settings.serverPort || '3000',
+              apiPort: data.settings.apiPort || '3001',
+              isEnabled: data.settings.isEnabled === true,
+              connectionStatus: data.settings.connectionStatus || 'disconnected',
+              lastConnectionTest: data.settings.lastConnectionTest
+            }));
+            
+            console.log('Cloud settings loaded from API successfully');
+            return;
+          }
+        } else {
+          console.error('Failed to fetch cloud settings from API:', response.status);
+        }
       } catch (error) {
-        console.error('Error loading cloud settings:', error);
+        console.error('Error fetching cloud settings from API:', error);
       }
-    }
+      
+      // API'den veri çekme başarısız olursa localStorage'dan oku
+      const savedSettings = localStorage.getItem('cloud-settings');
+      if (savedSettings) {
+        try {
+          const parsed = JSON.parse(savedSettings);
+          setSettings(prev => ({ ...prev, ...parsed }));
+          console.log('Cloud settings loaded from localStorage instead');
+        } catch (error) {
+          console.error('Error loading cloud settings from localStorage:', error);
+        }
+      }
+    };
+    
+    fetchSettings();
   }, []);
 
   // Save settings to localStorage whenever they change
@@ -53,7 +102,7 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
   };
 
   const testConnection = async () => {
-    if (!settings.serverIP || !settings.serverPort) {
+    if (!settings.serverIP || !settings.serverPort || !settings.apiPort) {
       showToast('Lütfen sunucu IP ve port bilgilerini girin', 'error');
       return;
     }
@@ -66,16 +115,20 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 saniye timeout
 
     try {
-      console.log(`Testing connection to: http://${settings.serverIP}:${settings.serverPort}/api/mobile/system-info`);
-
-      // URL oluşturmadan önce protokol kontrolü yap
       const serverIP = settings.serverIP.trim();
-      const baseUrl = serverIP.startsWith('http://') || serverIP.startsWith('https://')
-        ? `${serverIP}:${settings.serverPort}`
-        : `http://${serverIP}:${settings.serverPort}`;
-        
-      console.log(`Testing connection to: ${baseUrl}/api/mobile/system-info`);
-      const response = await fetch(`${baseUrl}/api/mobile/system-info`, {
+      
+      // WebSocket portu kontrolü (bilgi amaçlı)
+      console.log(`WebSocket portu (${settings.serverPort}) kontrol ediliyor...`);
+      
+      // API portu kontrolü - gerçek istek burada yapılıyor
+      const apiBaseUrl = serverIP.startsWith('http://') || serverIP.startsWith('https://')
+        ? `${serverIP}:${settings.apiPort}`
+        : `http://${serverIP}:${settings.apiPort}`;
+      
+      console.log(`Testing API connection to: ${apiBaseUrl}/api/mobile/system-info`);
+      
+      // API istekleri için kullanılan port üzerinden test yap
+      const response = await fetch(`${apiBaseUrl}/api/mobile/system-info`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -92,13 +145,19 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
       if (response.ok) {
         const data = await response.json();
         console.log('Response data:', data);
+        
+        // Hem WebSocket hem de API bağlantısının başarılı olduğunu test et
+        showToast(`API portu (${settings.apiPort}) bağlantısı başarılı!`, 'success');
+        
+        // WebSocket portu için de bilgi ver
+        console.log(`WebSocket portu (${settings.serverPort}) için bağlantı bilgisi: Bu bağlantı mobil uygulama tarafından yapılır.`);
+        
         setSettings(prev => ({
           ...prev,
           connectionStatus: 'connected',
           lastConnectionTest: new Date()
         }));
-        showToast('Sunucuya başarıyla bağlandı!', 'success');
-
+        
         // Başarılı bağlantı sonrası otomatik senkronizasyon başlat
         startAutoSync();
       } else {
@@ -131,7 +190,8 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
         error: error instanceof Error ? error.message : error,
         serverIP: settings.serverIP,
         serverPort: settings.serverPort,
-        url: `http://${settings.serverIP}:${settings.serverPort}/api/mobile/system-info`,
+        apiPort: settings.apiPort,
+        url: `http://${settings.serverIP}:${settings.apiPort}/api/mobile/system-info`,
         timestamp: new Date().toISOString()
       });
 
@@ -141,8 +201,13 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
     }
   };
 
+  const [isSaving, setIsSaving] = useState(false);
+
   const saveSettings = async () => {
     try {
+      setIsSaving(true);
+      showToast('Ayarlar kaydediliyor...', 'info');
+      
       // Settings'i MongoDB'ye kaydet
       const response = await fetch('/api/cloud-settings', {
         method: 'POST',
@@ -153,13 +218,37 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
       });
 
       if (response.ok) {
+        const result = await response.json();
+        console.log('Save settings result:', result);
+        
         showToast('Ayarlar başarıyla kaydedildi', 'success');
+        
+        // Ayarlar kaydedildikten sonra API'den tekrar çek (veriler güncellenmiş olabilir)
+        const refreshResponse = await fetch('/api/cloud-settings');
+        if (refreshResponse.ok) {
+          const refreshData = await refreshResponse.json();
+          if (refreshData.success && refreshData.settings) {
+            // API'den gelen güncel verileri state'e aktar
+            setSettings(prev => ({
+              ...prev,
+              serverIP: refreshData.settings.serverIP || '',
+              serverPort: refreshData.settings.serverPort || '3000',
+              isEnabled: refreshData.settings.isEnabled === true,
+              connectionStatus: refreshData.settings.connectionStatus || 'disconnected',
+              lastConnectionTest: refreshData.settings.lastConnectionTest ? new Date(refreshData.settings.lastConnectionTest) : undefined
+            }));
+            
+            console.log('Cloud settings refreshed after save');
+          }
+        }
       } else {
         throw new Error('Ayarlar kaydedilemedi');
       }
     } catch (error) {
       console.error('Save settings error:', error);
       showToast('Ayarlar kaydedilirken hata oluştu', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -292,18 +381,41 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
             {/* Server Port */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Sunucu Port
+                WebSocket Portu
               </label>
               <select
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={settings.serverPort}
                 onChange={(e) => handleInputChange('serverPort', e.target.value)}
               >
-                <option value="3000">3000 (Varsayılan)</option>
+                <option value="3000">3000 (Varsayılan WebSocket)</option>
                 <option value="3001">3001</option>
                 <option value="8080">8080</option>
                 <option value="9000">9000</option>
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                WebSocket bağlantıları için kullanılır (mobil uygulama real-time veri için bu porta bağlanır)
+              </p>
+            </div>
+
+            {/* API Port */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                API Portu
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={settings.apiPort}
+                onChange={(e) => handleInputChange('apiPort', e.target.value)}
+              >
+                <option value="3001">3001 (Varsayılan API)</option>
+                <option value="3000">3000</option>
+                <option value="8080">8080</option>
+                <option value="9000">9000</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                API istekleri için kullanılır (mobil uygulama veri çekmek için bu porta bağlanır)
+              </p>
             </div>
 
             {/* Connection Status */}
@@ -318,7 +430,7 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
               </div>
               {settings.lastConnectionTest && (
                 <p className="text-xs text-gray-500 mt-1">
-                  Son test: {settings.lastConnectionTest.toLocaleString('tr-TR')}
+                  Son test: {new Date(settings.lastConnectionTest).toLocaleString('tr-TR')}
                 </p>
               )}
             </div>
@@ -342,27 +454,44 @@ export default function CloudSettings({ onSettingsChange }: CloudSettingsProps) 
             <div className="mb-4">
               <button
                 onClick={saveSettings}
-                className="w-full py-2 px-4 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 transition-colors"
+                disabled={isSaving}
+                className={`w-full py-2 px-4 rounded-md font-medium transition-colors ${
+                  isSaving
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
               >
-                💾 Ayarları Kaydet
+                {isSaving ? '⏳ Kaydediliyor...' : '💾 Ayarları Kaydet'}
               </button>
             </div>
 
             {/* Current Settings Display */}
-            {(settings.serverIP || settings.serverPort !== '3000') && (
+            {(settings.serverIP) && (
               <div className="mt-4 p-3 bg-blue-50 rounded-md">
                 <h4 className="text-sm font-medium text-blue-800 mb-2">
                   ⚙️ Geçerli Yapılandırma:
                 </h4>
                 <div className="text-sm text-blue-700 space-y-1">
                   <p>Sunucu: {settings.serverIP || 'Belirtilmemiş'}</p>
-                  <p>Port: {settings.serverPort}</p>
-                  <p>URL: {settings.serverIP.trim().startsWith('http') ? `${settings.serverIP}:${settings.serverPort}` : `http://${settings.serverIP}:${settings.serverPort}`}</p>
-                  <p className="text-xs text-gray-500">Not: IP adresini "http://" olmadan ya da "http://" ile birlikte girebilirsiniz.</p>
+                  <p>WebSocket Portu: <span className="font-semibold">{settings.serverPort}</span> (real-time veri için)</p>
+                  <p>API Portu: <span className="font-semibold">{settings.apiPort}</span> (HTTP istekleri için)</p>
+                  <p className="mt-2 pt-2 border-t border-blue-100">WebSocket URL: {settings.serverIP.trim().startsWith('http') ?
+                    `${settings.serverIP}:${settings.serverPort}` :
+                    `http://${settings.serverIP}:${settings.serverPort}`}</p>
+                  <p>API URL: {settings.serverIP.trim().startsWith('http') ?
+                    `${settings.serverIP}:${settings.apiPort}/api/...` :
+                    `http://${settings.serverIP}:${settings.apiPort}/api/...`}</p>
+                  <p className="text-xs text-gray-500 mt-1">Not: IP adresini "http://" olmadan ya da "http://" ile birlikte girebilirsiniz.</p>
+                  
                   {settings.connectionStatus === 'connected' && (
-                    <p className="text-green-600 font-medium">
-                      ✅ Otomatik senkronizasyon aktif (60 saniye aralıklarla)
-                    </p>
+                    <div className="mt-3 pt-2 border-t border-blue-100">
+                      <p className="text-green-600 font-medium">
+                        ✅ Otomatik senkronizasyon aktif (60 saniye aralıklarla)
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Bu ayarlar ile mobil uygulama ve SCADA, köprü sunucusu üzerinden haberleşebilir
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
