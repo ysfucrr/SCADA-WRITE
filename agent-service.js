@@ -11,6 +11,12 @@ const { MongoClient } = require('mongodb');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 require('dotenv').config({ path: '.env.local' });
 
+// Socket.io client for SCADA local API (yeni)
+let localSocket = null;
+
+// İzlenen register'ları takip et
+const watchedRegisters = new Map(); // key: "analyzerId-address"
+
 // Configuration
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/scada';
 const LOCAL_API_URL = 'http://localhost:3000'; // Next.js API portu
@@ -192,6 +198,63 @@ async function connectToBridge() {
       reconnectionDelayMax: 5000,
       timeout: 20000
     });
+
+    // Local SCADA WebSocket API'sine bağlanma denemesi
+    if (!localSocket) {
+      log('Connecting to local SCADA WebSocket API...');
+      
+      // LOCAL_API_URL'de WebSocket port kullanımı
+      // SCADA'nın WebSocket API'si genellikle 3001 portunda çalışır (API portu)
+      const localWebSocketUrl = 'http://localhost:3001';
+      log(`Using WebSocket URL: ${localWebSocketUrl}`);
+      
+      localSocket = io(localWebSocketUrl, {
+        reconnection: true,
+        reconnectionAttempts: 3,  // Sadece 3 kez dene, sürekli tekrar etme
+        reconnectionDelay: 2000,
+        timeout: 10000,           // Timeout süresini artır
+        path: '/socket.io/',
+        transports: ['websocket', 'polling']
+      });
+
+      // Register değeri güncellemelerini dinle ve cloud-bridge'e ilet
+      localSocket.on('register-value', (data) => {
+        const registerKey = `${data.analyzerId}-${data.address}`;
+        
+        // Bu register izleniyorsa bridge'e ilet
+        if (watchedRegisters.has(registerKey)) {
+          log(`Received register value update from SCADA: ${registerKey}`);
+          
+          // Socket bağlı ise, register güncellemesini cloud-bridge'e ilet
+          if (socket && socket.connected) {
+            socket.emit('forward-register-value', data);
+            log(`Forwarded register value to cloud bridge: ${registerKey}`);
+          }
+        }
+      });
+
+      localSocket.on('connect', () => {
+        log('Connected to local SCADA WebSocket API');
+      });
+
+      localSocket.on('disconnect', (reason) => {
+        log(`Disconnected from local SCADA WebSocket: ${reason}`);
+      });
+
+      localSocket.on('connect_error', (error) => {
+        logError('Error connecting to local SCADA WebSocket:', error);
+        log('NOTE: Agent will continue to work, but real-time register updates will not be available for mobile app');
+        log('Cloud Bridge HTTP API proxying still works normally');
+        
+        // Hata durumunda 30 saniye sonra tekrar bağlanmayı deneyelim
+        setTimeout(() => {
+          if (localSocket) {
+            log('Attempting to reconnect to local SCADA WebSocket API...');
+            localSocket.connect();
+          }
+        }, 30000);
+      });
+    }
     
     // Connection event
     socket.on('connect', () => {
@@ -218,6 +281,38 @@ async function connectToBridge() {
     
     // API requests
     socket.on('api-request', handleApiRequest);
+    
+    // Mobil uygulamadan gelen register izleme istekleri
+    socket.on('watch-register-mobile', (registerData) => {
+      const registerKey = `${registerData.analyzerId}-${registerData.address}`;
+      log(`Received watch-register request from mobile via bridge: ${registerKey}`);
+      
+      // Bu register'ı izlenenler listesine ekle
+      watchedRegisters.set(registerKey, registerData);
+      
+      // Yerel SCADA WebSocket bağlantısı varsa izleme isteğini ilet
+      if (localSocket && localSocket.connected) {
+        log(`Forwarding watch-register to local SCADA: ${registerKey}`);
+        localSocket.emit('watch-register', registerData);
+      } else {
+        log(`Cannot forward watch-register - local WebSocket not connected`);
+      }
+    });
+    
+    // Mobil uygulamadan gelen register izlemeyi durdurma istekleri
+    socket.on('unwatch-register-mobile', (registerData) => {
+      const registerKey = `${registerData.analyzerId}-${registerData.address}`;
+      log(`Received unwatch-register request from mobile via bridge: ${registerKey}`);
+      
+      // Bu register'ı izlenenler listesinden çıkar
+      watchedRegisters.delete(registerKey);
+      
+      // Yerel SCADA WebSocket bağlantısı varsa izlemeyi durdurma isteğini ilet
+      if (localSocket && localSocket.connected) {
+        log(`Forwarding unwatch-register to local SCADA: ${registerKey}`);
+        localSocket.emit('unwatch-register', registerData);
+      }
+    });
     
     // Pong responses
     socket.on('pong', (data) => {
@@ -283,6 +378,14 @@ process.on('SIGINT', () => {
   if (socket) {
     try {
       socket.disconnect();
+    } catch (error) {
+      // Ignore errors on close
+    }
+  }
+  
+  if (localSocket) {
+    try {
+      localSocket.disconnect();
     } catch (error) {
       // Ignore errors on close
     }
