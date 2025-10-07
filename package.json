@@ -30,7 +30,8 @@
     "electron:package:win": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --win",
     "electron:package:linux": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --linux",
     "electron:package": "cross-env NODE_ENV=production yarn electron-build && electron-builder build -mwl",
-    "setup-redis": "node scripts/setup-redis.js"
+    "setup-redis": "node scripts/setup-redis.js",
+    "agent": "node agent-service.js"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.15",
@@ -103,7 +104,8 @@
     "tree-kill": "^1.2.2",
     "uuid": "^11.1.0",
     "wait-on": "^8.0.4",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "ws": "^8.14.2"
   },
   "main": "electron-dist/main.js",
   "build": {

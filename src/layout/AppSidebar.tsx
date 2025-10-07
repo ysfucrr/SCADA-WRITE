@@ -3,7 +3,7 @@ import EditableTitle from "@/components/ui/EditableTitle";
 import { Spinner } from "@/components/ui/spinner";
 import { Typography } from "@/components/ui/typography";
 import { useAuth } from "@/hooks/use-auth";
-import { BarChart2, Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users, Info, Receipt } from "lucide-react";
+import { BarChart2, Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users, Info, Receipt, Cloud } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -154,6 +154,11 @@ const AppSidebar: React.FC = () => {
           icon: <Siren />,
           name: "Alert Rules",
           path: "/alert-rules",
+        },
+        {
+          icon: <Cloud />,
+          name: "Cloud Settings",
+          path: "/cloud-settings",
         }
       ];
     }
