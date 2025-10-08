@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { Typography } from "@/components/ui/typography";
 import { showToast, showErrorAlert, showSuccessAlert } from "@/components/ui/alert";
 import axios from "axios";
+import io from "socket.io-client";
 
 interface CloudSettings {
   serverIp: string;
@@ -16,7 +17,7 @@ const CloudSettingsPage = () => {
   const [settings, setSettings] = useState<CloudSettings>({
     serverIp: "",
     httpPort: 4000,
-    wsPort: 4001,
+    wsPort: 4000, // Not: Cloud Bridge Server genellikle Socket.IO için de aynı portu kullanır
   });
 
   // Load existing settings
@@ -147,27 +148,83 @@ const CloudSettingsPage = () => {
 
   const testWsConnection = () => {
     try {
-      const ws = new WebSocket(`ws://${settings.serverIp}:${settings.wsPort}`);
+      // ÖNEMLİ: Cloud Bridge Server, Socket.IO servisini HTTP portu üzerinde çalıştırıyor
+      // Bu yüzden WebSocket port değil, HTTP port kullanılmalı
+      const socketUrl = `http://${settings.serverIp}:${settings.httpPort}`;
+      console.log(`Testing Socket.IO connection to: ${socketUrl}`);
       
-      ws.onopen = () => {
+      // Socket.IO bağlantısı oluştur (WebSocket yerine Socket.IO kullanıyoruz)
+      // Socket.IO bağlantı parametrelerini ince ayarla
+      console.log('Attempting Socket.IO connection with enhanced parameters');
+      
+      const socket = io(socketUrl, {
+        transports: ['polling', 'websocket'], // Önce polling, sonra websocket
+        reconnection: true,                   // Otomatik yeniden bağlanmayı etkinleştir
+        reconnectionAttempts: 2,             // En fazla 2 yeniden bağlanma denemesi yap
+        reconnectionDelay: 1000,             // İlk yeniden bağlanma denemesi için 1 saniye bekle
+        timeout: 15000,                       // 15 saniye timeout
+        path: '/socket.io/',                  // Default Socket.IO path
+        query: { type: 'test-client' }        // Bağlantı tipi bilgisi
+      });
+      
+      console.log('Socket.IO connection object created, waiting for events...');
+      
+      // 10 saniye içinde bağlantı başarılı olmazsa timeout
+      const connectionTimeout = setTimeout(() => {
+        if (socket.connected === false) {
+          console.log('Socket.IO connection timeout occurred');
+          socket.close();
+          showErrorAlert(
+            "Error",
+            "Socket.IO connection failed: timeout. Check your settings and ensure the cloud bridge server is running. HTTP port and Socket.IO port should typically be the same (4000)."
+          );
+        }
+      }, 15000);
+      
+      socket.on('connect', () => {
+        console.log('Socket.IO CONNECTED successfully!');
+        clearTimeout(connectionTimeout);
         showSuccessAlert(
           "Success",
-          "WebSocket connection successful"
+          "Socket.IO connection successful"
         );
-        ws.close();
-      };
+        
+        // Bağlantı başarılı olduğunda identify et ve kapat
+        socket.emit('identify', {
+          type: 'test-client',
+          version: '1.0.0',
+          timestamp: new Date().toISOString(),
+          message: 'Testing connection from SCADA UI'
+        });
+        
+        // Ping-Pong testi yap
+        // Ping mesajını debug bilgisiyle gönder
+        console.log('Sending ping message...');
+        socket.emit('ping', () => {
+          console.log('Received pong response from server!');
+        });
+        
+        // 2 saniye sonra bağlantıyı kapat (daha uzun süre tanıyalım)
+        setTimeout(() => {
+          socket.disconnect();
+        }, 3000);
+      });
       
-      ws.onerror = () => {
+      socket.on('connect_error', (error) => {
+        clearTimeout(connectionTimeout);
+        console.error("Socket.IO connection error:", error);
         showErrorAlert(
           "Error",
-          "WebSocket connection failed. Check your settings and ensure the cloud bridge is running."
+          `Socket.IO connection failed: ${error.message}. Check your settings and ensure the cloud bridge is running on port ${settings.httpPort}.`
         );
-      };
+        socket.close();
+      });
+      
     } catch (error) {
-      console.error("WebSocket connection error:", error);
+      console.error("Socket.IO setup error:", error);
       showErrorAlert(
         "Error",
-        "Failed to establish WebSocket connection"
+        "Failed to establish Socket.IO connection"
       );
     }
   };
@@ -227,7 +284,7 @@ const CloudSettingsPage = () => {
             </div>
             <div>
               <label htmlFor="wsPort" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                WebSocket Port
+                Socket.IO Port <span className="text-xs text-gray-500 font-normal">(Genellikle HTTP port ile aynı: 4000)</span>
               </label>
               <input
                 type="number"

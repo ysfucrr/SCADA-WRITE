@@ -37,7 +37,7 @@ import { TrendLoggerService } from "./src/lib/trend-logger-service_new";
 import { ModbusPoller } from "./src/lib/modbus/ModbusPoller";
 import { backendLogger } from "./src/lib/logger/BackendLogger";
 import { periodicReportService } from "./src/lib/periodic-report-service";
-
+import { cloudBridgeAgent } from "./src/lib/cloud-bridge-agent";
 import { mailService } from "./src/lib/mail-service";
 
 // Re-export redisClient for other modules
@@ -245,7 +245,8 @@ server.listen(Number(port), '0.0.0.0', () => {
     source: 'Server',
     mailService: !!mailService,
     alertManager: !!alertManager,
-    periodicReportService: !!periodicReportService
+    periodicReportService: !!periodicReportService,
+    cloudBridgeAgent: true
   });
 
   try {
@@ -274,6 +275,12 @@ server.listen(Number(port), '0.0.0.0', () => {
 
     // Yazma isteklerini dinlemeye başla
     setupWriteRequestListener();
+    
+    // Cloud Bridge Agent'ı başlat
+    cloudBridgeAgent.start().catch(err => {
+      fileLogger.error("Cloud Bridge Agent failed to start", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
+    });
+    fileLogger.info("Cloud Bridge Agent started successfully.", "Server");
 
   } catch (err) {
       fileLogger.error("An error occurred during service initialization.", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
@@ -346,12 +353,14 @@ const forceCloseAllComPorts = (reason: string) => {
 // Sunucu dururken kaynakları temizlemek için - multiple event handlers
 process.on('SIGTERM', async () => {
   forceCloseAllComPorts("SIGTERM received");
+  cloudBridgeAgent.stop();
   await disconnectRedis();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   forceCloseAllComPorts("SIGINT received");
+  cloudBridgeAgent.stop();
   await disconnectRedis();
   process.exit(0);
 });
@@ -359,12 +368,14 @@ process.on('SIGINT', async () => {
 process.on('exit', (code) => {
   console.log(`Process exiting with code: ${code}`);
   forceCloseAllComPorts("Process exit");
+  cloudBridgeAgent.stop();
   // We can't use await in exit handler, but disconnect will be attempted in SIGTERM/SIGINT
 });
 
 process.on('beforeExit', (code) => {
   console.log(`Before exit with code: ${code}`);
   forceCloseAllComPorts("Before exit");
+  cloudBridgeAgent.stop();
 });
 
 // Uncaught exception durumunda akıllı hata yönetimi

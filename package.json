@@ -31,7 +31,7 @@
     "electron:package:linux": "cross-env NODE_ENV=production yarn electron-build && electron-builder build --linux",
     "electron:package": "cross-env NODE_ENV=production yarn electron-build && electron-builder build -mwl",
     "setup-redis": "node scripts/setup-redis.js",
-    "agent": "node agent-service.js"
+    "agent:legacy": "node agent-service.js"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.15",

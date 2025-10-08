@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
-import axios from 'axios';
+import { cloudBridgeAgent } from '@/lib/cloud-bridge-agent';
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,34 +21,20 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Test HTTP connection
-    let httpSuccess = false;
-    let httpMessage = '';
-    
-    try {
-      // Set timeout to 5 seconds
-      const response = await axios.get(`http://${serverIp}:${httpPort}/health`, { 
-        timeout: 5000 
-      });
-      
-      httpSuccess = response.status === 200;
-      httpMessage = httpSuccess ? 
-        'HTTP connection successful' : 
-        'HTTP connection responded but with unexpected status';
-      
-    } catch (err) {
-      console.error('HTTP connection test failed:', err);
-      httpMessage = 'HTTP connection failed';
-    }
+    // Construct the server URL
+    const serverUrl = `http://${serverIp}:${httpPort}`;
+
+    // Use Cloud Bridge Agent to test the connection
+    const testResult = await cloudBridgeAgent.testConnection(serverUrl);
 
     // WebSocket testing will be done client-side
     // We can't easily test WebSocket connection from server-side in Next.js
 
-    return NextResponse.json({ 
-      success: true, 
-      httpSuccess, 
+    return NextResponse.json({
+      success: true,
+      httpSuccess: testResult.success,
       wsTestRequired: true, // Indicates client should test WebSocket
-      message: httpMessage
+      message: testResult.message
     });
     
   } catch (error) {
