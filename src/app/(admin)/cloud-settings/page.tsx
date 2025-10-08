@@ -791,7 +791,7 @@ const CloudSettingsPage = () => {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              Socket.IO Port <span className="text-xs text-gray-500">(Genellikle HTTP port ile aynı)</span>
+              Socket.IO Port <span className="text-xs text-gray-500"></span>
             </label>
             <div className="relative max-w-xs">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
