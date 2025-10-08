@@ -17,11 +17,52 @@ class CloudBridgeAgent {
   private socket: Socket | null = null;
   private localSocket: Socket | null = null;
   private reconnectTimer: NodeJS.Timeout | number | null = null;
+  private pingInterval: NodeJS.Timeout | number | null = null; // Ping interval takibi için
   private isConnecting: boolean = false;
   private watchedRegisters: Map<string, any> = new Map(); // key: "analyzerId-address"
+  // Track the connection status
+  private connectionStatus: 'disconnected' | 'connected' | 'connecting' = 'disconnected';
+  // Track event listeners
+  private statusChangeListeners: Set<Function> = new Set();
+  // Timer for connection status monitoring
+  private connectionMonitorTimer: NodeJS.Timeout | null = null;
+  // Başlangıç aşamasında durumu daha doğru tespit etmek için
+  private initialStatusCheck: boolean = true;
 
   constructor() {
     fileLogger.info('Cloud Bridge Agent initialized');
+  }
+  
+  // Get current connection status
+  public getConnectionStatus(): 'disconnected' | 'connected' | 'connecting' {
+    return this.connectionStatus;
+  }
+  
+  // Add event listener for status changes
+  public addStatusChangeListener(listener: (status: 'disconnected' | 'connected' | 'connecting') => void): void {
+    this.statusChangeListeners.add(listener);
+    // Immediately call the listener with current status
+    listener(this.connectionStatus);
+  }
+  
+  // Remove event listener
+  public removeStatusChangeListener(listener: Function): void {
+    this.statusChangeListeners.delete(listener);
+  }
+  
+  // Anlık durumu sürekli değişimi engellemek için gerekli state veriler
+  private lastStateChangeTime: number = Date.now();
+  private stableConnectionCheckTimer: NodeJS.Timeout | null = null;
+  private connectionChecks: { connected: number, disconnected: number } = {
+    connected: 0,
+    disconnected: 0
+  };
+
+  // Notify all listeners about status change
+  private emitStatusChange(): void {
+    for (const listener of this.statusChangeListeners) {
+      listener(this.connectionStatus);
+    }
   }
 
   // Helper function to log messages with timestamps
@@ -172,14 +213,65 @@ class CloudBridgeAgent {
     }
   }
 
-  // Schedule reconnection
+  // Schedule reconnection - çift bağlantı sorununu engellemek için geliştirildi
   private scheduleReconnect(): void {
     if (!this.reconnectTimer) {
+      // Bağlanmayı deniyorsak veya zaten bağlıysak, reconnect ihtiyacı yok
+      if (this.isConnecting || (this.socket && this.socket.connected)) {
+        this.log('Reconnect not needed - already connected or connecting');
+        return;
+      }
+      
       this.log(`Scheduling reconnect in ${RECONNECT_INTERVAL/1000} seconds...`);
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
-        this.connectToBridge();
+        
+        // Timer tetiklendiğinde tekrar kontrol et - belki bu arada bağlanmıştır
+        if (!this.socket?.connected && !this.isConnecting) {
+          this.log('Executing scheduled reconnect');
+          this.connectToBridge();
+        } else {
+          this.log('Skipping scheduled reconnect - connection already established');
+        }
       }, RECONNECT_INTERVAL);
+    } else {
+      this.log('Reconnect already scheduled, skipping duplicate');
+    }
+  }
+  
+  // Update connection status and emit change - with stability checks
+  private updateConnectionStatus(status: 'disconnected' | 'connected' | 'connecting'): void {
+    // Çok hızlı tekrarlanan durum değişikliklerini önlemek için min bekleme süresi
+    const now = Date.now();
+    const minTimeBetweenUpdates = 3000; // 3 saniye
+    
+    // Eğer durum 'connecting' ise her zaman güncelle (geçici durum olduğu için)
+    if (status === 'connecting') {
+      this.connectionStatus = status;
+      this.emitStatusChange();
+      this.log(`Connection status changed to: ${status}`);
+      this.lastStateChangeTime = now;
+      return;
+    }
+    
+    // Bağlantı veya bağlantı kesme durumları için stabilite kontrolü
+    if (this.connectionStatus !== status) {
+      // Son değişiklikten sonra min zaman geçmişse hemen değiştir
+      if (now - this.lastStateChangeTime >= minTimeBetweenUpdates) {
+        this.connectionStatus = status;
+        this.emitStatusChange();
+        this.log(`Connection status changed to: ${status}`);
+        this.lastStateChangeTime = now;
+        
+        // Sayaçları sıfırla
+        this.connectionChecks = {
+          connected: 0,
+          disconnected: 0
+        };
+      } else {
+        // Hızlı değişimlerde, kararlılık için birkaç kez kontrol et
+        this.log(`Durum değişikliği talebi alındı (${status}) ancak kararlılık için bekletiliyor`);
+      }
     }
   }
 
@@ -192,6 +284,9 @@ class CloudBridgeAgent {
     if (this.isConnecting) return;
     this.isConnecting = true;
     
+    // Update status to connecting
+    this.updateConnectionStatus('connecting');
+    
     // Clear any existing reconnect timers
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -201,10 +296,19 @@ class CloudBridgeAgent {
     this.log(`Connecting to Cloud Bridge at ${this.BRIDGE_URL}...`);
     
     try {
-      // Connect to the Socket.IO server
+      // Eğer mevcut bir socket varsa önce onu temizle
+      if (this.socket) {
+        this.socket.removeAllListeners();
+        if (this.socket.connected) {
+          this.socket.disconnect();
+        }
+        this.socket = null;
+      }
+      
+      // Connect to the Socket.IO server - sonsuz deneme sayısı korundu
       this.socket = io(this.BRIDGE_URL, {
         reconnection: true,
-        reconnectionAttempts: Infinity,
+        reconnectionAttempts: Infinity,    // Sonsuz deneme kalıyor
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         timeout: 20000
@@ -271,6 +375,8 @@ class CloudBridgeAgent {
       this.socket.on('connect', () => {
         this.log('Connected to Cloud Bridge successfully!');
         this.isConnecting = false;
+        // Update status to connected
+        this.updateConnectionStatus('connected');
         
         // Send identification data
         this.socket?.emit('identify', {
@@ -279,8 +385,14 @@ class CloudBridgeAgent {
           platform: process.platform
         });
         
-        // Set up ping/pong for keeping connection alive
-        setInterval(() => {
+        // Temiz bir kod için önce eski ping interval'ı temizle
+        if (this.pingInterval) {
+          clearInterval(this.pingInterval);
+          this.pingInterval = null;
+        }
+        
+        // Set up ping/pong for keeping connection alive ve referansı sakla
+        this.pingInterval = setInterval(() => {
           if (this.socket && this.socket.connected) {
             this.socket.emit('ping');
           }
@@ -338,6 +450,8 @@ class CloudBridgeAgent {
       this.socket.on('disconnect', (reason) => {
         this.log(`Connection to Cloud Bridge closed. Reason: ${reason}`);
         this.isConnecting = false;
+        // Update status to disconnected
+        this.updateConnectionStatus('disconnected');
         
         // Socket.IO automatically tries to reconnect,
         // but we'll set up our own fallback just in case
@@ -348,6 +462,8 @@ class CloudBridgeAgent {
       this.socket.on('connect_error', (error) => {
         this.logError('Socket.IO connection error:', error);
         this.isConnecting = false;
+        // Update status to disconnected
+        this.updateConnectionStatus('disconnected');
         
         // Socket.IO automatically tries to reconnect,
         // but we'll set up our own fallback just in case
@@ -357,6 +473,8 @@ class CloudBridgeAgent {
     } catch (error) {
       this.logError('Failed to connect to Cloud Bridge:', error);
       this.isConnecting = false;
+      // Update status to disconnected
+      this.updateConnectionStatus('disconnected');
       this.scheduleReconnect();
     }
   }
@@ -456,13 +574,31 @@ class CloudBridgeAgent {
   public stop(): void {
     this.log('Shutting down agent service...');
     
+    // Tüm timer'ları temizle
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    
+    if (this.connectionMonitorTimer) {
+      clearInterval(this.connectionMonitorTimer as NodeJS.Timeout);
+      this.connectionMonitorTimer = null;
+    }
+    
+    if (this.stableConnectionCheckTimer) {
+      clearInterval(this.stableConnectionCheckTimer as NodeJS.Timeout);
+      this.stableConnectionCheckTimer = null;
+    }
+    
     if (this.socket) {
       try {
+        // Event listener'ları temizle
+        this.socket.removeAllListeners();
         this.socket.disconnect();
         this.socket = null;
       } catch (error) {
@@ -472,12 +608,16 @@ class CloudBridgeAgent {
     
     if (this.localSocket) {
       try {
+        this.localSocket.removeAllListeners();
         this.localSocket.disconnect();
         this.localSocket = null;
       } catch (error) {
         // Ignore errors on close
       }
     }
+    
+    // Bağlantı durumunu güncelle
+    this.updateConnectionStatus('disconnected');
   }
 }
 

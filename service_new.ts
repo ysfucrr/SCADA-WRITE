@@ -38,6 +38,7 @@ import { ModbusPoller } from "./src/lib/modbus/ModbusPoller";
 import { backendLogger } from "./src/lib/logger/BackendLogger";
 import { periodicReportService } from "./src/lib/periodic-report-service";
 import { cloudBridgeAgent } from "./src/lib/cloud-bridge-agent";
+import { setupCloudBridgeEvents } from "./src/lib/cloud-bridge-events";
 import { mailService } from "./src/lib/mail-service";
 
 // Re-export redisClient for other modules
@@ -184,6 +185,13 @@ expressApp.get('/express-api/get-register-value', async (req: Request, res: Resp
 io.on('connection', (socket: Socket) => {
   connections.set(socket.id, socket);
 
+  // Cloud Bridge durum sorgusu için özel olay işleyici
+  socket.on('request-cloud-bridge-status', () => {
+    const status = cloudBridgeAgent.getConnectionStatus();
+    socket.emit('cloud-bridge-status', { status });
+    backendLogger.info(`Sent cloud bridge status ${status} to client ${socket.id} upon request`, 'SocketIO');
+  });
+
   socket.on('watch-register', (data: any) => {
     try {
         const registerKey = getRegisterKey(data);
@@ -281,6 +289,10 @@ server.listen(Number(port), '0.0.0.0', () => {
       fileLogger.error("Cloud Bridge Agent failed to start", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
     });
     fileLogger.info("Cloud Bridge Agent started successfully.", "Server");
+    
+    // Cloud Bridge real-time events'ı ayarla
+    setupCloudBridgeEvents();
+    fileLogger.info("Cloud Bridge events setup successfully.", "Server");
 
   } catch (err) {
       fileLogger.error("An error occurred during service initialization.", { source: 'Server', error: (err as Error).message, stack: (err as Error).stack });
