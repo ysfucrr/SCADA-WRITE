@@ -177,8 +177,10 @@ class CloudBridgeAgent {
   }
 
   // Function to load cloud settings from MongoDB
-  private async loadCloudSettings(): Promise<void> {
+  private async loadCloudSettings(): Promise<{ hasSettings: boolean, urlChanged: boolean }> {
     let client: MongoClient | null = null;
+    let hasSettings = false;
+    let urlChanged = false;
     
     try {
       client = new MongoClient(MONGODB_URI);
@@ -188,12 +190,14 @@ class CloudBridgeAgent {
       const settings = await db.collection('cloud_settings').findOne({});
       
       if (settings && settings.serverIp) {
+        hasSettings = true;
         // Use HTTP port for Socket.IO connection
         const newUrl = `http://${settings.serverIp}:${settings.httpPort}`;
         
         if (this.BRIDGE_URL !== newUrl) {
           this.log(`Updating Cloud Bridge URL to ${newUrl}`);
           this.BRIDGE_URL = newUrl;
+          urlChanged = true;
           
           // If we already have a connection and the URL changed, reconnect
           if (this.socket && this.socket.connected) {
@@ -202,15 +206,20 @@ class CloudBridgeAgent {
           }
         }
       } else {
-        this.log('No cloud settings found in database, using default URL');
+        this.log('No cloud settings found in database, will not attempt connection');
+        hasSettings = false;
       }
     } catch (error) {
       this.logError('Error loading cloud settings from database:', error);
+      hasSettings = false;
+      urlChanged = false;
     } finally {
       if (client) {
         await client.close();
       }
     }
+    
+    return { hasSettings, urlChanged };
   }
 
   // Schedule reconnection - çift bağlantı sorununu engellemek için geliştirildi
@@ -278,7 +287,14 @@ class CloudBridgeAgent {
   // Function to connect to the bridge
   private async connectToBridge(): Promise<void> {
     // First load the latest settings
-    await this.loadCloudSettings();
+    const { hasSettings } = await this.loadCloudSettings();
+    
+    // Eğer hiç ayar yoksa bağlantı denemesi yapma
+    if (!hasSettings) {
+      this.log('No cloud settings found, skipping connection attempt');
+      this.updateConnectionStatus('disconnected');
+      return;
+    }
     
     // Prevent multiple connection attempts
     if (this.isConnecting) return;
@@ -484,7 +500,7 @@ class CloudBridgeAgent {
    * @param serverUrl Optional server URL to test (format: http://hostname:port)
    * @returns Promise resolving to success status and message
    */
-  public async testConnection(serverUrl?: string): Promise<{ success: boolean; message: string }> {
+  public async testConnection(serverUrl?: string, forceConnect: boolean = false): Promise<{ success: boolean; message: string }> {
     try {
       // Use provided URL or load from database
       let targetUrl: string;
@@ -555,19 +571,46 @@ class CloudBridgeAgent {
     this.log('SCADA Cloud Bridge Agent starting...');
     
     // First attempt to load settings from database, then connect
-    await this.loadCloudSettings();
-    await this.connectToBridge();
+    const { hasSettings } = await this.loadCloudSettings();
+    
+    // Sadece ayarlar mevcutsa bağlantı denemesi yap
+    if (hasSettings) {
+      await this.connectToBridge();
+    } else {
+      this.log('No cloud settings found, agent is waiting for settings to be configured');
+      this.updateConnectionStatus('disconnected');
+    }
     
     // Periodically check for updated settings
     setInterval(async () => {
       // Only reload settings if we're not in the middle of connecting
       if (!this.isConnecting) {
         this.log('Checking for updated cloud settings...');
-        await this.loadCloudSettings();
+        const { hasSettings: nowHasSettings, urlChanged } = await this.loadCloudSettings();
+        
+        // Eğer yeni ayarlar eklendiyse veya değiştiyse ve şu an bağlı değilsek, bağlanmayı dene
+        if (nowHasSettings && (urlChanged || this.connectionStatus === 'disconnected')) {
+          this.log('Settings updated, attempting connection');
+          await this.connectToBridge();
+        }
       }
     }, 60000); // Check every minute
 
     this.log('Agent service running.');
+  }
+  
+  // Public method to force reconnection (for after saving settings)
+  public async reconnect(): Promise<void> {
+    this.log('Force reconnection requested (after settings changed)');
+    
+    // If already connected, disconnect first
+    if (this.socket && this.socket.connected) {
+      this.log('Disconnecting existing connection before reconnect');
+      this.socket.disconnect();
+    }
+    
+    // Attempt to connect with new settings
+    await this.connectToBridge();
   }
 
   // Public method to stop the agent

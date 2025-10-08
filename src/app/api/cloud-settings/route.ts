@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import cloudSettings from '@/models/cloudSettings';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
+import { cloudBridgeAgent } from '@/lib/cloud-bridge-agent';
 
 export async function GET() {
   try {
@@ -80,6 +81,14 @@ export async function POST(req: NextRequest) {
         createdAt: new Date(),
         updatedAt: new Date()
       });
+    }
+    
+    // Ayarlar başarıyla kaydedildikten sonra bağlantıyı yeniden kurma girişimi yap
+    try {
+      await cloudBridgeAgent.reconnect();
+    } catch (reconnectError) {
+      console.warn('Failed to reconnect to Cloud Bridge after settings change:', reconnectError);
+      // Bağlantı hatası durumunda bile ayarlar başarıyla kaydedildi
     }
     
     return NextResponse.json({ success: true, message: 'Cloud settings saved successfully' });

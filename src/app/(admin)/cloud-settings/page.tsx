@@ -40,23 +40,33 @@ const CloudSettingsPage = () => {
         const settingsResponse = await axios.get("/api/cloud-settings");
         if (settingsResponse.data.success && settingsResponse.data.settings) {
           setSettings(settingsResponse.data.settings);
-        }
-        
-        // Sayfa ilk açıldığında "Test Connection" yap - gerçek durumu görmek için
-        // Bu şekilde sayfa açılırken doğru durumu görebiliriz
-        try {
-          // Bağlantı testi yap
-          const testResponse = await axios.post("/api/cloud-settings/test", settingsResponse.data.settings);
-          console.log("Auto initial connection test:", testResponse.data);
           
-          if (testResponse.data.httpSuccess) {
-            updateConnectionStatus('connected');
+          // Sadece server IP ayarı varsa bağlantı testi yap
+          if (settingsResponse.data.settings.serverIp) {
+            console.log("Server IP configuration exists, testing initial connection");
+            
+            try {
+              // Bağlantı testi yap
+              const testResponse = await axios.post("/api/cloud-settings/test", settingsResponse.data.settings);
+              console.log("Auto initial connection test:", testResponse.data);
+              
+              if (testResponse.data.httpSuccess) {
+                updateConnectionStatus('connected');
+              } else {
+                updateConnectionStatus('error');
+              }
+            } catch (testError) {
+              console.error("Error during initial connection test:", testError);
+              updateConnectionStatus('error');
+            }
           } else {
-            updateConnectionStatus('error');
+            console.log("No server IP configured, skipping connection test");
+            updateConnectionStatus('none');
           }
-        } catch (testError) {
-          console.error("Error during initial connection test:", testError);
-          updateConnectionStatus('error');
+        } else {
+          // Ayarlar yoksa bağlantı denemesi yapma
+          console.log("No cloud settings found, skipping connection test");
+          updateConnectionStatus('none');
         }
       } catch (error) {
         console.error("Error fetching cloud settings:", error);
@@ -71,9 +81,14 @@ const CloudSettingsPage = () => {
 
     fetchSettings();
     
-    // Sayfa her açıldığında sadece belirli aralıklarla durumu test et
-    // API çağrımı doğrudan test yaparak "Test Connection" yapsın
+    // Periyodik olarak sadece server IP ayarı varsa bağlantı testi yap
     const checkInterval = setInterval(async () => {
+      // Ayarlar yoksa veya Server IP yoksa bağlantı testi yapma
+      if (!settings.serverIp) {
+        console.log("No server IP configured, skipping periodic test");
+        return;
+      }
+      
       try {
         console.log("Performing periodic connection test");
         
