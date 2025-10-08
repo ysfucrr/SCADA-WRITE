@@ -1,10 +1,11 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { Typography } from "@/components/ui/typography";
 import { showToast, showErrorAlert, showSuccessAlert, showConfirmAlert } from "@/components/ui/alert";
 import axios from "axios";
 import io from "socket.io-client";
 import { useWebSocket } from "@/context/WebSocketContext";
+import { PlusCircle, Smartphone } from "lucide-react";
+import MobileUserCard from "@/components/mobile-users/MobileUserCard";
 
 interface CloudSettings {
   serverIp: string;
@@ -12,10 +13,22 @@ interface CloudSettings {
   wsPort: number;
 }
 
+interface MobileUser {
+  _id: string;
+  username: string;
+  permissionLevel: 'read' | 'readwrite' | 'admin';
+  lastLogin?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Bağlantı durumu tipi
 type ConnectionStatus = 'none' | 'connected' | 'error' | 'connecting';
 
 const CloudSettingsPage = () => {
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'server-settings' | 'mobile-users' | 'manage-users'>('server-settings');
+  
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('none');
@@ -26,6 +39,17 @@ const CloudSettingsPage = () => {
     httpPort: 4000,
     wsPort: 4000, // Not: Cloud Bridge Server genellikle Socket.IO için de aynı portu kullanır
   });
+  
+  // Mobile Users states
+  const [mobileUsers, setMobileUsers] = useState<MobileUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [newUser, setNewUser] = useState<{ username: string; password: string; permissionLevel: 'read' | 'readwrite' | 'admin' }>({
+    username: '',
+    password: '',
+    permissionLevel: 'read'
+  });
+  const [selectedUser, setSelectedUser] = useState<MobileUser | null>(null);
+  const [editMode, setEditMode] = useState(false);
   
   // Get Socket.IO connection for real-time updates
   const { socket, isConnected: socketConnected } = useWebSocket();
@@ -109,6 +133,32 @@ const CloudSettingsPage = () => {
       clearInterval(checkInterval);
     };
   }, []);
+  
+  // Fetch mobile users
+  useEffect(() => {
+    // Only load users when the manage-users tab is active
+    if (activeTab === 'manage-users') {
+      fetchMobileUsers();
+    }
+  }, [activeTab]);
+  
+  const fetchMobileUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const response = await axios.get('/api/mobile-users');
+      
+      if (response.data.success) {
+        setMobileUsers(response.data.users);
+      } else {
+        showErrorAlert('Error', 'Failed to load mobile users');
+      }
+    } catch (error) {
+      console.error('Error fetching mobile users:', error);
+      showErrorAlert('Error', 'Failed to load mobile users');
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
   
   // Durum güncellemelerini stabilize eden fonksiyon
   const updateConnectionStatus = (newStatus: ConnectionStatus) => {
@@ -453,6 +503,132 @@ const CloudSettingsPage = () => {
       setIsLoading(false);
     }
   };
+  
+  // Add new mobile user
+  const handleAddMobileUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!newUser.username || !newUser.password) {
+      showErrorAlert('Validation Error', 'Username and password are required');
+      return;
+    }
+    
+    try {
+      setIsLoading(true);
+      const response = await axios.post('/api/mobile-users', newUser);
+      
+      if (response.data.success) {
+        showSuccessAlert('Success', 'Mobile user added successfully');
+        setNewUser({ username: '', password: '', permissionLevel: 'read' });
+        
+        // Refresh user list if on manage-users tab
+        if (activeTab === 'manage-users') {
+          fetchMobileUsers();
+        }
+      } else {
+        showErrorAlert('Error', response.data.message || 'Failed to add mobile user');
+      }
+    } catch (error: any) {
+      console.error('Error adding mobile user:', error);
+      showErrorAlert('Error', error.response?.data?.message || 'Failed to add mobile user');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Delete mobile user
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      // Özel onay modalı ile silme onayı al
+      const result = await showConfirmAlert(
+        "Delete User?",
+        "Are you sure you want to delete this mobile user? This action cannot be undone.",
+        "Yes",
+        "Cancel"
+      );
+      
+      // Kullanıcı onaylamadıysa işlemi durdur
+      if (!result.isConfirmed) return;
+      
+      setIsLoading(true);
+      
+      const response = await axios.delete(`/api/mobile-users/${userId}`);
+      
+      if (response.data.success) {
+        showSuccessAlert('Success', 'User deleted successfully');
+        fetchMobileUsers();
+      } else {
+        showErrorAlert('Error', response.data.message || 'Failed to delete user');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      showErrorAlert('Error', 'Failed to delete user');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Update mobile user
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedUser) return;
+    
+    try {
+      setIsLoading(true);
+      
+      const updateData: any = {
+        username: newUser.username,
+        permissionLevel: newUser.permissionLevel
+      };
+      
+      // Only include password if it's provided (for password change)
+      if (newUser.password) {
+        updateData.password = newUser.password;
+      }
+      
+      const response = await axios.put(`/api/mobile-users/${selectedUser._id}`, updateData);
+      
+      if (response.data.success) {
+        showSuccessAlert('Success', 'User updated successfully');
+        setEditMode(false);
+        setSelectedUser(null);
+        setNewUser({ username: '', password: '', permissionLevel: 'read' });
+        fetchMobileUsers();
+      } else {
+        showErrorAlert('Error', response.data.message || 'Failed to update user');
+      }
+    } catch (error: any) {
+      console.error('Error updating user:', error);
+      showErrorAlert('Error', error.response?.data?.message || 'Failed to update user');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleInputChangeForMobileUser = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setNewUser({
+      ...newUser,
+      [name]: value
+    });
+  };
+  
+  const handleEditUser = (user: MobileUser) => {
+    setSelectedUser(user);
+    setNewUser({
+      username: user.username,
+      password: '', // Don't show existing password
+      permissionLevel: user.permissionLevel
+    });
+    setEditMode(true);
+  };
+  
+  const cancelEdit = () => {
+    setSelectedUser(null);
+    setNewUser({ username: '', password: '', permissionLevel: 'read' });
+    setEditMode(false);
+  };
 
   // Bağlantı durumu ikonunu render et
   const renderConnectionStatusIcon = () => {
@@ -489,16 +665,51 @@ const CloudSettingsPage = () => {
   };
 
   return (
-    <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
-      {/* Blue header section */}
-      <div className="bg-blue-500 rounded-t-lg p-6 mb-0 text-white">
-        <h2 className="text-xl font-semibold">Configuration</h2>
-        <p className="text-sm mt-1 text-blue-100">
-          Configure your cloud bridge connection settings
-        </p>
+    <div className="w-full p-6">
+      {/* Tab navigation - Like home page */}
+      <div className="mb-8 flex justify-between items-center">
+        <div className="flex">
+          <button
+            className={`py-4 px-8 mr-4 text-base font-bold transition-colors focus:outline-none rounded-lg shadow-md ${
+              activeTab === 'server-settings'
+                ? 'bg-blue-600 text-white dark:bg-blue-700'
+                : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+            }`}
+            onClick={() => setActiveTab('server-settings')}
+          >
+            Server Settings
+          </button>
+          <button
+            className={`py-4 px-8 mr-4 text-base font-bold transition-colors focus:outline-none rounded-lg shadow-md ${
+              activeTab === 'mobile-users'
+                ? 'bg-blue-600 text-white dark:bg-blue-700'
+                : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+            }`}
+            onClick={() => setActiveTab('mobile-users')}
+          >
+            Mobile Users
+          </button>
+          <button
+            className={`py-4 px-8 mr-4 text-base font-bold transition-colors focus:outline-none rounded-lg shadow-md ${
+              activeTab === 'manage-users'
+                ? 'bg-blue-600 text-white dark:bg-blue-700'
+                : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+            }`}
+            onClick={() => setActiveTab('manage-users')}
+          >
+            Manage Users
+          </button>
+        </div>
+        
+        {/* Status display */}
+        <div className="flex items-center">
+          {renderConnectionStatusIcon()}
+        </div>
       </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow-lg p-6 mb-6">
+      
+      {/* Content based on active tab */}
+      {activeTab === 'server-settings' ? (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Enable Cloud Bridge Toggle */}
           <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg mb-6">
@@ -667,6 +878,238 @@ const CloudSettingsPage = () => {
           </div>
         </div>
       </div>
+      ) : activeTab === 'mobile-users' ? (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+          {/* Mobile Users Tab Content */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg shadow p-4 mb-6">
+            <div className="flex items-center mb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <h3 className="text-sm font-medium text-blue-800 dark:text-blue-300">Mobile User Management</h3>
+            </div>
+            
+            <div className="p-4 bg-white dark:bg-gray-700 rounded-lg mb-4">
+              <h4 className="font-medium mb-2">Registered Devices</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                {mobileUsers.length > 0
+                  ? `${mobileUsers.length} mobile users are registered. Go to Manage Users tab to see the list.`
+                  : 'No mobile users are currently registered. Use the form below to add a new mobile user.'}
+              </p>
+            </div>
+            
+            <form onSubmit={handleAddMobileUser} className="p-4 bg-white dark:bg-gray-700 rounded-lg">
+              <h4 className="font-medium mb-4">Add New Mobile User</h4>
+              
+              <div className="mb-4">
+                <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  Username
+                </label>
+                <input
+                  type="text"
+                  name="username"
+                  value={newUser.username}
+                  onChange={handleInputChangeForMobileUser}
+                  className="block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2.5 text-gray-900 dark:text-white"
+                  placeholder="   johndoe"
+                  required
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  </svg>
+                  Password
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  value={newUser.password}
+                  onChange={handleInputChangeForMobileUser}
+                  className="block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2.5 text-gray-900 dark:text-white"
+                  placeholder="********"
+                  required
+                  minLength={6}
+                />
+                <p className="text-xs text-gray-500 mt-1">Password must be at least 6 characters long</p>
+              </div>
+              
+              <div className="mb-4">
+                <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  Permission Level
+                </label>
+                <select
+                  name="permissionLevel"
+                  value={newUser.permissionLevel}
+                  onChange={handleInputChangeForMobileUser}
+                  className="block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2.5 text-gray-900 dark:text-white"
+                >
+                  <option value="read">Read Only</option>
+                  <option value="readwrite">Read & Write</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+              
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="inline-flex items-center px-4 py-2.5 bg-blue-500 text-white font-medium text-sm rounded-md shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                {isLoading ? "Adding..." : "Add User"}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        <div className="w-full">
+          {/* Header and Controls */}
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-white flex items-center">
+              <Smartphone className="h-5 w-5 text-blue-600 mr-2" />
+              Mobile Users
+            </h2>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={fetchMobileUsers}
+                className="text-sm px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+              <button
+                className="inline-flex items-center px-4 py-2 bg-blue-500 text-white font-medium text-sm rounded-md shadow-sm hover:bg-blue-600 focus:outline-none"
+                onClick={() => {
+                  setActiveTab('mobile-users');
+                  setNewUser({ username: '', password: '', permissionLevel: 'read' });
+                }}
+              >
+                <PlusCircle size={16} className="mr-2" />
+                Add User
+              </button>
+            </div>
+          </div>
+
+          {/* Content Area */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+            {loadingUsers ? (
+              <div className="flex justify-center py-10">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+              </div>
+            ) : mobileUsers.length === 0 ? (
+              <div className="text-center py-10 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <Smartphone className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <p className="text-gray-500 dark:text-gray-400">No mobile users found. Click "Add User" to create one.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {mobileUsers.map((user) => (
+                  <MobileUserCard
+                    key={user._id}
+                    user={user}
+                    onEdit={handleEditUser}
+                    onDelete={handleDeleteUser}
+                  />
+                ))}
+              </div>
+            )}
+            
+            {/* Edit User Form - Modal style */}
+            {editMode && selectedUser && (
+              <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 relative">
+                  <div className="flex justify-between items-center mb-4 border-b pb-3">
+                    <h4 className="font-medium text-lg">Edit User: {selectedUser.username}</h4>
+                    <button
+                      onClick={cancelEdit}
+                      className="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                
+                <form onSubmit={handleUpdateUser}>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Username
+                    </label>
+                    <input
+                      type="text"
+                      name="username"
+                      value={newUser.username}
+                      onChange={handleInputChangeForMobileUser}
+                      className="block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2 text-gray-900 dark:text-white"
+                      required
+                    />
+                  </div>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      New Password (leave empty to keep current)
+                    </label>
+                    <input
+                      type="password"
+                      name="password"
+                      value={newUser.password}
+                      onChange={handleInputChangeForMobileUser}
+                      className="block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2 text-gray-900 dark:text-white"
+                      placeholder="********"
+                    />
+                  </div>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Permission Level
+                    </label>
+                    <select
+                      name="permissionLevel"
+                      value={newUser.permissionLevel}
+                      onChange={handleInputChangeForMobileUser}
+                      className="block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2 text-gray-900 dark:text-white"
+                    >
+                      <option value="read">Read Only</option>
+                      <option value="readwrite">Read & Write</option>
+                      <option value="admin">Administrator</option>
+                    </select>
+                  </div>
+                  
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      className="px-4 py-2 bg-gray-200 text-gray-800 font-medium text-sm rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="px-4 py-2 bg-blue-500 text-white font-medium text-sm rounded-md shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                    >
+                      {isLoading ? "Updating..." : "Update User"}
+                    </button>
+                  </div>
+                </form>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
