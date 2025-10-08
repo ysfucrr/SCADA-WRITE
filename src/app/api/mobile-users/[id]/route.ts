@@ -8,8 +8,8 @@ import { ObjectId } from 'mongodb';
 
 // ID ile kullanıcı getir
 export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: { id: string } }
 ) {
   try {
     // Session check
@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
-    const id = params.id;
+    const { id } = context.params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ success: false, message: 'Invalid user ID' }, { status: 400 });
     }
@@ -42,8 +42,8 @@ export async function GET(
 
 // ID ile kullanıcı güncelle
 export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+   request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Session check
@@ -52,12 +52,12 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
-    const id = params.id;
+    const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ success: false, message: 'Invalid user ID' }, { status: 400 });
     }
 
-    const body = await req.json();
+    const body = await request.json();
     
     // Mevcut kullanıcıyı kontrol et
     const { db } = await connectToDatabase();
@@ -119,8 +119,8 @@ export async function PUT(
 
 // ID ile kullanıcı sil
 export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Session check
@@ -129,7 +129,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
-    const id = params.id;
+    const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ success: false, message: 'Invalid user ID' }, { status: 400 });
     }
