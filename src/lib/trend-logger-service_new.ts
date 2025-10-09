@@ -177,6 +177,11 @@ export class TrendLoggerService {
 
     public listenToPoller(poller: import('./modbus/ModbusPoller').ModbusPoller): void {
         poller.on('registerUpdated', (data: { id: string; value: number; analyzerId?: string }) => {
+            // Analyzer ID'si ile birlikte kaydet
+            const valueMapKey = `${data.id}:${data.analyzerId || 'default'}`;
+            lastKnownValues.set(valueMapKey, data.value);
+            
+            // Geriye dönük uyumluluk için sadece register ID'si ile de kaydet
             lastKnownValues.set(data.id, data.value);
 
             // Try to find logger for this specific register+analyzer combination
@@ -193,8 +198,9 @@ export class TrendLoggerService {
                 // Check if the endDate has passed
                 if (trendLogger.endDate && now > trendLogger.endDate) {
                     // Optional: Mark as 'stopped' in DB or simply remove from active loggers
-                    activeTrendLoggers.delete(data.id);
-                    backendLogger.info(`Trend logger stopped as endDate has passed for register ${data.id}.`, 'TrendLoggerService');
+                    const mapKey = `${data.id}:${data.analyzerId}`;
+                    activeTrendLoggers.delete(mapKey);
+                    backendLogger.info(`Trend logger stopped as endDate has passed for register ${data.id} (analyzer: ${data.analyzerId}).`, 'TrendLoggerService');
                     return; // Stop processing for this logger
                 }
 
@@ -202,11 +208,15 @@ export class TrendLoggerService {
                     const mapKey = `${data.id}:${data.analyzerId}`;
                     const lastStoredValue = lastStoredValuesPerLogger.get(mapKey);
                     
-                    // Yüzde eşiği aşıldı mı kontrol et (ya da ilk değer ise)
-                    if (data.value !== lastStoredValue && trendLogger.hasPercentageThresholdExceeded(data.value, lastStoredValue)) {
-                        trendLogger.storeRegisterValue(data.value);
-                    } else {
-                        // Yüzde eşiği aşılmadığında sessizce geç
+                    // Değer aynı değilse
+                    const valueChanged = data.value !== lastStoredValue;
+                    if (valueChanged) {
+                        // Yüzde eşiği aşıldı mı kontrol et (ya da ilk değer ise)
+                        const thresholdExceeded = trendLogger.hasPercentageThresholdExceeded(data.value, lastStoredValue);
+                        
+                        if (thresholdExceeded) {
+                            trendLogger.storeRegisterValue(data.value);
+                        }
                     }
                 } else {
                     const intervalMs = trendLogger.getIntervalMs();
@@ -220,11 +230,14 @@ export class TrendLoggerService {
     }
 
     public async loadAllTrendLoggers() {
-        //backendLogger.info("[TREND-LOGGER] Reloading all trend logger definitions...", "TrendLoggerService");
+        // Trend logger tanımlarını yükle
         const { db } = await connectToDatabase();
         const trendLogs = await db.collection('trendLogs').find({ status: { $ne: 'stopped' } }).toArray();
         
         const newConfigMap = new Map<string, TrendLogger>();
+        
+        // onChange modundaki logger'lar için son kaydedilen değerleri yükle
+        await this.loadLastStoredValuesForOnChangeLoggers();
 
         for (const trendLog of trendLogs) {
             const registerId = trendLog.registerId;
@@ -259,11 +272,68 @@ export class TrendLoggerService {
             activeTrendLoggers.set(key, value);
         });
 
-        //backendLogger.info(`[TREND-LOGGER] ${activeTrendLoggers.size} trend logger definitions reloaded.`, "TrendLoggerService");
+        // Logger tanımları yüklendi
     }
 
     public getLastKnownValue(registerId: string, analyzerId?: string): number | undefined {
+        // Önce analizör ID'si ile birlikte kontrol et
+        if (analyzerId) {
+            const valueWithAnalyzer = lastKnownValues.get(`${registerId}:${analyzerId}`);
+            if (valueWithAnalyzer !== undefined) {
+                return valueWithAnalyzer;
+            }
+        }
+        // Geriye dönük uyumluluk için sadece register ID ile de kontrol et
         return lastKnownValues.get(registerId);
+    }
+
+    // onChange modundaki logger'lar için son kaydedilen değerleri MongoDB'den yükle
+    private async loadLastStoredValuesForOnChangeLoggers() {
+        try {
+            const { db } = await connectToDatabase();
+            const onChangeLoggers = Array.from(activeTrendLoggers.values()).filter(
+                logger => logger.period === 'onChange'
+            );
+
+            if (onChangeLoggers.length === 0) {
+                return; // Hiç onChange logger yoksa işlem yapmaya gerek yok
+            }
+
+            // Son değerleri yükle
+
+            // Her logger için en son değeri al
+            for (const logger of onChangeLoggers) {
+                const latestEntry = await db.collection('trend_log_entries_onchange')
+                    .find({
+                        trendLogId: new ObjectId(logger._id),
+                        registerId: logger.registerId,
+                        analyzerId: logger.analyzerId
+                    })
+                    .sort({ timestamp: -1 })
+                    .limit(1)
+                    .toArray();
+
+                if (latestEntry.length > 0) {
+                    const mapKey = `${logger.registerId}:${logger.analyzerId}`;
+                    const lastValue = latestEntry[0].value;
+                    
+                    // Son değeri haritaya kaydet
+                    lastStoredValuesPerLogger.set(mapKey, lastValue);
+                    // Son değer yüklendi
+                    
+                    // Ayrıca Redis'e de kaydet (eğer mevcutsa)
+                    if (redisClient.isReady) {
+                        try {
+                            await redisClient.set(`trendlog:lastvalue:${logger.registerId}:${logger.analyzerId}`, lastValue.toString());
+                        } catch (redisError) {
+                            backendLogger.debug(`[TREND-LOGGER] Redis error setting last value reference: ${redisError}`, "TrendLogger");
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            backendLogger.error(`[TREND-LOGGER] Son değerleri yükleme hatası: ${error instanceof Error ? error.message : String(error)}`, "TrendLoggerService");
+        }
     }
 }
 
@@ -337,10 +407,11 @@ class TrendLogger {
             return currentValue !== 0;
         }
         
-        const threshold = Math.abs(lastStoredValue * (this.percentageThreshold / 100));
-        const difference = Math.abs(currentValue - lastStoredValue);
-
-        return difference >= threshold;
+        // Doğrudan yüzde değişimini hesapla
+        const percentChange = Math.abs((currentValue - lastStoredValue) / lastStoredValue * 100);
+        
+        // Yüzde değişimi, belirlenen eşik yüzdesiyle doğrudan karşılaştır
+        return percentChange >= this.percentageThreshold;
     }
 
     async storeRegisterValue(value: number | null) {
@@ -384,6 +455,18 @@ class TrendLogger {
             if (this.period === 'onChange') {
                 const mapKey = `${this.registerId}:${this.analyzerId}`;
                 lastStoredValuesPerLogger.set(mapKey, value);
+                
+                // Son değeri Redis'te sadece referans amaçlı sakla (onChange için)
+                if (redisClient.isReady) {
+                    try {
+                        // Redis'te sadece son değeri sakla, liste değil
+                        await redisClient.set(`trendlog:lastvalue:${this.registerId}:${this.analyzerId}`, value.toString());
+                    } catch (redisError) {
+                        // Redis hatası kritik değil - sessizce devam et
+                        backendLogger.debug(`[TREND-LOGGER] Redis error setting last value reference: ${redisError}`,
+                            "TrendLogger");
+                    }
+                }
             }
             
             // onChange modundaysa TTL indeksini kontrol et
@@ -398,23 +481,6 @@ class TrendLogger {
             );
             // MongoDB hatası kritik - devam etmeyelim
             return;
-        }
-
-        // Redis'e kaydet (eğer mümkünse)
-        if (redisClient.isReady) {
-            try {
-                await redisClient.lPush(`trendlog:${this._id}`, JSON.stringify(entry));
-            } catch (redisError) {
-                // Redis hatası kritik değil - sadece loglayalım ve devam edelim
-                backendLogger.info(`[TREND-LOGGER] Redis error, trend log entry saved to MongoDB only: ` +
-                    (redisError instanceof Error ? redisError.message : String(redisError)),
-                    "TrendLogger"
-                );
-            }
-        } else {
-            // Redis not ready - log at debug level to avoid spamming logs
-            backendLogger.debug(`[TREND-LOGGER] Redis not ready, trend log entry saved to MongoDB only`,
-                "TrendLogger");
         }
     }
     

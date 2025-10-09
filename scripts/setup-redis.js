@@ -20,9 +20,8 @@ port 6379
 daemonize no
 loglevel notice
 databases 16
-save 900 1
-save 300 10
-save 60 10000
+# Kalıcı depolama kapatıldı - MongoDB kullanıldığı için Redis snapshot'larına gerek yok
+save ""
 dbfilename dump.rdb
 dir ./
 appendonly no`;

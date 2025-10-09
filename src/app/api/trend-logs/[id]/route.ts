@@ -23,16 +23,9 @@ export async function GET(
     }
     const { id } = await params;
     
-    // If Redis is available and no limit is specified, try to get from cache
-    if (redisClient.isReady && !limit) {
-        const cachedLogs = await redisClient.lRange(`trendlog:${id}`, 0, -1);
-        if (cachedLogs && cachedLogs.length > 0) {
-            const trendLogData = cachedLogs.map(log => JSON.parse(log));
-            const { db } = await connectToDatabase();
-            const trendLog = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });
-            return NextResponse.json({ trendLog, trendLogData });
-        }
-    }
+    // Redis'i artık log kayıtlarını saklamak için kullanmıyoruz,
+    // sadece yüzde değişim algılaması için karşılaştırma yapıyoruz.
+    // Her zaman doğrudan MongoDB'den verileri okuyoruz.
     
     const { db } = await connectToDatabase();
     const trendLog = await db.collection('trendLogs').findOne({ _id: new ObjectId(id) });

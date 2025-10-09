@@ -9,7 +9,7 @@ import { ObjectId } from 'mongodb';
 // ID ile kullanıcı getir
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Session check
@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 });
     }
 
-    const { id } = context.params;
+    const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ success: false, message: 'Invalid user ID' }, { status: 400 });
     }

@@ -53,10 +53,10 @@ setInterval(() => {
   for (let slave = 1; slave <= NUM_DEVICES; slave++) {
     const baseAddr = (slave - 1) * DEVICE_OFFSET;
 
-    // Elektriksel değerleri rastgele oluştur ve yaz
-    writeFloatToHoldingReg(baseAddr + 0, 220 + Math.random() * 2); // V1
-    writeFloatToHoldingReg(baseAddr + 2, 220 + Math.random() * 2); // V2
-    writeFloatToHoldingReg(baseAddr + 4, 220 + Math.random() * 2); // V3
+    // Elektriksel değerleri rastgele oluştur ve yaz (220-240 aralığında)
+    writeFloatToHoldingReg(baseAddr + 0, 220 + Math.random() * 20); // V1
+    writeFloatToHoldingReg(baseAddr + 2, 220 + Math.random() * 20); // V2
+    writeFloatToHoldingReg(baseAddr + 4, 220 + Math.random() * 20); // V3
     writeFloatToHoldingReg(baseAddr + 14, kwhValues[slave]);       // Toplam kWh
     writeFloatToHoldingReg(baseAddr + 16, Math.random() * 10);     // Anlık kW
     writeFloatToHoldingReg(baseAddr + 20, 50.1 + Math.random() * 0.4); // Frekans
