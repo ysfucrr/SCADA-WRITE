@@ -1,6 +1,5 @@
 import { MongoClient } from 'mongodb';
 import { fileLogger } from './logger/FileLogger';
-import { backendLogger } from './logger/BackendLogger';
 import io from 'socket.io-client';
 import { Socket } from 'socket.io-client';
 import fetch from 'node-fetch';
@@ -8,7 +7,7 @@ import os from 'os';
 
 // Configuration
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/scada';
-const LOCAL_API_URL = 'http://localhost:3000'; // Next.js API portu
+const LOCAL_API_URL = process.env.LOCAL_API_URL || 'http://localhost:3000'; // Next.js API portu
 const RECONNECT_INTERVAL = 5000; // Yeniden bağlanma aralığı (ms)
 const DEFAULT_BRIDGE_URL = 'http://localhost:4000'; // Default fallback if no settings found
 
@@ -73,17 +72,17 @@ class CloudBridgeAgent {
 
   // Helper function to log errors with timestamps
   private logError(message: string, error: any) {
-    fileLogger.error(`[CloudBridge] ERROR: ${message}`, { 
-      error: error?.message || String(error), 
-      stack: error?.stack 
+    fileLogger.error(`[CloudBridge] ERROR: ${message}`, {
+      error: error?.message || String(error),
+      stack: error?.stack
     });
   }
 
   // Function to handle API requests from the bridge
   private async handleApiRequest(requestData: any, callback: Function) {
     const { requestId, method, path, body } = requestData;
-    
-    this.log(`Received API request: ${method} ${path} (ID: ${requestId})`);
+
+    this.log(`Handling API request: ${method} ${path} (ID: ${requestId})`);
     
     try {
       // Build the URL for the local API
@@ -102,8 +101,8 @@ class CloudBridgeAgent {
         fetchOptions.body = JSON.stringify(body);
       }
       
-      this.log(`Forwarding request to: ${url}`);
-      
+      this.log(`Forwarding request to local API: ${method} ${path}`);
+
       // Make the request to the local API
       const response = await fetch(url, fetchOptions);
       
@@ -134,7 +133,7 @@ class CloudBridgeAgent {
         };
       }
       
-      this.log(`Received response from local API (ID: ${requestId}), status: ${response.status}, content-type: ${contentType || 'unknown'}`);
+      this.log(`Local API response: ${response.status} for request ${requestId}`);
       
       // Create response object
       const apiResponse = {
@@ -327,7 +326,9 @@ class CloudBridgeAgent {
         reconnectionAttempts: Infinity,    // Sonsuz deneme kalıyor
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        timeout: 20000
+        timeout: 20000,
+        forceNew: true, // Her yeni bağlantıda yeni instance oluştur
+        transports: ['websocket', 'polling'] // Transport önceliğini belirle
       });
 
       // Local SCADA WebSocket API'sine bağlanma denemesi
@@ -422,6 +423,8 @@ class CloudBridgeAgent {
       
       // API requests
       this.socket.on('api-request', (requestData: any, callback: Function) => {
+        const { requestId, method, path } = requestData;
+        this.log(`Received API request: ${method} ${path} (ID: ${requestId})`);
         this.handleApiRequest(requestData, callback);
       });
       

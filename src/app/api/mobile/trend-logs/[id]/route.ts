@@ -103,19 +103,38 @@ export async function GET(
       updatedAt: trendLog.updatedAt ? new Date(trendLog.updatedAt).toISOString() : null
     };
     
-    const formattedEntries = entries.map(entry => ({
+    // Daha kompakt veri yapısı: [timestamp, value] dizileri kullan
+    // Bu, JSON verinin boyutunu önemli ölçüde azaltır
+    const compactEntries = entries.map(entry => [
+      new Date(entry.timestamp).getTime(), // Zaman damgası (ms cinsinden)
+      entry.value // Değer
+    ]);
+
+    // Orijinal ve kompakt format boyut karşılaştırmasını logla
+    const originalFormat = entries.map(entry => ({
       _id: entry._id.toString(),
       value: entry.value,
       timestamp: new Date(entry.timestamp).toISOString(),
       timestampMs: new Date(entry.timestamp).getTime()
     }));
+
+    const originalSize = JSON.stringify(originalFormat).length;
+    const compactSize = JSON.stringify(compactEntries).length;
+    const compressionRatio = ((1 - compactSize / originalSize) * 100).toFixed(2);
+
+    console.log(`[TREND-LOG] ID: ${id}, Entry Count: ${entries.length}`);
+    console.log(`[TREND-LOG] Original format size: ${(originalSize / 1024).toFixed(2)} KB`);
+    console.log(`[TREND-LOG] Compact format size: ${(compactSize / 1024).toFixed(2)} KB`);
+    console.log(`[TREND-LOG] Data format compression: ${compressionRatio}%`);
     
+    // Trend log meta bilgilerini ayrı bir nesnede tut
     return NextResponse.json({
       success: true,
       trendLog: formattedTrendLog,
-      entries: formattedEntries,
-      totalEntries: formattedEntries.length,
-      collectionUsed: collectionName
+      entries: compactEntries, // Kompakt dizi formatı
+      totalEntries: compactEntries.length,
+      collectionUsed: collectionName,
+      dataFormat: "compact" // Mobil uygulamanın bu formatı tanıması için
     });
     
   } catch (error) {
