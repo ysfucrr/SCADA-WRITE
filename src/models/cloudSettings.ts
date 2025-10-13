@@ -5,11 +5,14 @@
  * Represents cloud bridge connection settings
  *
  * @typedef {Object} CloudSettings
- * @property {string} serverIp - IP address or hostname of the cloud bridge server
- * @property {number} httpPort - HTTP port for web requests (default: 4000)
- * @property {number} wsPort - WebSocket port for agent connections (default: 4001)
+ * @property {string} serverIp - Domain name of the cloud bridge server (e.g., bridge.example.com)
+ * @property {number} httpPort - [DEPRECATED] HTTP port - kept for backward compatibility
+ * @property {number} httpsPort - HTTPS port (fixed at 443)
+ * @property {number} wsPort - [DEPRECATED] WebSocket port - kept for backward compatibility
  * @property {Date} createdAt - When the settings were created
  * @property {Date} updatedAt - When the settings were last updated
+ *
+ * Note: Cloud Bridge now only supports HTTPS connections on port 443
  */
 
 // Export the collection name

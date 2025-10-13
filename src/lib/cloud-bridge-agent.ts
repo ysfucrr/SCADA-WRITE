@@ -1,5 +1,4 @@
-import { MongoClient } from 'mongodb';
-import { fileLogger } from './logger/FileLogger';
+import { MongoClient, ChangeStream } from 'mongodb';
 import io from 'socket.io-client';
 import { Socket } from 'socket.io-client';
 import fetch from 'node-fetch';
@@ -9,7 +8,7 @@ import os from 'os';
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/scada';
 const LOCAL_API_URL = process.env.LOCAL_API_URL || 'http://localhost:3000'; // Next.js API portu
 const RECONNECT_INTERVAL = 5000; // Yeniden bağlanma aralığı (ms)
-const DEFAULT_BRIDGE_URL = 'http://localhost:4000'; // Default fallback if no settings found
+const DEFAULT_BRIDGE_URL = 'https://localhost:443'; // Default fallback if no settings found - HTTPS only
 
 class CloudBridgeAgent {
   private BRIDGE_URL: string = DEFAULT_BRIDGE_URL;
@@ -18,7 +17,7 @@ class CloudBridgeAgent {
   private reconnectTimer: NodeJS.Timeout | number | null = null;
   private pingInterval: NodeJS.Timeout | number | null = null; // Ping interval takibi için
   private isConnecting: boolean = false;
-  private watchedRegisters: Map<string, any> = new Map(); // key: "analyzerId-address"
+  private watchedRegisters: Set<string> = new Set(); // key: "analyzerId-address" - Set daha hızlı lookup için
   // Track the connection status
   private connectionStatus: 'disconnected' | 'connected' | 'connecting' = 'disconnected';
   // Track event listeners
@@ -27,9 +26,216 @@ class CloudBridgeAgent {
   private connectionMonitorTimer: NodeJS.Timeout | null = null;
   // Başlangıç aşamasında durumu daha doğru tespit etmek için
   private initialStatusCheck: boolean = true;
+  
+  // MongoDB connection pool ve change stream
+  private static mongoClient: MongoClient | null = null;
+  private settingsChangeStream: ChangeStream | null = null;
+  private settingsCheckInterval: NodeJS.Timeout | number | null = null;
+  
+  // Batch processing için
+  private registerUpdateQueue: Array<any> = [];
+  private batchTimer: NodeJS.Timeout | number | null = null;
+  private readonly BATCH_SIZE = 50;
+  private readonly BATCH_INTERVAL = 100; // ms
 
   constructor() {
-    fileLogger.info('Cloud Bridge Agent initialized');
+    // Log kaldırıldı - sistem çalışıyor
+  }
+  
+  // Batch processing için register güncellemelerini kuyruğa al
+  private queueRegisterUpdate(data: any): void {
+    this.registerUpdateQueue.push(data);
+    
+    // Batch timer yoksa başlat
+    if (!this.batchTimer) {
+      this.batchTimer = setTimeout(() => {
+        this.processBatch();
+      }, this.BATCH_INTERVAL) as any;
+    }
+    
+    // Kuyruk çok büyükse hemen işle
+    if (this.registerUpdateQueue.length >= this.BATCH_SIZE) {
+      if (this.batchTimer) {
+        clearTimeout(this.batchTimer);
+        this.batchTimer = null;
+      }
+      this.processBatch();
+    }
+  }
+  
+  // Batch olarak register güncellemelerini gönder
+  private processBatch(): void {
+    if (this.registerUpdateQueue.length === 0) {
+      this.batchTimer = null;
+      return;
+    }
+    
+    // Socket bağlı değilse kuyruğu temizle
+    if (!this.socket || !this.socket.connected) {
+      this.registerUpdateQueue = [];
+      this.batchTimer = null;
+      return;
+    }
+    
+    // Batch'i al ve kuyruğu temizle
+    const batch = this.registerUpdateQueue.splice(0, this.BATCH_SIZE);
+    
+    // Batch olarak gönder
+    if (batch.length === 1) {
+      // Tek item varsa normal gönder
+      this.socket!.emit('forward-register-value', batch[0]);
+    } else {
+      // Birden fazla varsa batch olarak gönder
+      batch.forEach(data => {
+        this.socket!.emit('forward-register-value', data);
+      });
+    }
+    
+    // Hala kuyrukta item varsa timer'ı yeniden başlat
+    if (this.registerUpdateQueue.length > 0) {
+      this.batchTimer = setTimeout(() => {
+        this.processBatch();
+      }, this.BATCH_INTERVAL) as any;
+    } else {
+      this.batchTimer = null;
+    }
+  }
+  
+  // MongoDB connection pool için singleton client
+  private async getMongoClient(): Promise<MongoClient> {
+    if (!CloudBridgeAgent.mongoClient) {
+      this.log('Creating new MongoDB connection pool...');
+      CloudBridgeAgent.mongoClient = new MongoClient(MONGODB_URI, {
+        maxPoolSize: 10,
+        minPoolSize: 2,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 10000
+      });
+      
+      await CloudBridgeAgent.mongoClient.connect();
+      this.log('MongoDB connection pool established');
+      
+      // Connection event handlers
+      CloudBridgeAgent.mongoClient.on('error', (error) => {
+        this.logError('MongoDB connection pool error:', error);
+      });
+      
+      CloudBridgeAgent.mongoClient.on('close', () => {
+        this.log('MongoDB connection pool closed');
+        CloudBridgeAgent.mongoClient = null;
+      });
+    }
+    
+    return CloudBridgeAgent.mongoClient;
+  }
+  
+  // Change Stream ile ayar değişikliklerini izle
+  private async watchSettingsChanges(): Promise<void> {
+    try {
+      const client = await this.getMongoClient();
+      const db = client.db();
+      const collection = db.collection('cloud_settings');
+      
+      // Mevcut change stream varsa kapat
+      if (this.settingsChangeStream) {
+        await this.settingsChangeStream.close();
+        this.settingsChangeStream = null;
+      }
+      
+      this.log('Setting up MongoDB Change Stream for cloud_settings...');
+      
+      // Change stream oluştur
+      this.settingsChangeStream = collection.watch(
+        [
+          {
+            $match: {
+              $or: [
+                { operationType: 'insert' },
+                { operationType: 'update' },
+                { operationType: 'replace' }
+              ]
+            }
+          }
+        ],
+        {
+          fullDocument: 'updateLookup',
+          maxAwaitTimeMS: 10000
+        }
+      );
+      
+      // Change event handler
+      this.settingsChangeStream.on('change', async (change: any) => {
+        this.log('Cloud settings changed, processing update...');
+        
+        // fullDocument change event'in içinde olabilir
+        const newSettings = (change as any).fullDocument;
+        if (newSettings && newSettings.serverIp) {
+          const newUrl = `https://${newSettings.serverIp}:${newSettings.httpsPort || 443}`;
+          
+          if (this.BRIDGE_URL !== newUrl) {
+            this.log(`Cloud Bridge URL changed from ${this.BRIDGE_URL} to ${newUrl}`);
+            this.BRIDGE_URL = newUrl;
+            
+            // Bağlantı varsa yeniden bağlan
+            if (this.socket && this.socket.connected) {
+              this.log('Reconnecting with new settings...');
+              this.socket.disconnect();
+              // Disconnect event handler otomatik olarak yeniden bağlanmayı tetikleyecek
+            } else if (this.connectionStatus === 'disconnected') {
+              // Bağlı değilse ve yeni ayarlar geldiyse bağlan
+              this.log('New settings received, attempting connection...');
+              await this.connectToBridge();
+            }
+          }
+        }
+      });
+      
+      this.settingsChangeStream.on('error', (error) => {
+        this.logError('Change stream error:', error);
+        // Change stream hata verirse yeniden başlat
+        setTimeout(() => {
+          this.watchSettingsChanges().catch(err => {
+            this.logError('Failed to restart change stream:', err);
+          });
+        }, 5000);
+      });
+      
+      this.settingsChangeStream.on('close', () => {
+        this.log('Change stream closed');
+        this.settingsChangeStream = null;
+      });
+      
+      this.log('MongoDB Change Stream setup complete');
+      
+    } catch (error) {
+      this.logError('Failed to setup change stream:', error);
+      // Hata durumunda fallback olarak periyodik kontrol başlat
+      this.startPeriodicSettingsCheck();
+    }
+  }
+  
+  // Fallback: Change stream çalışmazsa periyodik kontrol
+  private startPeriodicSettingsCheck(): void {
+    if (this.settingsCheckInterval) {
+      clearInterval(this.settingsCheckInterval);
+    }
+    
+    this.log('Starting periodic settings check as fallback...');
+    
+    this.settingsCheckInterval = setInterval(async () => {
+      if (!this.isConnecting) {
+        try {
+          const { hasSettings, urlChanged } = await this.loadCloudSettings();
+          
+          if (hasSettings && (urlChanged || this.connectionStatus === 'disconnected')) {
+            this.log('Settings updated (periodic check), attempting connection');
+            await this.connectToBridge();
+          }
+        } catch (error) {
+          this.logError('Periodic settings check error:', error);
+        }
+      }
+    }, 60000) as any; // 60 saniye
   }
   
   // Get current connection status
@@ -64,18 +270,15 @@ class CloudBridgeAgent {
     }
   }
 
-  // Helper function to log messages with timestamps
+  // Helper function to log messages - NOOP (no operation) for performance
   private log(message: string, ...args: any[]) {
-    const formattedArgs = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg);
-    fileLogger.info(`[CloudBridge] ${message} ${formattedArgs.join(' ')}`);
+    // Temporarily enable logs for debugging
+    console.log(`[CloudBridge] ${message}`, ...args);
   }
 
-  // Helper function to log errors with timestamps
+  // Helper function to log errors - Only critical errors
   private logError(message: string, error: any) {
-    fileLogger.error(`[CloudBridge] ERROR: ${message}`, {
-      error: error?.message || String(error),
-      stack: error?.stack
-    });
+    console.error(`[CloudBridge] ERROR: ${message}`, error?.message || error);
   }
 
   // Function to handle API requests from the bridge
@@ -83,10 +286,14 @@ class CloudBridgeAgent {
     const { requestId, method, path, body } = requestData;
 
     this.log(`Handling API request: ${method} ${path} (ID: ${requestId})`);
+    this.log(`Request data:`, requestData);
+    this.log(`Callback type: ${typeof callback}`);
     
     try {
       // Build the URL for the local API
       const url = `${LOCAL_API_URL}${path}`;
+      
+      this.log(`Full URL: ${url}`);
       
       // Prepare fetch options
       const fetchOptions: any = {
@@ -99,12 +306,15 @@ class CloudBridgeAgent {
       // Add body for methods that support it
       if (method !== 'GET' && method !== 'HEAD' && body) {
         fetchOptions.body = JSON.stringify(body);
+        this.log(`Request body: ${fetchOptions.body}`);
       }
       
-      this.log(`Forwarding request to local API: ${method} ${path}`);
+      this.log(`Making request to local API...`);
 
       // Make the request to the local API
       const response = await fetch(url, fetchOptions);
+      
+      this.log(`Response received - Status: ${response.status}, StatusText: ${response.statusText}`);
       
       // İçerik türünü kontrol et
       const contentType = response.headers.get('content-type');
@@ -133,7 +343,8 @@ class CloudBridgeAgent {
         };
       }
       
-      this.log(`Local API response: ${response.status} for request ${requestId}`);
+      console.log(`[CloudBridge] Local API response: ${response.status} for request ${requestId}`);
+      console.log(`[CloudBridge] Response data:`, JSON.stringify(responseData).substring(0, 200));
       
       // Create response object
       const apiResponse = {
@@ -143,13 +354,24 @@ class CloudBridgeAgent {
       
       // Send response back using acknowledgment callback
       if (typeof callback === 'function') {
-        callback(apiResponse);
-      } else if (this.socket) {
-        // Fallback if callback is not a function
-        this.socket.emit('api-response', {
-          requestId,
-          ...apiResponse
-        });
+        console.log(`[CloudBridge] Sending response via callback for request ${requestId}`);
+        try {
+          callback(apiResponse);
+          console.log(`[CloudBridge] Callback executed successfully for request ${requestId}`);
+        } catch (callbackError) {
+          console.error(`[CloudBridge] Error executing callback for request ${requestId}:`, callbackError);
+        }
+      } else {
+        console.log(`[CloudBridge] No callback function available for request ${requestId}, using emit fallback`);
+        if (this.socket) {
+          this.socket.emit('api-response', {
+            requestId,
+            ...apiResponse
+          });
+          console.log(`[CloudBridge] Response emitted via socket for request ${requestId}`);
+        } else {
+          console.error(`[CloudBridge] No socket available to send response for request ${requestId}`);
+        }
       }
       
     } catch (error: any) {
@@ -165,33 +387,42 @@ class CloudBridgeAgent {
       };
       
       if (typeof callback === 'function') {
-        callback(errorResponse);
-      } else if (this.socket) {
-        this.socket.emit('api-response', {
-          requestId,
-          ...errorResponse
-        });
+        console.log(`[CloudBridge] Sending error response via callback for request ${requestId}`);
+        try {
+          callback(errorResponse);
+          console.log(`[CloudBridge] Error callback executed successfully for request ${requestId}`);
+        } catch (callbackError) {
+          console.error(`[CloudBridge] Error executing error callback for request ${requestId}:`, callbackError);
+        }
+      } else {
+        console.log(`[CloudBridge] No callback function for error response ${requestId}, using emit fallback`);
+        if (this.socket) {
+          this.socket.emit('api-response', {
+            requestId,
+            ...errorResponse
+          });
+          console.log(`[CloudBridge] Error response emitted via socket for request ${requestId}`);
+        } else {
+          console.error(`[CloudBridge] No socket available to send error response for request ${requestId}`);
+        }
       }
     }
   }
 
-  // Function to load cloud settings from MongoDB
+  // Function to load cloud settings from MongoDB (artık pooled connection kullanıyor)
   private async loadCloudSettings(): Promise<{ hasSettings: boolean, urlChanged: boolean }> {
-    let client: MongoClient | null = null;
     let hasSettings = false;
     let urlChanged = false;
     
     try {
-      client = new MongoClient(MONGODB_URI);
-      await client.connect();
-      
+      const client = await this.getMongoClient();
       const db = client.db();
       const settings = await db.collection('cloud_settings').findOne({});
       
       if (settings && settings.serverIp) {
         hasSettings = true;
-        // Use HTTP port for Socket.IO connection
-        const newUrl = `http://${settings.serverIp}:${settings.httpPort}`;
+        // Always use HTTPS for Socket.IO connection
+        const newUrl = `https://${settings.serverIp}:${settings.httpsPort || 443}`;
         
         if (this.BRIDGE_URL !== newUrl) {
           this.log(`Updating Cloud Bridge URL to ${newUrl}`);
@@ -212,39 +443,53 @@ class CloudBridgeAgent {
       this.logError('Error loading cloud settings from database:', error);
       hasSettings = false;
       urlChanged = false;
-    } finally {
-      if (client) {
-        await client.close();
-      }
     }
+    // Artık client'ı kapatmıyoruz, pool'da kalıyor
     
     return { hasSettings, urlChanged };
   }
 
   // Schedule reconnection - çift bağlantı sorununu engellemek için geliştirildi
   private scheduleReconnect(): void {
-    if (!this.reconnectTimer) {
-      // Bağlanmayı deniyorsak veya zaten bağlıysak, reconnect ihtiyacı yok
-      if (this.isConnecting || (this.socket && this.socket.connected)) {
-        this.log('Reconnect not needed - already connected or connecting');
-        return;
-      }
-      
-      this.log(`Scheduling reconnect in ${RECONNECT_INTERVAL/1000} seconds...`);
-      this.reconnectTimer = setTimeout(() => {
-        this.reconnectTimer = null;
-        
-        // Timer tetiklendiğinde tekrar kontrol et - belki bu arada bağlanmıştır
-        if (!this.socket?.connected && !this.isConnecting) {
-          this.log('Executing scheduled reconnect');
-          this.connectToBridge();
-        } else {
-          this.log('Skipping scheduled reconnect - connection already established');
-        }
-      }, RECONNECT_INTERVAL);
-    } else {
-      this.log('Reconnect already scheduled, skipping duplicate');
+    // Önce mevcut timer'ı temizle
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
+    
+    // Bağlanmayı deniyorsak veya zaten bağlıysak, reconnect ihtiyacı yok
+    if (this.isConnecting || (this.socket && this.socket.connected)) {
+      this.log('Reconnect not needed - already connected or connecting');
+      return;
+    }
+    
+    this.log(`Scheduling reconnect in ${RECONNECT_INTERVAL/1000} seconds...`);
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      
+      // Timer tetiklendiğinde tekrar kontrol et - belki bu arada bağlanmıştır
+      if (!this.socket?.connected && !this.isConnecting) {
+        this.log('Executing scheduled reconnect');
+        
+        // Önce sunucunun erişilebilir olup olmadığını kontrol et
+        try {
+          const testResult = await this.testConnection();
+          if (testResult.success) {
+            this.log('Server is reachable, attempting reconnect');
+            await this.connectToBridge();
+          } else {
+            this.log(`Server not reachable: ${testResult.message}, will retry later`);
+            // Sunucu erişilemezse tekrar dene
+            this.scheduleReconnect();
+          }
+        } catch (error) {
+          this.logError('Error testing connection:', error);
+          this.scheduleReconnect();
+        }
+      } else {
+        this.log('Skipping scheduled reconnect - connection already established');
+      }
+    }, RECONNECT_INTERVAL) as any;
   }
   
   // Update connection status and emit change - with stability checks
@@ -296,7 +541,17 @@ class CloudBridgeAgent {
     }
     
     // Prevent multiple connection attempts
-    if (this.isConnecting) return;
+    if (this.isConnecting) {
+      this.log('Already connecting, skipping duplicate connection attempt');
+      return;
+    }
+    
+    // Eğer zaten bağlıysak, yeni bağlantı oluşturma
+    if (this.socket && this.socket.connected) {
+      this.log('Already connected, skipping connection attempt');
+      return;
+    }
+    
     this.isConnecting = true;
     
     // Update status to connecting
@@ -313,22 +568,27 @@ class CloudBridgeAgent {
     try {
       // Eğer mevcut bir socket varsa önce onu temizle
       if (this.socket) {
+        this.log('Cleaning up existing socket before new connection');
         this.socket.removeAllListeners();
         if (this.socket.connected) {
           this.socket.disconnect();
         }
         this.socket = null;
+        
+        // Socket'in tamamen kapanması için kısa bir süre bekle
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
-      // Connect to the Socket.IO server - sonsuz deneme sayısı korundu
+      // Connect to the Socket.IO server - reconnection KAPALI
       this.socket = io(this.BRIDGE_URL, {
-        reconnection: true,
-        reconnectionAttempts: Infinity,    // Sonsuz deneme kalıyor
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
+        reconnection: false,  // Socket.IO'nun kendi reconnect'ini KAPAT
         timeout: 20000,
         forceNew: true, // Her yeni bağlantıda yeni instance oluştur
-        transports: ['websocket', 'polling'] // Transport önceliğini belirle
+        transports: ['websocket', 'polling'], // Transport önceliğini belirle
+        path: '/socket.io/', // Explicit path belirt
+        query: {
+          type: 'agent' // Agent olduğumuzu belirt, sunucu mobile client'tan ayırt edebilsin
+        }
       });
 
       // Local SCADA WebSocket API'sine bağlanma denemesi
@@ -349,19 +609,13 @@ class CloudBridgeAgent {
           transports: ['websocket', 'polling']
         });
 
-        // Register değeri güncellemelerini dinle ve cloud-bridge'e ilet
+        // Register değeri güncellemelerini dinle ve batch için kuyruğa al
         this.localSocket.on('register-value', (data) => {
           const registerKey = `${data.analyzerId}-${data.address}`;
           
-          // Bu register izleniyorsa bridge'e ilet
+          // Bu register izleniyorsa kuyruğa ekle - Set.has() O(1) performans
           if (this.watchedRegisters.has(registerKey)) {
-            this.log(`Received register value update from SCADA: ${registerKey}`);
-            
-            // Socket bağlı ise, register güncellemesini cloud-bridge'e ilet
-            if (this.socket && this.socket.connected) {
-              this.socket.emit('forward-register-value', data);
-              this.log(`Forwarded register value to cloud bridge: ${registerKey}`);
-            }
+            this.queueRegisterUpdate(data);
           }
         });
 
@@ -421,42 +675,80 @@ class CloudBridgeAgent {
         this.log(`System message from bridge: ${data.message}`);
       });
       
-      // API requests
-      this.socket.on('api-request', (requestData: any, callback: Function) => {
+      // API requests - callback her zaman olmalı
+      this.socket.on('api-request', async (requestData: any, callback?: Function) => {
         const { requestId, method, path } = requestData;
         this.log(`Received API request: ${method} ${path} (ID: ${requestId})`);
-        this.handleApiRequest(requestData, callback);
+        
+        // Callback'i kontrol et ve log'la
+        console.log('[CloudBridgeAgent] API request callback check:', {
+          requestId,
+          hasCallback: typeof callback === 'function',
+          callbackType: typeof callback
+        });
+        
+        // Callback yoksa bile devam et ama uyar
+        if (typeof callback !== 'function') {
+          console.warn(`[CloudBridgeAgent] No callback function provided for API request ${requestId}`);
+          // Fallback olarak boş bir fonksiyon kullan
+          callback = (response: any) => {
+            console.log(`[CloudBridgeAgent] Fallback callback called for ${requestId}:`, response);
+            // Socket üzerinden gönder
+            if (this.socket && this.socket.connected) {
+              this.socket.emit('api-response', {
+                requestId,
+                ...response
+              });
+            }
+          };
+        }
+        
+        // API isteğini işle
+        try {
+          await this.handleApiRequest(requestData, callback);
+        } catch (error: any) {
+          console.error(`[CloudBridgeAgent] Error in api-request handler for ${requestId}:`, error);
+          // Hata durumunda da callback'i çağır
+          if (typeof callback === 'function') {
+            callback({
+              status: 500,
+              data: { error: 'Internal server error', message: error?.message || 'Unknown error' }
+            });
+          }
+        }
       });
       
       // Mobil uygulamadan gelen register izleme istekleri
       this.socket.on('watch-register-mobile', (registerData) => {
         const registerKey = `${registerData.analyzerId}-${registerData.address}`;
-        this.log(`Received watch-register request from mobile via bridge: ${registerKey}`);
         
-        // Bu register'ı izlenenler listesine ekle
-        this.watchedRegisters.set(registerKey, registerData);
+        // Bu register'ı izlenenler listesine ekle - Set.add() O(1) performans
+        this.watchedRegisters.add(registerKey);
         
         // Yerel SCADA WebSocket bağlantısı varsa izleme isteğini ilet
         if (this.localSocket && this.localSocket.connected) {
-          this.log(`Forwarding watch-register to local SCADA: ${registerKey}`);
           this.localSocket.emit('watch-register', registerData);
-        } else {
-          this.log(`Cannot forward watch-register - local WebSocket not connected`);
         }
       });
       
       // Mobil uygulamadan gelen register izlemeyi durdurma istekleri
       this.socket.on('unwatch-register-mobile', (registerData) => {
         const registerKey = `${registerData.analyzerId}-${registerData.address}`;
-        this.log(`Received unwatch-register request from mobile via bridge: ${registerKey}`);
         
-        // Bu register'ı izlenenler listesinden çıkar
+        // Bu register'ı izlenenler listesinden çıkar - Set.delete() O(1) performans
         this.watchedRegisters.delete(registerKey);
         
         // Yerel SCADA WebSocket bağlantısı varsa izlemeyi durdurma isteğini ilet
         if (this.localSocket && this.localSocket.connected) {
-          this.log(`Forwarding unwatch-register to local SCADA: ${registerKey}`);
           this.localSocket.emit('unwatch-register', registerData);
+        }
+      });
+      
+      // Ping requests from server
+      this.socket.on('ping', (callback) => {
+        // Respond to ping immediately
+        if (typeof callback === 'function') {
+          callback();
         }
       });
       
@@ -472,8 +764,13 @@ class CloudBridgeAgent {
         // Update status to disconnected
         this.updateConnectionStatus('disconnected');
         
-        // Socket.IO automatically tries to reconnect,
-        // but we'll set up our own fallback just in case
+        // Ping interval'ı temizle
+        if (this.pingInterval) {
+          clearInterval(this.pingInterval);
+          this.pingInterval = null;
+        }
+        
+        // Sadece kendi reconnect mekanizmamızı kullan
         this.scheduleReconnect();
       });
       
@@ -488,6 +785,9 @@ class CloudBridgeAgent {
         // but we'll set up our own fallback just in case
         this.scheduleReconnect();
       });
+      
+      // Socket.IO reconnection kapalı olduğu için bu event'ler artık gelmeyecek
+      // Bunları kaldırıyoruz
       
     } catch (error) {
       this.logError('Failed to connect to Cloud Bridge:', error);
@@ -584,20 +884,24 @@ class CloudBridgeAgent {
       this.updateConnectionStatus('disconnected');
     }
     
-    // Periodically check for updated settings
-    setInterval(async () => {
-      // Only reload settings if we're not in the middle of connecting
-      if (!this.isConnecting) {
-        this.log('Checking for updated cloud settings...');
-        const { hasSettings: nowHasSettings, urlChanged } = await this.loadCloudSettings();
-        
-        // Eğer yeni ayarlar eklendiyse veya değiştiyse ve şu an bağlı değilsek, bağlanmayı dene
-        if (nowHasSettings && (urlChanged || this.connectionStatus === 'disconnected')) {
-          this.log('Settings updated, attempting connection');
-          await this.connectToBridge();
+    // Change Stream'i başlat
+    await this.watchSettingsChanges();
+    
+    // Periyodik bağlantı kontrolü başlat (her 30 saniyede bir)
+    setInterval(() => {
+      if (this.connectionStatus === 'connected' && this.socket) {
+        // Bağlı görünüyoruz ama gerçekten bağlı mıyız kontrol et
+        if (!this.socket.connected) {
+          this.log('Socket appears disconnected but status is connected, updating status');
+          this.updateConnectionStatus('disconnected');
+          this.scheduleReconnect();
         }
+      } else if (this.connectionStatus === 'disconnected' && !this.isConnecting) {
+        // Bağlı değiliz ve bağlanmaya çalışmıyoruz
+        this.log('Periodic check: Not connected, attempting reconnect');
+        this.scheduleReconnect();
       }
-    }, 60000); // Check every minute
+    }, 30000);
 
     this.log('Agent service running.');
   }
@@ -639,6 +943,35 @@ class CloudBridgeAgent {
     if (this.stableConnectionCheckTimer) {
       clearInterval(this.stableConnectionCheckTimer as NodeJS.Timeout);
       this.stableConnectionCheckTimer = null;
+    }
+    
+    if (this.settingsCheckInterval) {
+      clearInterval(this.settingsCheckInterval);
+      this.settingsCheckInterval = null;
+    }
+    
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
+    }
+    
+    // Kuyruğu temizle
+    this.registerUpdateQueue = [];
+    
+    // Change stream'i kapat
+    if (this.settingsChangeStream) {
+      this.settingsChangeStream.close().catch(err => {
+        this.logError('Error closing change stream:', err);
+      });
+      this.settingsChangeStream = null;
+    }
+    
+    // MongoDB connection pool'u kapat
+    if (CloudBridgeAgent.mongoClient) {
+      CloudBridgeAgent.mongoClient.close().catch(err => {
+        this.logError('Error closing MongoDB connection:', err);
+      });
+      CloudBridgeAgent.mongoClient = null;
     }
     
     if (this.socket) {

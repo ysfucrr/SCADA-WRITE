@@ -16,13 +16,12 @@ export async function GET() {
     const { db } = await connectToDatabase();
     const settings = await db.collection(cloudSettings).findOne({});
     
-    return NextResponse.json({ 
-      success: true, 
-      settings: settings || { 
-        serverIp: '', 
-        httpPort: 4000, 
-        wsPort: 4001 
-      } 
+    return NextResponse.json({
+      success: true,
+      settings: settings || {
+        serverIp: '',
+        httpsPort: 443
+      }
     });
   } catch (error) {
     console.error('Error fetching cloud settings:', error);
@@ -39,19 +38,17 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { serverIp, httpPort, wsPort } = body;
+    const { serverIp } = body;
     
     // Validate required fields
     if (!serverIp) {
-      return NextResponse.json({ success: false, message: 'Server IP is required' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'Domain address is required' }, { status: 400 });
     }
     
-    if (!httpPort || typeof httpPort !== 'number') {
-      return NextResponse.json({ success: false, message: 'Valid HTTP Port is required' }, { status: 400 });
-    }
-    
-    if (!wsPort || typeof wsPort !== 'number') {
-      return NextResponse.json({ success: false, message: 'Valid WebSocket Port is required' }, { status: 400 });
+    // Domain validation
+    const domainRegex = /^([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.)+[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(serverIp)) {
+      return NextResponse.json({ success: false, message: 'Please enter a valid domain address' }, { status: 400 });
     }
     
     const { db } = await connectToDatabase();
@@ -63,21 +60,19 @@ export async function POST(req: NextRequest) {
       // Update existing settings
       await db.collection(cloudSettings).updateOne(
         { _id: existingSettings._id },
-        { 
-          $set: { 
-            serverIp, 
-            httpPort, 
-            wsPort,
+        {
+          $set: {
+            serverIp,
+            httpsPort: 443, // Sabit HTTPS portu
             updatedAt: new Date()
-          } 
+          }
         }
       );
     } else {
       // Create new settings
       await db.collection(cloudSettings).insertOne({
         serverIp,
-        httpPort,
-        wsPort,
+        httpsPort: 443, // Sabit HTTPS portu
         createdAt: new Date(),
         updatedAt: new Date()
       });

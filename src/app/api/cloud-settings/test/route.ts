@@ -12,17 +12,17 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { serverIp, httpPort, wsPort } = body;
+    const { serverIp } = body;
     
-    if (!serverIp || !httpPort || !wsPort) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'Server IP, HTTP Port and WebSocket Port are required' 
+    if (!serverIp) {
+      return NextResponse.json({
+        success: false,
+        message: 'Domain address is required'
       }, { status: 400 });
     }
 
-    // Construct the server URL
-    const serverUrl = `http://${serverIp}:${httpPort}`;
+    // Construct the server URL with HTTPS and port 443
+    const serverUrl = `https://${serverIp}:443`;
 
     // Use Cloud Bridge Agent to test the connection
     const testResult = await cloudBridgeAgent.testConnection(serverUrl);

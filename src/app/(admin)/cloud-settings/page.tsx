@@ -10,6 +10,7 @@ import MobileUserCard from "@/components/mobile-users/MobileUserCard";
 interface CloudSettings {
   serverIp: string;
   httpPort: number;
+  httpsPort: number;
   wsPort: number;
 }
 
@@ -36,8 +37,9 @@ const CloudSettingsPage = () => {
   const [lastStatusChangeTime, setLastStatusChangeTime] = useState<number>(0);
   const [settings, setSettings] = useState<CloudSettings>({
     serverIp: "",
-    httpPort: 4000,
-    wsPort: 4000, // Not: Cloud Bridge Server genellikle Socket.IO için de aynı portu kullanır
+    httpPort: 4000, // Eski uyumluluk için tutuldu
+    httpsPort: 443, // Sabit HTTPS portu
+    wsPort: 4000, // Eski uyumluluk için tutuldu
   });
   
   // Mobile Users states
@@ -251,20 +253,10 @@ const CloudSettingsPage = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    
-    // Convert port values to numbers
-    if (name === "httpPort" || name === "wsPort") {
-      const numValue = parseInt(value);
-      setSettings({
-        ...settings,
-        [name]: isNaN(numValue) ? 0 : numValue,
-      });
-    } else {
-      setSettings({
-        ...settings,
-        [name]: value,
-      });
-    }
+    setSettings({
+      ...settings,
+      [name]: value,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -274,30 +266,27 @@ const CloudSettingsPage = () => {
     if (!settings.serverIp) {
       showErrorAlert(
         "Validation Error",
-        "Server IP is required"
+        "Domain address is required"
       );
       return;
     }
 
-    if (!settings.httpPort || settings.httpPort < 1 || settings.httpPort > 65535) {
+    // Domain validation - basit kontrol
+    const domainRegex = /^([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.)+[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(settings.serverIp)) {
       showErrorAlert(
         "Validation Error",
-        "HTTP Port must be between 1 and 65535"
-      );
-      return;
-    }
-
-    if (!settings.wsPort || settings.wsPort < 1 || settings.wsPort > 65535) {
-      showErrorAlert(
-        "Validation Error",
-        "WebSocket Port must be between 1 and 65535"
+        "Please enter a valid domain address (e.g., example.com)"
       );
       return;
     }
 
     try {
       setIsLoading(true);
-      const response = await axios.post("/api/cloud-settings", settings);
+      // Sadece domain adresini gönder
+      const response = await axios.post("/api/cloud-settings", {
+        serverIp: settings.serverIp
+      });
       
       if (response.data.success) {
         showSuccessAlert(
@@ -326,7 +315,9 @@ const CloudSettingsPage = () => {
       setIsTesting(true);
       setConnectionStatus('none'); // Testi başlatırken durumu sıfırla
       
-      const response = await axios.post("/api/cloud-settings/test", settings);
+      const response = await axios.post("/api/cloud-settings/test", {
+        serverIp: settings.serverIp
+      });
       
       if (response.data.httpSuccess) {
         showSuccessAlert(
@@ -358,9 +349,8 @@ const CloudSettingsPage = () => {
 
   const testWsConnection = () => {
     try {
-      // ÖNEMLİ: Cloud Bridge Server, Socket.IO servisini HTTP portu üzerinde çalıştırıyor
-      // Bu yüzden WebSocket port değil, HTTP port kullanılmalı
-      const socketUrl = `http://${settings.serverIp}:${settings.httpPort}`;
+      // Cloud Bridge artık sadece HTTPS üzerinden çalışıyor
+      const socketUrl = `https://${settings.serverIp}:443`;
       console.log(`Testing Socket.IO connection to: ${socketUrl}`);
       
       // Socket.IO bağlantısı oluştur (WebSocket yerine Socket.IO kullanıyoruz)
@@ -386,7 +376,7 @@ const CloudSettingsPage = () => {
           socket.close();
           showErrorAlert(
             "Error",
-            "Socket.IO connection failed: timeout. Check your settings and ensure the cloud bridge server is running. HTTP port and Socket.IO port should typically be the same (4000)."
+            "Socket.IO connection failed: timeout. Check your settings and ensure the cloud bridge server is running on HTTPS port 443."
           );
           setConnectionStatus('error'); // Zaman aşımında bağlantı başarısız
         }
@@ -427,7 +417,7 @@ const CloudSettingsPage = () => {
         console.error("Socket.IO connection error:", error);
         showErrorAlert(
           "Error",
-          `Socket.IO connection failed: ${error.message}. Check your settings and ensure the cloud bridge is running on port ${settings.httpPort}.`
+          `Socket.IO connection failed: ${error.message}. Check your settings and ensure the cloud bridge is running on HTTPS port 443.`
         );
         setConnectionStatus('error'); // Bağlantı hatası
         socket.close();
@@ -477,6 +467,7 @@ const CloudSettingsPage = () => {
         setSettings({
           serverIp: "",
           httpPort: 4000,
+          httpsPort: 443,
           wsPort: 4000
         });
         
@@ -734,7 +725,7 @@ const CloudSettingsPage = () => {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
-              Cloud Server URL *
+              Cloud Server Domain *
             </label>
             <div className="relative max-w-xl">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -749,69 +740,36 @@ const CloudSettingsPage = () => {
                 value={settings.serverIp}
                 onChange={handleInputChange}
                 className="pl-10 block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2.5 text-gray-900 dark:text-white"
-                placeholder="192.168.1.100"
+                placeholder="example.com"
                 disabled={isLoading}
               />
             </div>
-            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Enter the full URL of your cloud bridge server (e.g., http://123.456.789.0:8080)</p>
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Enter your cloud bridge server domain (e.g., bridge.example.com)</p>
           </div>
 
-          {/* HTTP Port Field */}
+          {/* HTTPS Port Field - Sadece gösterim için, değiştirilemez */}
           <div className="mb-6">
             <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
-              HTTP Port
+              HTTPS Port (Fixed)
             </label>
             <div className="relative max-w-xs">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
               </div>
               <input
                 type="number"
-                id="httpPort"
-                name="httpPort"
-                value={settings.httpPort}
-                onChange={handleInputChange}
-                className="pl-10 block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2.5 text-gray-900 dark:text-white"
-                min="1"
-                max="65535"
-                placeholder="4000"
-                disabled={isLoading}
+                value={443}
+                className="pl-10 block w-full border border-gray-300 rounded-lg shadow-sm bg-gray-100 dark:bg-gray-600 py-2.5 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                disabled
+                readOnly
               />
             </div>
-          </div>
-
-          {/* Socket.IO Port Field */}
-          <div className="mb-6">
-            <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              Socket.IO Port <span className="text-xs text-gray-500"></span>
-            </label>
-            <div className="relative max-w-xs">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              </div>
-              <input
-                type="number"
-                id="wsPort"
-                name="wsPort"
-                value={settings.wsPort}
-                onChange={handleInputChange}
-                className="pl-10 block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2.5 text-gray-900 dark:text-white"
-                min="1"
-                max="65535"
-                placeholder="4001"
-                disabled={isLoading}
-              />
-            </div>
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Cloud Bridge uses standard HTTPS port 443 for secure connections</p>
           </div>
 
           {/* Action Buttons */}
@@ -866,14 +824,14 @@ const CloudSettingsPage = () => {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
-              <span className="font-medium mr-1">Server:</span> {settings.serverIp || "Not configured"}
+              <span className="font-medium mr-1">Domain:</span> {settings.serverIp || "Not configured"}
             </div>
             
             <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span className="font-medium mr-1">Connection Status:</span> {connectionStatus === 'connected' ? 'Online' : connectionStatus === 'error' ? 'Offline' : 'Not Tested'}
+              <span className="font-medium mr-1">Status:</span> {connectionStatus === 'connected' ? 'Online' : connectionStatus === 'error' ? 'Offline' : 'Not Tested'}
             </div>
           </div>
         </div>

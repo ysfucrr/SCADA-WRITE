@@ -104,8 +104,8 @@
     "tree-kill": "^1.2.2",
     "uuid": "^11.1.0",
     "wait-on": "^8.0.4",
-    "xlsx": "^0.18.5",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "xlsx": "^0.18.5"
   },
   "main": "electron-dist/main.js",
   "build": {
@@ -243,5 +243,9 @@
       "react": "^16.8.0 || ^17 || ^18 || ^19",
       "react-dom": "^16.8.0 || ^17 || ^18 || ^19"
     }
+  },
+  "optionalDependencies": {
+    "bufferutil": "^4.0.9",
+    "utf-8-validate": "^6.0.5"
   }
 }
