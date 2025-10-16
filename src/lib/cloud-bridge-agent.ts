@@ -26,6 +26,8 @@ class CloudBridgeAgent {
   private connectionMonitorTimer: NodeJS.Timeout | null = null;
   // Başlangıç aşamasında durumu daha doğru tespit etmek için
   private initialStatusCheck: boolean = true;
+  // Agent name for identification with cloud bridge server
+  private agentName: string = '';
   
   // MongoDB connection pool ve change stream
   private static mongoClient: MongoClient | null = null;
@@ -413,6 +415,7 @@ class CloudBridgeAgent {
   private async loadCloudSettings(): Promise<{ hasSettings: boolean, urlChanged: boolean }> {
     let hasSettings = false;
     let urlChanged = false;
+    let agentNameChanged = false;
     
     try {
       const client = await this.getMongoClient();
@@ -424,6 +427,7 @@ class CloudBridgeAgent {
         // Always use HTTPS for Socket.IO connection
         const newUrl = `https://${settings.serverIp}:${settings.httpsPort || 443}`;
         
+        // Check for URL change
         if (this.BRIDGE_URL !== newUrl) {
           this.log(`Updating Cloud Bridge URL to ${newUrl}`);
           this.BRIDGE_URL = newUrl;
@@ -432,6 +436,19 @@ class CloudBridgeAgent {
           // If we already have a connection and the URL changed, reconnect
           if (this.socket && this.socket.connected) {
             this.log('URL changed, reconnecting...');
+            this.socket.disconnect();
+          }
+        }
+        
+        // Check for agent name change
+        if (settings.agentName && this.agentName !== settings.agentName) {
+          this.log(`Updating Agent Name from "${this.agentName}" to "${settings.agentName}"`);
+          this.agentName = settings.agentName;
+          agentNameChanged = true;
+          
+          // If agent name changed and we're connected, should reconnect to update identity
+          if (agentNameChanged && this.socket && this.socket.connected) {
+            this.log('Agent name changed, reconnecting to update identity...');
             this.socket.disconnect();
           }
         }
@@ -649,11 +666,12 @@ class CloudBridgeAgent {
         // Update status to connected
         this.updateConnectionStatus('connected');
         
-        // Send identification data
+        // Send identification data with agent name
         this.socket?.emit('identify', {
           version: '1.0.0',
           hostname: os.hostname(),
-          platform: process.platform
+          platform: process.platform,
+          agentName: this.agentName || `SCADA-${os.hostname()}` // Use agent name if available, or fallback to hostname
         });
         
         // Temiz bir kod için önce eski ping interval'ı temizle

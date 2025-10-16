@@ -20,7 +20,8 @@ export async function GET() {
       success: true,
       settings: settings || {
         serverIp: '',
-        httpsPort: 443
+        httpsPort: 443,
+        agentName: ''
       }
     });
   } catch (error) {
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { serverIp } = body;
+    const { serverIp, agentName } = body;
     
     // Validate required fields
     if (!serverIp) {
@@ -49,6 +50,11 @@ export async function POST(req: NextRequest) {
     const domainRegex = /^([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.)+[a-zA-Z]{2,}$/;
     if (!domainRegex.test(serverIp)) {
       return NextResponse.json({ success: false, message: 'Please enter a valid domain address' }, { status: 400 });
+    }
+    
+    // Agent name validation
+    if (!agentName || agentName.trim() === '') {
+      return NextResponse.json({ success: false, message: 'Agent name is required' }, { status: 400 });
     }
     
     const { db } = await connectToDatabase();
@@ -64,6 +70,7 @@ export async function POST(req: NextRequest) {
           $set: {
             serverIp,
             httpsPort: 443, // Sabit HTTPS portu
+            agentName, // Agent name'i ekle
             updatedAt: new Date()
           }
         }
@@ -73,6 +80,7 @@ export async function POST(req: NextRequest) {
       await db.collection(cloudSettings).insertOne({
         serverIp,
         httpsPort: 443, // Sabit HTTPS portu
+        agentName, // Agent name'i ekle
         createdAt: new Date(),
         updatedAt: new Date()
       });

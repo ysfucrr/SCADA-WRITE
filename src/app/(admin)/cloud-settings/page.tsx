@@ -12,6 +12,7 @@ interface CloudSettings {
   httpPort: number;
   httpsPort: number;
   wsPort: number;
+  agentName?: string;
 }
 
 interface MobileUser {
@@ -40,6 +41,7 @@ const CloudSettingsPage = () => {
     httpPort: 4000, // Eski uyumluluk için tutuldu
     httpsPort: 443, // Sabit HTTPS portu
     wsPort: 4000, // Eski uyumluluk için tutuldu
+    agentName: "", // SCADA agent name for identification
   });
   
   // Mobile Users states
@@ -280,12 +282,22 @@ const CloudSettingsPage = () => {
       );
       return;
     }
+    
+    // Agent name validation
+    if (!settings.agentName || settings.agentName.trim() === '') {
+      showErrorAlert(
+        "Validation Error",
+        "Agent name is required"
+      );
+      return;
+    }
 
     try {
       setIsLoading(true);
-      // Sadece domain adresini gönder
+      // Domain adresi ve agent adını gönder
       const response = await axios.post("/api/cloud-settings", {
-        serverIp: settings.serverIp
+        serverIp: settings.serverIp,
+        agentName: settings.agentName
       });
       
       if (response.data.success) {
@@ -745,6 +757,34 @@ const CloudSettingsPage = () => {
               />
             </div>
             <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Enter your cloud bridge server domain (e.g., bridge.example.com)</p>
+          </div>
+
+          {/* Agent Name Field */}
+          <div className="mb-6">
+            <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              Agent Name *
+            </label>
+            <div className="relative max-w-xl">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+              </div>
+              <input
+                type="text"
+                id="agentName"
+                name="agentName"
+                value={settings.agentName}
+                onChange={handleInputChange}
+                className="pl-10 block w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 py-2.5 text-gray-900 dark:text-white"
+                placeholder="My SCADA System"
+                disabled={isLoading}
+              />
+            </div>
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Enter a unique name for this SCADA system for identification</p>
           </div>
 
           {/* HTTPS Port Field - Sadece gösterim için, değiştirilemez */}
