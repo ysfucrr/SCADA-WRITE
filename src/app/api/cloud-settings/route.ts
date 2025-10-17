@@ -4,6 +4,7 @@ import cloudSettings from '@/models/cloudSettings';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { cloudBridgeAgent } from '@/lib/cloud-bridge-agent';
+import { machineIdSync } from 'node-machine-id';
 
 export async function GET() {
   try {
@@ -59,11 +60,25 @@ export async function POST(req: NextRequest) {
     
     const { db } = await connectToDatabase();
     
+    // Generate unique machine ID for this installation (last 8 characters)
+    let machineId;
+    try {
+      const fullMachineId = machineIdSync();
+      // Take the last 8 characters of the machine ID to keep it shorter but still unique
+      machineId = fullMachineId.substring(Math.max(0, fullMachineId.length - 8));
+      console.log(`Using machine ID (last 8 chars): ${machineId}`);
+    } catch (error) {
+      console.error("Error getting machine ID:", error);
+      // Fallback to a timestamp-based ID if machine ID can't be retrieved
+      machineId = Date.now().toString(36).substring(0, 8);
+      console.log(`Using fallback timestamp-based ID: ${machineId}`);
+    }
+    
     // Check if settings already exist
     const existingSettings = await db.collection(cloudSettings).findOne({});
     
     if (existingSettings) {
-      // Update existing settings
+      // Update existing settings but preserve machine ID if it already exists
       await db.collection(cloudSettings).updateOne(
         { _id: existingSettings._id },
         {
@@ -71,16 +86,18 @@ export async function POST(req: NextRequest) {
             serverIp,
             httpsPort: 443, // Sabit HTTPS portu
             agentName, // Agent name'i ekle
+            machineId: existingSettings.machineId || machineId, // Use existing machine ID or new one
             updatedAt: new Date()
           }
         }
       );
     } else {
-      // Create new settings
+      // Create new settings with machine ID
       await db.collection(cloudSettings).insertOne({
         serverIp,
         httpsPort: 443, // Sabit HTTPS portu
         agentName, // Agent name'i ekle
+        machineId, // Add machine ID
         createdAt: new Date(),
         updatedAt: new Date()
       });

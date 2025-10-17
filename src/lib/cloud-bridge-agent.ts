@@ -26,8 +26,9 @@ class CloudBridgeAgent {
   private connectionMonitorTimer: NodeJS.Timeout | null = null;
   // Başlangıç aşamasında durumu daha doğru tespit etmek için
   private initialStatusCheck: boolean = true;
-  // Agent name for identification with cloud bridge server
+  // Agent name and machine ID for identification with cloud bridge server
   private agentName: string = '';
+  private machineId: string = '';
   
   // MongoDB connection pool ve change stream
   private static mongoClient: MongoClient | null = null;
@@ -416,6 +417,7 @@ class CloudBridgeAgent {
     let hasSettings = false;
     let urlChanged = false;
     let agentNameChanged = false;
+    let machineIdChanged = false;
     
     try {
       const client = await this.getMongoClient();
@@ -449,6 +451,19 @@ class CloudBridgeAgent {
           // If agent name changed and we're connected, should reconnect to update identity
           if (agentNameChanged && this.socket && this.socket.connected) {
             this.log('Agent name changed, reconnecting to update identity...');
+            this.socket.disconnect();
+          }
+        }
+        
+        // Check for machine ID change
+        if (settings.machineId && this.machineId !== settings.machineId) {
+          this.log(`Updating Machine ID from "${this.machineId}" to "${settings.machineId}"`);
+          this.machineId = settings.machineId;
+          machineIdChanged = true;
+          
+          // If machine ID changed and we're connected, should reconnect to update identity
+          if (machineIdChanged && this.socket && this.socket.connected) {
+            this.log('Machine ID changed, reconnecting to update identity...');
             this.socket.disconnect();
           }
         }
@@ -666,12 +681,13 @@ class CloudBridgeAgent {
         // Update status to connected
         this.updateConnectionStatus('connected');
         
-        // Send identification data with agent name
+        // Send identification data with agent name and machine ID
         this.socket?.emit('identify', {
           version: '1.0.0',
           hostname: os.hostname(),
           platform: process.platform,
-          agentName: this.agentName || `SCADA-${os.hostname()}` // Use agent name if available, or fallback to hostname
+          agentName: this.agentName || `SCADA-${os.hostname()}`, // Use agent name if available, or fallback to hostname
+          machineId: this.machineId // Include machine ID for persistent identification
         });
         
         // Temiz bir kod için önce eski ping interval'ı temizle
@@ -692,7 +708,7 @@ class CloudBridgeAgent {
       this.socket.on('system', (data) => {
         this.log(`System message from bridge: ${data.message}`);
       });
-      
+
       // API requests - callback her zaman olmalı
       this.socket.on('api-request', async (requestData: any, callback?: Function) => {
         const { requestId, method, path } = requestData;

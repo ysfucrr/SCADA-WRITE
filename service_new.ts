@@ -189,7 +189,7 @@ io.on('connection', (socket: Socket) => {
   socket.on('request-cloud-bridge-status', () => {
     const status = cloudBridgeAgent.getConnectionStatus();
     socket.emit('cloud-bridge-status', { status });
-    backendLogger.info(`Sent cloud bridge status ${status} to client ${socket.id} upon request`, 'SocketIO');
+    //backendLogger.info(`Sent cloud bridge status ${status} to client ${socket.id} upon request`, 'SocketIO');
   });
 
   socket.on('watch-register', (data: any) => {
