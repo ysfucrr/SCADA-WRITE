@@ -87,7 +87,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         { $pull: { "floors.$[].rooms.$[].flowData.nodes": { id: registerId } } as any }
     );
      
+    // 4. Widget'lardaki ilgili register'ı sil
+    const resultWidgets = await db.collection('widgets').updateMany(
+      { "registers.id": registerId },
+      { $pull: { "registers": { id: registerId } } as any }
+    );
+
     const totalModified = resultBuilding.modifiedCount + resultFloors.modifiedCount + resultRooms.modifiedCount;
+    const widgetsModified = resultWidgets.modifiedCount;
 
     if (totalModified === 0) {
       backendLogger.warning(`Register ID ${registerId} not found to delete.`, 'API/registers/[id]/DELETE');
@@ -95,9 +102,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       backendLogger.info(`Successfully deleted register ${registerId} from ${totalModified} location(s).`, 'API/registers/[id]/DELETE');
     }
 
+    if (widgetsModified > 0) {
+      backendLogger.info(`Successfully removed register ${registerId} from ${widgetsModified} widgets.`, 'API/registers/[id]/DELETE');
+    }
+
     return NextResponse.json({
       success: true,
-      message: `Register ${registerId} deleted successfully.`
+      message: `Register ${registerId} deleted successfully.`,
+      widgetsUpdated: widgetsModified > 0
     });
 
   } catch (error) {

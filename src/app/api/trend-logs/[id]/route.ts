@@ -1,10 +1,114 @@
 import { authOptions } from '@/lib/auth-options';
+import { backendLogger } from '@/lib/logger/BackendLogger';
 import { connectToDatabase } from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
 import { getServerSession } from 'next-auth';
 import { NextResponse } from 'next/server';
-import { backendLogger } from '@/lib/logger/BackendLogger';
-import { redisClient } from '@/lib/redis';
+
+// Trend log verilerini trend_log_entries'den trend_log_entries_onchange koleksiyonuna taşıyan ve eski kayıtları silen yardımcı fonksiyon
+async function migrateEntriesToOnChange(db: any, entries: any[], cleanupPeriod: number): Promise<{migratedCount: number, deletedCount: number}> {
+  if (!entries || entries.length === 0) {
+    return { migratedCount: 0, deletedCount: 0 };
+  }
+
+  try {
+    // Tüm girdiler için expiresAt alanını ekleyerek yeni veri nesnelerini oluştur
+    const migratedEntries = entries.map(entry => {
+      // Mevcut kaydın tüm alanlarını kopyala
+      const migratedEntry = { ...entry };
+      
+      // expiresAt alanını hesapla - şu anki tarihten cleanupPeriod ay sonra
+      const expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + cleanupPeriod);
+      migratedEntry.expiresAt = expiresAt;
+      
+      return migratedEntry;
+    });
+    
+    // Aktarılacak kayıt var mı kontrol et
+    if (migratedEntries.length === 0) {
+      return { migratedCount: 0, deletedCount: 0 };
+    }
+
+    // Trend log ID'sini al - tüm kayıtlar aynı trend log ID'sine sahip olmalı
+    const trendLogId = entries[0].trendLogId;
+    
+    // Toplu ekleme işlemi yap
+    const insertResult = await db.collection('trend_log_entries_onchange').insertMany(migratedEntries);
+    const insertedCount = insertResult.insertedCount || 0;
+    
+    let deletedCount = 0;
+    // Eğer aktarım başarılı olduysa, eski koleksiyondaki kayıtları sil
+    if (insertedCount > 0) {
+      backendLogger.info(`Successfully migrated ${insertedCount} entries to trend_log_entries_onchange, deleting from original collection`, 'TrendLogAPI');
+      
+      // Eski koleksiyondaki ilgili trend log kayıtlarını sil
+      const deleteResult = await db.collection('trend_log_entries').deleteMany({ trendLogId: trendLogId });
+      deletedCount = deleteResult.deletedCount || 0;
+      
+      backendLogger.info(`Deleted ${deletedCount} entries from trend_log_entries collection`, 'TrendLogAPI');
+    }
+    
+    return { migratedCount: insertedCount, deletedCount: deletedCount };
+  } catch (error) {
+    backendLogger.error('Error migrating entries to onChange collection', 'TrendLogAPI', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error; // Çağıran fonksiyonun hatayı ele alabilmesi için yeniden fırlat
+  }
+}
+
+// Trend log verilerini trend_log_entries_onchange'den trend_log_entries koleksiyonuna taşıyan yardımcı fonksiyon
+async function migrateEntriesFromOnChange(db: any, entries: any[]): Promise<{migratedCount: number, deletedCount: number}> {
+  if (!entries || entries.length === 0) {
+    return { migratedCount: 0, deletedCount: 0 };
+  }
+
+  try {
+    // Tüm girdiler için expiresAt alanını kaldırarak yeni veri nesnelerini oluştur
+    const migratedEntries = entries.map(entry => {
+      // Mevcut kaydın tüm alanlarını kopyala
+      const migratedEntry = { ...entry };
+      
+      // expiresAt alanını kaldır
+      delete migratedEntry.expiresAt;
+      
+      return migratedEntry;
+    });
+    
+    // Aktarılacak kayıt var mı kontrol et
+    if (migratedEntries.length === 0) {
+      return { migratedCount: 0, deletedCount: 0 };
+    }
+
+    // Trend log ID'sini al - tüm kayıtlar aynı trend log ID'sine sahip olmalı
+    const trendLogId = entries[0].trendLogId;
+    
+    // Toplu ekleme işlemi yap
+    const insertResult = await db.collection('trend_log_entries').insertMany(migratedEntries);
+    const insertedCount = insertResult.insertedCount || 0;
+    
+    let deletedCount = 0;
+    // Eğer aktarım başarılı olduysa, eski koleksiyondaki kayıtları sil
+    if (insertedCount > 0) {
+      backendLogger.info(`Successfully migrated ${insertedCount} entries from trend_log_entries_onchange to trend_log_entries, deleting from onChange collection`, 'TrendLogAPI');
+      
+      // Eski koleksiyondaki ilgili trend log kayıtlarını sil
+      const deleteResult = await db.collection('trend_log_entries_onchange').deleteMany({ trendLogId: trendLogId });
+      deletedCount = deleteResult.deletedCount || 0;
+      
+      backendLogger.info(`Deleted ${deletedCount} entries from trend_log_entries_onchange collection`, 'TrendLogAPI');
+    }
+    
+    return { migratedCount: insertedCount, deletedCount: deletedCount };
+  } catch (error) {
+    backendLogger.error('Error migrating entries from onChange collection', 'TrendLogAPI', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error; // Çağıran fonksiyonun hatayı ele alabilmesi için yeniden fırlat
+  }
+}
+
 // Trend logger servisini doğrudan import et
 
 export async function GET(
@@ -96,6 +200,10 @@ export async function PUT(
         return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
 
+    // Trend log'un önceki period değerini kontrol et
+    const isChangingToOnChange = existingLog.period !== 'onChange' && period === 'onChange';
+    const isChangingFromOnChange = existingLog.period === 'onChange' && period !== 'onChange';
+    
     // Start building the update operation
     const updateOperation: { $set: any, $unset?: any } = {
       $set: {
@@ -123,6 +231,7 @@ export async function PUT(
       };
     }
 
+    // Veritabanında güncelleme yap
     const result = await db.collection('trendLogs').updateOne(
       { _id: new ObjectId(id) },
       updateOperation
@@ -132,10 +241,89 @@ export async function PUT(
       return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
     
+    // Eğer period değeri 'onChange' olarak değiştirilmişse, eski kayıtları aktarma işlemi yap
+    let dataTransferResult = null;
+    if (isChangingToOnChange) {
+      try {
+        backendLogger.info(`Period type changed to onChange for trend log ${id}, migrating existing entries`, 'TrendLogAPI');
+        
+        // Mevcut kayıtları trend_log_entries koleksiyonundan al
+        const existingEntries = await db.collection('trend_log_entries')
+          .find({ trendLogId: new ObjectId(id) })
+          .sort({ timestamp: 1 }) // Zaman sıralı al
+          .toArray();
+        
+        if (existingEntries.length > 0) {
+          const { migratedCount, deletedCount } = await migrateEntriesToOnChange(db, existingEntries, parseInt(cleanupPeriod, 10));
+          dataTransferResult = {
+            entriesFound: existingEntries.length,
+            entriesMigrated: migratedCount,
+            entriesDeleted: deletedCount
+          };
+        } else {
+          dataTransferResult = {
+            entriesFound: 0,
+            entriesMigrated: 0,
+            entriesDeleted: 0
+          };
+        }
+      } catch (migrationError) {
+        backendLogger.error(`Error migrating entries to onChange for trend log ${id}`, 'TrendLogAPI', {
+          error: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        });
+        dataTransferResult = {
+          error: 'Migration failed but trend log updated successfully',
+          details: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        };
+      }
+    }
+    
+    // Eğer period değeri 'onChange'den başka bir periyot tipine değiştirilmişse, ters yönlü aktarım yap
+    if (isChangingFromOnChange) {
+      try {
+        backendLogger.info(`Period type changed from onChange to ${period} for trend log ${id}, migrating existing entries to regular collection`, 'TrendLogAPI');
+        
+        // Mevcut kayıtları trend_log_entries_onchange koleksiyonundan al
+        const existingOnChangeEntries = await db.collection('trend_log_entries_onchange')
+          .find({ trendLogId: new ObjectId(id) })
+          .sort({ timestamp: 1 }) // Zaman sıralı al
+          .toArray();
+        
+        if (existingOnChangeEntries.length > 0) {
+          const { migratedCount, deletedCount } = await migrateEntriesFromOnChange(db, existingOnChangeEntries);
+          dataTransferResult = {
+            entriesFound: existingOnChangeEntries.length,
+            entriesMigrated: migratedCount,
+            entriesDeleted: deletedCount,
+            direction: 'onchange_to_periodic'
+          };
+        } else {
+          dataTransferResult = {
+            entriesFound: 0,
+            entriesMigrated: 0,
+            entriesDeleted: 0,
+            direction: 'onchange_to_periodic'
+          };
+        }
+      } catch (migrationError) {
+        backendLogger.error(`Error migrating entries from onChange to regular collection for trend log ${id}`, 'TrendLogAPI', {
+          error: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        });
+        dataTransferResult = {
+          error: 'Migration failed but trend log updated successfully',
+          details: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        };
+      }
+    }
+    
     // The service layer will automatically handle the restart due to the database change.
     // No need to call stop/start manually anymore.
 
-    return NextResponse.json({ success: true, message: 'Trend log updated successfully' });
+    return NextResponse.json({
+      success: true,
+      message: 'Trend log updated successfully',
+      dataTransfer: dataTransferResult
+    });
   } catch (error) {
     console.error('Trend log update failed:', error);
     return NextResponse.json({ error: 'Trend log update failed' }, { status: 500 });
