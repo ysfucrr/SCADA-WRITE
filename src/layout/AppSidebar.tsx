@@ -3,7 +3,7 @@ import EditableTitle from "@/components/ui/EditableTitle";
 import { Spinner } from "@/components/ui/spinner";
 import { Typography } from "@/components/ui/typography";
 import { useAuth } from "@/hooks/use-auth";
-import { BarChart2, Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users, Info, Receipt, Cloud } from "lucide-react";
+import { BarChart2, Building, Combine, DoorOpen, FileText, Gauge, Home, Layers, Logs, Mail, Microchip, ServerCog, Siren, Users, Info, Receipt, Cloud, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -101,6 +101,11 @@ const AppSidebar: React.FC = () => {
           path: "/home",
         },
         {
+          icon: <Zap />,
+          name: "Consumption",
+          path: "/consumption",
+        },
+        {
           icon: <Receipt />,
           name: "Billing",
           path: "/billing",
@@ -167,6 +172,13 @@ const AppSidebar: React.FC = () => {
       icon: <Home />,
       name: "Home",
       path: "/home",
+    });
+    
+    // Add Consumption menu item for all users
+    items.push({
+      icon: <Zap />,
+      name: "Consumption",
+      path: "/consumption",
     });
     
     if (user.permissions.billing) {

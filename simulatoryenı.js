@@ -33,10 +33,10 @@ function writeUInt16ToHoldingReg(addr, value) {
 // ────── 1) Her dakikada bir kWh değerlerini artır
 setInterval(() => {
   for (let slave = 1; slave <= NUM_DEVICES; slave++) {
-    kwhValues[slave] += 1.0;
+    kwhValues[slave] += 100.0;
   }
   console.log("🔄 [Sim] Tüm analizörlerin kWh değerleri güncellendi.");
-}, 60_000);
+}, 10_000);
 
 // ────── 2) Bit durumlarını periyodik olarak değiştir
 setInterval(() => {

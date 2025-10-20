@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { showToast } from "../ui/alert";
 import Slider from "@/components/ui/slider";
 import { Typography } from '@/components/ui/typography';
+import Select from "@/components/form/Select";
 
 // Interface for appearance settings
 interface WidgetAppearance {
@@ -20,11 +21,13 @@ interface WidgetAppearance {
 interface EditWidgetModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (newName: string, newSize: { width: number, height: number }, appearance: WidgetAppearance) => void;
+  onConfirm: (newName: string, newSize: { width: number, height: number }, appearance: WidgetAppearance, chartConfig?: { timeFilter: string }) => void;
   widget: {
     title: string;
     size: { width: number, height: number };
     appearance?: WidgetAppearance;
+    type?: string;
+    chartConfig?: { timeFilter: string };
   } | null;
 }
 
@@ -40,6 +43,13 @@ const fontFamilies = [
   { value: 'Seven Segment', label: 'Seven Segment' },
 ];
 
+const timeFilters = [
+  { value: 'hour', label: 'Hour' },
+  { value: 'day', label: 'Day' },
+  { value: 'month', label: 'Month' },
+  { value: 'year', label: 'Year' }
+];
+
 export const EditWidgetModal: React.FC<EditWidgetModalProps> = ({ isOpen, onClose, onConfirm, widget }) => {
   const [name, setName] = useState("");
   const [size, setSize] = useState({ width: 600, height: 400 });
@@ -49,6 +59,9 @@ export const EditWidgetModal: React.FC<EditWidgetModalProps> = ({ isOpen, onClos
   const [textColor, setTextColor] = useState<string>('#ffffff');
   const [backgroundColor, setBackgroundColor] = useState<string>('#000000');
   const [opacity, setOpacity] = useState<number>(100);
+  
+  // Chart-specific settings
+  const [timeFilter, setTimeFilter] = useState<string>('day');
 
   useEffect(() => {
     if (widget && isOpen) {
@@ -68,6 +81,11 @@ export const EditWidgetModal: React.FC<EditWidgetModalProps> = ({ isOpen, onClos
         setBackgroundColor('#000000');
         setOpacity(100);
       }
+      
+      // Set chart-specific settings if it's a chart widget
+      if (widget.type === 'chart' && widget.chartConfig) {
+        setTimeFilter(widget.chartConfig.timeFilter || 'day');
+      }
     }
   }, [widget, isOpen]);
 
@@ -84,7 +102,10 @@ export const EditWidgetModal: React.FC<EditWidgetModalProps> = ({ isOpen, onClos
       opacity
     };
     
-    onConfirm(name, size, appearance);
+    // Include chart config if it's a chart widget
+    const chartConfig = widget?.type === 'chart' ? { timeFilter } : undefined;
+    
+    onConfirm(name, size, appearance, chartConfig);
     onClose();
   };
 
@@ -189,7 +210,27 @@ export const EditWidgetModal: React.FC<EditWidgetModalProps> = ({ isOpen, onClos
                   </div>
                 </div>
               </div>
-            </div>
+              
+              {/* Chart-specific settings */}
+              {widget.type === 'chart' && (
+                <div className="mt-6">
+                  <Typography variant="h6" className="mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">
+                    Chart Settings
+                  </Typography>
+                  <div>
+                    <Label htmlFor="timeFilter" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Time Filter
+                    </Label>
+                    <Select
+                      defaultValue={timeFilter}
+                      onChange={(value) => setTimeFilter(value)}
+                      options={timeFilters}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              )}
+          </div>
         </div>
 
         <div className="flex justify-end gap-3 mt-6">

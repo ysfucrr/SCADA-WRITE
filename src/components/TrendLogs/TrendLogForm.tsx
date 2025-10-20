@@ -387,16 +387,14 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                         </div>
                     )}
                 </div>
-                {period !== "onChange" && (
-                    <div className="flex flex-row space-x-2 items-center">
-                        <Checkbox
-                            id="is-kwh-counter"
-                            checked={isKWHCounter}
-                            onChange={setIsKWHCounter}
-                        />
-                        <Label htmlFor="is-kwh-counter">Is KWH Counter</Label>
-                    </div>
-                )}
+                <div className="flex flex-row space-x-2 items-center">
+                    <Checkbox
+                        id="is-kwh-counter"
+                        checked={isKWHCounter}
+                        onChange={setIsKWHCounter}
+                    />
+                    <Label htmlFor="is-kwh-counter">Is KWH Counter</Label>
+                </div>
                 {/* onChange için cleanupPeriod seçimi */}
                 {period === "onChange" && (
                     <div className="space-y-2">

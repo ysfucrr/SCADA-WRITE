@@ -27,12 +27,22 @@ export async function GET(request: NextRequest) {
       trendLogs = await db.collection('trendLogs').find({}).toArray();
     }
 
-    // ObjectId'leri string'e dönüştür
-    const formattedTrendLogs = trendLogs.map(trendLogs => ({
-      ...trendLogs,
-      _id: trendLogs._id.toString(),
-      createdAt: trendLogs.createdAt ? new Date(trendLogs.createdAt).toISOString() : null
-    }));
+    // Analyzer bilgilerini al
+    const analyzerIds = [...new Set(trendLogs.map(log => log.analyzerId))];
+    const analyzers = await db.collection('analyzers').find({ _id: { $in: analyzerIds } }).toArray();
+    const analyzerMap = new Map(analyzers.map(analyzer => [analyzer._id, analyzer]));
+
+    // ObjectId'leri string'e dönüştür ve analyzer bilgilerini ekle
+    const formattedTrendLogs = trendLogs.map(trendLog => {
+      const analyzer = analyzerMap.get(trendLog.analyzerId);
+      return {
+        ...trendLog,
+        _id: trendLog._id.toString(),
+        createdAt: trendLog.createdAt ? new Date(trendLog.createdAt).toISOString() : null,
+        analyzerName: analyzer?.name || `Analyzer ${analyzer?.slaveId || 1}`,
+        slaveId: analyzer?.slaveId || 1
+      };
+    });
 
     return NextResponse.json(formattedTrendLogs);
   } catch (error) {
