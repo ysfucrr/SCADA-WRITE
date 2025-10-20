@@ -479,8 +479,26 @@ export async function DELETE(
     if (deletedConfigsCount > 0 || updatedConfigsCount > 0) {
       backendLogger.info(`Multi-log configurations impact: ${deletedConfigsCount} configs deleted, ${updatedConfigsCount} configs updated.`, 'TrendLogAPI');
     }
+    
+    // 5. İlgili consumption widget'larını sil
+    let deletedConsumptionWidgetsCount = 0;
+    try {
+      // Silinecek trend log ID'sine sahip tüm consumption widget'larını bul
+      const consumptionWidgetsResult = await db.collection('consumption').deleteMany({
+        trendLogId: new ObjectId(id)
+      });
+      
+      deletedConsumptionWidgetsCount = consumptionWidgetsResult.deletedCount || 0;
+      
+      if (deletedConsumptionWidgetsCount > 0) {
+        backendLogger.info(`Deleted ${deletedConsumptionWidgetsCount} consumption widgets related to trend log ${id}`, 'TrendLogAPI');
+      }
+    } catch (consumptionError) {
+      console.error('Error deleting consumption widgets:', consumptionError);
+      backendLogger.error(`Error deleting consumption widgets for trend log ${id}: ${consumptionError}`, 'TrendLogAPI');
+    }
 
-    // 5. Son olarak normal ve onChange koleksiyonlarından tüm kayıtları sil
+    // 6. Son olarak normal ve onChange koleksiyonlarından tüm kayıtları sil
     const normalEntries = await db.collection('trend_log_entries').deleteMany({ trendLogId: new ObjectId(id) });
     const onChangeEntries = await db.collection('trend_log_entries_onchange').deleteMany({ trendLogId: new ObjectId(id) });
     
@@ -499,6 +517,9 @@ export async function DELETE(
         multiLogConfigs: {
           deleted: deletedConfigsCount,
           updated: updatedConfigsCount
+        },
+        consumptionWidgets: {
+          deleted: deletedConsumptionWidgetsCount
         }
       }
     });
