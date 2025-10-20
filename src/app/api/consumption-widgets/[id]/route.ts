@@ -72,7 +72,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (body.trendLogId !== undefined) {
       updateData.trendLogId = body.trendLogId ? new ObjectId(body.trendLogId) : null;
     }
-    if (body.timeFilter !== undefined) updateData.timeFilter = body.timeFilter;
 
     const client = await clientPromise;
     const db = client.db("scada_dashboard");

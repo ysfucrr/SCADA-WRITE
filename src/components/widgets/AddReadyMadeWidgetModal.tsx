@@ -22,6 +22,7 @@ interface ReadyMadeWidgetData {
   size: { width: number; height: number };
   appearance: WidgetAppearance;
   trendLogId?: string;
+  chartConfig?: any;  // Kaldırmak için işaretliyoruz ama bunu tutuyoruz çünkü belki başka bir bileşen referans ediyor
 }
 
 interface WidgetAppearance {
@@ -137,7 +138,8 @@ export const AddReadyMadeWidgetModal: React.FC<AddReadyMadeWidgetModalProps> = (
       type: widgetType,
       size: widgetSize,
       appearance,
-      trendLogId: selectedTrendLog
+      trendLogId: selectedTrendLog,
+      chartConfig: {} // Boş bir chartConfig objesi ekleyerek geriye dönük uyumluluk sağlıyoruz
     };
     
     onConfirm(widgetData);

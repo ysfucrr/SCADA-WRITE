@@ -57,8 +57,7 @@ export default function ConsumptionPage() {
       size: widgetData.size,
       appearance: widgetData.appearance,
       type: widgetData.type,
-      trendLogId: widgetData.trendLogId,
-      timeFilter: widgetData.chartConfig?.timeFilter || 'day'
+      trendLogId: widgetData.trendLogId
     };
 
     try {
@@ -137,8 +136,7 @@ export default function ConsumptionPage() {
   const handleUpdateWidgetDetails = async (
     newName: string,
     newSize: { width: number, height: number },
-    appearance: WidgetAppearance,
-    chartConfig?: { timeFilter: string }
+    appearance: WidgetAppearance
   ) => {
     if (!editingWidget) return;
 
@@ -148,11 +146,6 @@ export default function ConsumptionPage() {
       size: newSize,
       appearance: appearance
     };
-    
-    // Include time filter if provided
-    if (chartConfig?.timeFilter) {
-      updatedData.timeFilter = chartConfig.timeFilter;
-    }
 
     setWidgets(prev => prev.map(w => w._id === widgetId ? { ...w, ...updatedData } : w));
 
@@ -184,10 +177,7 @@ export default function ConsumptionPage() {
           isOpen={!!editingWidget}
           onClose={() => setEditingWidget(null)}
           onConfirm={handleUpdateWidgetDetails}
-          widget={editingWidget ? {
-            ...editingWidget,
-            chartConfig: { timeFilter: editingWidget.timeFilter || 'day' }
-          } : null}
+          widget={editingWidget}
       />
       
       <div className="w-full p-6">

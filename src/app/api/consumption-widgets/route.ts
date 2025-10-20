@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, size, appearance, type, trendLogId, timeFilter } = body;
+    const { title, size, appearance, type, trendLogId } = body;
 
     if (!title || !size || !type) {
       return NextResponse.json(
@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
       },
       type,
       trendLogId: trendLogId ? new ObjectId(trendLogId) : null,
-      timeFilter: timeFilter || "day",
       position,
       createdAt: new Date(),
       updatedAt: new Date(),
