@@ -412,13 +412,29 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, isEditMode = fals
     // If in edit mode, always send a PUT request to the backend
     if (isEditMode && node?.id) {
       try {
+        // Veritabanında register ID'sini kontrol etmek için bir log ekleyin
+        console.log("Güncellenecek register ID'si:", node.id);
+        
+        // API'ye sadece data nesnesi değil, style özelliklerini de dahil edin
+        const updatedData = {
+          ...registerData.data,
+          width, // Genişlik değerini ekleyin
+          height // Yükseklik değerini ekleyin
+        };
+        
         const response = await fetch(`/api/registers/${node.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(registerData.data), // Send the complete 'data' object
+          body: JSON.stringify(updatedData), // Genişletilmiş veriyi gönderin
         });
+        
         if (!response.ok) {
           const errorResult = await response.json();
+          console.error("Register güncelleme hatası:", {
+            id: node.id,
+            statusCode: response.status,
+            error: errorResult
+          });
           throw new Error(errorResult.error || 'Failed to update register on the server');
         }
       } catch (error) {
