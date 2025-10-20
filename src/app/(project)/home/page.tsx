@@ -101,11 +101,9 @@ export default function HomePage() {
         }
         const data = await response.json();
         
-        // Sadece normal widget'ları filtrele (chart tipinde olmayanlar)
-        const normalWidgets = data.filter((widget: any) => widget.type !== 'chart');
-        
+
         // Pozisyon bilgilerini register nesnelerine aktarma
-        const processedWidgets = normalWidgets.map((widget: any) => {
+        const processedWidgets = data.map((widget: any) => {
           if (widget.registers && Array.isArray(widget.registers)) {
             const updatedRegisters = widget.registers.map((register: any) => {
               // valuePosition bilgilerini aktarma
