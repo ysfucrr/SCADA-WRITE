@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { ApexOptions } from "apexcharts";
 import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { useAuth } from '@/hooks/use-auth';
+import { useWebSocket } from '@/context/WebSocketContext';
 
 // Dynamically import ReactApexChart to avoid SSR issues
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
@@ -60,7 +61,9 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
   const [monthlyData, setMonthlyData] = useState<MonthlyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentTimeFilter, setCurrentTimeFilter] = useState<'hour' | 'day' | 'month' | 'year'>('day');
+  const [currentTimeFilter, setCurrentTimeFilter] = useState<'month' | 'year'>('month');
+  const [liveRegisterValue, setLiveRegisterValue] = useState<number | null>(null);
+  const { watchRegister, unwatchRegister } = useWebSocket();
   
   // Widget dragging state
   const [isDragging, setIsDragging] = useState(false);
@@ -88,6 +91,27 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     return () => clearInterval(interval);
   }, [trendLogId, currentTimeFilter]);
 
+  // When liveRegisterValue changes, update comparisonData with the new value
+  useEffect(() => {
+    if (liveRegisterValue !== null && comparisonData && currentTimeFilter === 'month') {
+      const previousValue = comparisonData.previousValue;
+      let newPercentageChange = 0;
+      
+      if (previousValue !== null && previousValue !== 0) {
+        newPercentageChange = ((liveRegisterValue - previousValue) / previousValue) * 100;
+      } else if (previousValue === 0 || previousValue === null) {
+        newPercentageChange = 100; // 100% increase if there was no previous value
+      }
+      
+      setComparisonData({
+        ...comparisonData,
+        currentValue: liveRegisterValue,
+        currentTimestamp: new Date(),
+        percentageChange: newPercentageChange
+      });
+    }
+  }, [liveRegisterValue, currentTimeFilter]);
+
   const fetchTrendLogData = async () => {
     try {
       setLoading(true);
@@ -100,7 +124,19 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       const data = await response.json();
       
       if (data.comparison) {
-        setComparisonData(data.comparison);
+        // If we have a live value and we're in month view, use the live value for current period
+        if (currentTimeFilter === 'month' && liveRegisterValue !== null) {
+          setComparisonData({
+            ...data.comparison,
+            currentValue: liveRegisterValue,
+            currentTimestamp: new Date(),
+            percentageChange: data.comparison.previousValue && data.comparison.previousValue !== 0 ?
+              ((liveRegisterValue - data.comparison.previousValue) / data.comparison.previousValue) * 100 :
+              100
+          });
+        } else {
+          setComparisonData(data.comparison);
+        }
       } else {
         setComparisonData(null);
       }
@@ -109,6 +145,12 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
         setMonthlyData(data.monthlyData);
       } else {
         setMonthlyData(null);
+      }
+
+      // If there's trend log register info, set up WebSocket watch
+      if (data.trendLog && currentTimeFilter === 'month' && data.trendLog.registerId) {
+        console.log('Setting up WebSocket watch for register:', data.trendLog.registerId);
+        setupRegisterWatch(data.trendLog.registerId, data.trendLog.analyzerId || 'default');
       }
       
       setError(null);
@@ -124,10 +166,6 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
   const formatDate = (date: Date | string, isPrevious: boolean = false) => {
     const d = new Date(date);
     switch (currentTimeFilter) {
-      case 'hour':
-        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-      case 'day':
-        return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
       case 'month':
         return d.toLocaleDateString('en-US', { month: 'long' });
       case 'year':
@@ -516,6 +554,49 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     };
   }, [isDragging, dragStart, id, onWidgetPositionChange]);
 
+  // Setup WebSocket watch for the trend log's register
+  const setupRegisterWatch = useCallback((registerId: string, analyzerId: string) => {
+    // Find the register details by registerId from the API
+    fetch(`/api/registers/${registerId}`)
+      .then(response => response.json())
+      .then(register => {
+        if (register && register.data && register.data.address !== undefined) {
+          // Watch this register for real-time updates
+          const watchConfig = {
+            analyzerId: analyzerId || 'default',
+            registerId: registerId,
+            address: register.data.address,
+            dataType: register.data.dataType || 'float',
+            scale: register.data.scale || 1,
+            byteOrder: register.data.byteOrder || 'AB CD'
+          };
+          
+          // Start watching this register
+          watchRegister(watchConfig, (value: number) => {
+            console.log('Live register value updated:', value);
+            setLiveRegisterValue(value);
+          });
+        } else {
+          console.error('Invalid register data format:', register);
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching register details:', err);
+      });
+  }, [watchRegister]);
+  
+  // Cleanup WebSocket subscription when component unmounts
+  useEffect(() => {
+    const cleanupRegisterId = trendLogId;
+    
+    return () => {
+      // Clean up any WebSocket subscriptions
+      if (cleanupRegisterId) {
+        console.log('Cleaning up WebSocket subscriptions for:', cleanupRegisterId);
+      }
+    };
+  }, [trendLogId]);
+
   // Helper function to convert hex to RGB
   const hexToRgb = (hex: string): string => {
     hex = hex.replace('#', '');
@@ -605,9 +686,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
         {comparisonData && comparisonData.percentageChange !== null && (
           <div className="flex flex-col items-end text-sm">
             <div className="text-xs text-gray-600 dark:text-gray-400">
-              {currentTimeFilter === 'hour' ? 'Hourly' :
-               currentTimeFilter === 'day' ? 'Daily' :
-               currentTimeFilter === 'month' ? 'Monthly' : 'Yearly'} Change
+              {currentTimeFilter === 'month' ? 'Monthly' : 'Yearly'} Change
             </div>
             <div className={`text-base font-bold ${comparisonData.percentageChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
               {comparisonData.percentageChange >= 0 ? '+' : ''}{comparisonData.percentageChange.toFixed(1)}%
@@ -623,8 +702,6 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
           onChange={(e) => setCurrentTimeFilter(e.target.value as any)}
           className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="hour">Hourly</option>
-          <option value="day">Daily</option>
           <option value="month">Monthly</option>
           <option value="year">Yearly</option>
         </select>

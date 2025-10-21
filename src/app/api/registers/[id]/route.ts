@@ -3,6 +3,74 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { backendLogger } from '@/lib/logger/BackendLogger';
 import { ObjectId } from 'mongodb';
 
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: registerId } = await params;
+
+  if (!registerId) {
+    return NextResponse.json({ error: 'Register ID is required' }, { status: 400 });
+  }
+
+  try {
+    const { db } = await connectToDatabase();
+    let register = null;
+
+    // 1. Bina seviyesinde register'ı ara
+    const buildingResult = await db.collection('buildings').aggregate([
+      { $match: { "flowData.nodes.id": registerId } },
+      { $unwind: "$flowData.nodes" },
+      { $match: { "flowData.nodes.id": registerId } },
+      { $project: { register: "$flowData.nodes" } }
+    ]).toArray();
+
+    if (buildingResult.length > 0) {
+      register = buildingResult[0].register;
+    }
+
+    // 2. Kat seviyesinde register'ı ara
+    if (!register) {
+      const floorResult = await db.collection('buildings').aggregate([
+        { $match: { "floors.flowData.nodes.id": registerId } },
+        { $unwind: "$floors" },
+        { $unwind: "$floors.flowData.nodes" },
+        { $match: { "floors.flowData.nodes.id": registerId } },
+        { $project: { register: "$floors.flowData.nodes" } }
+      ]).toArray();
+
+      if (floorResult.length > 0) {
+        register = floorResult[0].register;
+      }
+    }
+
+    // 3. Oda seviyesinde register'ı ara
+    if (!register) {
+      const roomResult = await db.collection('buildings').aggregate([
+        { $match: { "floors.rooms.flowData.nodes.id": registerId } },
+        { $unwind: "$floors" },
+        { $unwind: "$floors.rooms" },
+        { $unwind: "$floors.rooms.flowData.nodes" },
+        { $match: { "floors.rooms.flowData.nodes.id": registerId } },
+        { $project: { register: "$floors.rooms.flowData.nodes" } }
+      ]).toArray();
+
+      if (roomResult.length > 0) {
+        register = roomResult[0].register;
+      }
+    }
+
+    if (!register) {
+      backendLogger.warning(`Register with ID ${registerId} not found.`, 'API/registers/[id]/GET');
+      return NextResponse.json({ error: 'Register not found' }, { status: 404 });
+    }
+
+    backendLogger.info(`Successfully retrieved register ${registerId}.`, 'API/registers/[id]/GET');
+    return NextResponse.json(register);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    backendLogger.error(`Failed to retrieve register ${registerId}`, 'API/registers/[id]/GET', { error: errorMessage });
+    return NextResponse.json({ error: 'Failed to retrieve register from database' }, { status: 500 });
+  }
+}
+
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: registerId } = await params;
   

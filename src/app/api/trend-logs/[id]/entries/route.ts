@@ -64,10 +64,10 @@ export async function GET(
         previousPeriodEnd.setHours(23, 59, 59, 999);
         break;
       case 'month':
-        // This month
+        // This month - to fetch latest runtime value
         startDate.setDate(1);
         startDate.setHours(0, 0, 0, 0);
-        // Previous month
+        // Previous month - to fetch maximum value
         previousPeriodStart.setMonth(now.getMonth() - 1);
         previousPeriodStart.setDate(1);
         previousPeriodStart.setHours(0, 0, 0, 0);
@@ -109,15 +109,28 @@ export async function GET(
       .limit(1)
       .toArray();
 
-    // Fetch previous period entries
-    const previousEntries = await db.collection(collectionName)
-      .find({
-        trendLogId: new ObjectId(trendLogId),
-        timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd }
-      })
-      .sort({ timestamp: -1 })
-      .limit(1)
-      .toArray();
+    // For month filter, fetch the maximum value from previous month
+    let previousEntries = [];
+    if (timeFilter === 'month') {
+      previousEntries = await db.collection(collectionName)
+        .find({
+          trendLogId: new ObjectId(trendLogId),
+          timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd }
+        })
+        .sort({ value: -1 }) // Sort by value in descending order to get the maximum value
+        .limit(1)
+        .toArray();
+    } else {
+      // For other filters, use the original logic
+      previousEntries = await db.collection(collectionName)
+        .find({
+          trendLogId: new ObjectId(trendLogId),
+          timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd }
+        })
+        .sort({ timestamp: -1 })
+        .limit(1)
+        .toArray();
+    }
 
     // Get values for comparison
     let currentValue = null;
@@ -159,6 +172,35 @@ export async function GET(
     } else if (previousValue !== null && currentValue === null) {
       // If previous value exists but no current value, show -100%
       percentageChange = -100;
+    }
+
+    // For month filter, try to fetch the current runtime value if needed
+    if (timeFilter === 'month' && currentValue === null) {
+      try {
+        // Get the trend log's register ID and analyzer ID
+        const registerId = trendLog.registerId;
+        const analyzerId = trendLog.analyzerId || 'default';
+        
+        // Try to get the latest value from Redis (assuming it's used for caching)
+        const { redisClient } = require('@/lib/redis');
+        if (redisClient.isReady) {
+          const cachedValue = await redisClient.get(`trendlog:lastvalue:${registerId}:${analyzerId}`);
+          if (cachedValue) {
+            currentValue = parseFloat(cachedValue);
+            currentTimestamp = now;
+            
+            // Recalculate percentage change with the runtime value
+            if (previousValue !== null && previousValue !== 0) {
+              percentageChange = ((currentValue - previousValue) / previousValue) * 100;
+            } else if (previousValue === null) {
+              percentageChange = 100;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching runtime value:', error);
+        // Continue with the values we have
+      }
     }
 
     // For year filter, get monthly data for both years
