@@ -193,12 +193,22 @@ export const AddReadyMadeWidgetModal: React.FC<AddReadyMadeWidgetModalProps> = (
                     className="mt-1 text-black dark:text-white flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <option value="">Select a trend log</option>
-                    {trendLogs.map((log) => (
-                      <option key={log._id} value={log._id}>
-                        {log.analyzerName || `analyzer ${log.slaveId || 1}`} (Slave: {log.slaveId || 1})
-                        {'\n'}Interval: {log.interval || 1} minute, Address: {log.address}
-                      </option>
-                    ))}
+                    {trendLogs.map((log) => {
+                      // Format a user-friendly display name
+                      let displayName = 'Unknown Analyzer';
+                      
+                      if (log.analyzerName) {
+                        displayName = log.analyzerName;
+                      }
+                      
+                      return (
+                        <option key={log._id} value={log._id}>
+                          {displayName}
+                          {log.slaveId ? ` (Slave: ${log.slaveId})` : ''}
+                          {'\n'}Interval: {log.interval || 1} minute, Address: {log.address}
+                        </option>
+                      );
+                    })}
                   </select>
                 )}
               </div>

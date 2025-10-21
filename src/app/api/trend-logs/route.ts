@@ -29,20 +29,43 @@ export async function GET(request: NextRequest) {
 
     // Analyzer bilgilerini al
     const analyzerIds = [...new Set(trendLogs.map(log => log.analyzerId))];
-    const analyzers = await db.collection('analyzers').find({ _id: { $in: analyzerIds } }).toArray();
-    const analyzerMap = new Map(analyzers.map(analyzer => [analyzer._id, analyzer]));
+    
+    // Convert string IDs to ObjectIds if necessary
+    const objectIdAnalyzerIds = analyzerIds.map(id => {
+      const { ObjectId } = require('mongodb');
+      return typeof id === 'string' && ObjectId.isValid(id) ? new ObjectId(id) : id;
+    });
+    
+    const analyzers = await db.collection('analyzers').find({ _id: { $in: objectIdAnalyzerIds } }).toArray();
+    console.log('Found analyzers:', analyzers.map(a => ({ id: a._id, name: a.name, slaveId: a.slaveId })));
+    
+    // Create a map of both string and ObjectId versions of IDs to support both formats
+    const analyzerMap = new Map();
+    analyzers.forEach(analyzer => {
+      analyzerMap.set(analyzer._id.toString(), analyzer);
+      analyzerMap.set(analyzer._id, analyzer);
+    });
 
     // ObjectId'leri string'e dönüştür ve analyzer bilgilerini ekle
     const formattedTrendLogs = trendLogs.map(trendLog => {
-      const analyzer = analyzerMap.get(trendLog.analyzerId);
+      // Try to find analyzer using both string and ObjectId versions of the ID
+      const analyzerId = trendLog.analyzerId?.toString ? trendLog.analyzerId.toString() : trendLog.analyzerId;
+      const analyzer = analyzerMap.get(analyzerId) || analyzerMap.get(trendLog.analyzerId);
+      
       return {
         ...trendLog,
         _id: trendLog._id.toString(),
         createdAt: trendLog.createdAt ? new Date(trendLog.createdAt).toISOString() : null,
-        analyzerName: analyzer?.name || `Analyzer ${analyzer?.slaveId || 1}`,
-        slaveId: analyzer?.slaveId || 1
+        analyzerName: analyzer?.name || null,
+        slaveId: analyzer?.slaveId || null
       };
     });
+    
+    console.log('Formatted trend logs:', formattedTrendLogs.map(log => ({
+      id: log._id,
+      analyzerName: log.analyzerName,
+      slaveId: log.slaveId
+    })));
 
     return NextResponse.json(formattedTrendLogs);
   } catch (error) {
