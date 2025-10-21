@@ -101,7 +101,7 @@ const AppSidebar: React.FC = () => {
           path: "/home",
         },
         {
-          icon: <Zap />,
+          icon: <BarChart2 />,
           name: "Consumption",
           path: "/consumption",
         },
@@ -176,7 +176,7 @@ const AppSidebar: React.FC = () => {
     
     // Add Consumption menu item for all users
     items.push({
-      icon: <Zap />,
+      icon: <BarChart2 />,
       name: "Consumption",
       path: "/consumption",
     });

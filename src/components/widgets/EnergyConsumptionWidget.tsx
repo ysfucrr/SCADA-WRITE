@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
-import dynamic from "next/dynamic";
-import { ApexOptions } from "apexcharts";
-import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
-import { useAuth } from '@/hooks/use-auth';
 import { useWebSocket } from '@/context/WebSocketContext';
+import { useAuth } from '@/hooks/use-auth';
+import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { ApexOptions } from "apexcharts";
+import dynamic from "next/dynamic";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 // Dynamically import ReactApexChart to avoid SSR issues
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
@@ -70,6 +70,18 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [currentPosition, setCurrentPosition] = useState(position);
   const positionRef = useRef(currentPosition);
+  
+  // Helper lines state
+  const [helperLines, setHelperLines] = useState<{ vertical: number | undefined, horizontal: number | undefined }>({
+    vertical: undefined,
+    horizontal: undefined
+  });
+  
+  // Constants for snapping - same as RegisterWidget
+  const SNAP_THRESHOLD = 10;
+  const GRID_SIZE = 10;
+  const WIDGET_SNAP_THRESHOLD = 15;
+  const VERTICAL_SNAP_MULTIPLIER = 0.5;
   
   // Boundary constants - same as RegisterWidget
   const BOUNDARY = {
@@ -443,6 +455,36 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     });
   };
 
+  // Function to get other widgets' positions for snapping
+  const getOtherWidgetPositions = useCallback(() => {
+    const allWidgets = document.querySelectorAll('.widget-container');
+    type OtherWidget = {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    
+    const otherWidgets: Array<OtherWidget> = [];
+    
+    allWidgets.forEach((el) => {
+      const widgetId = el.getAttribute('data-widget-id');
+      if (widgetId && widgetId !== id) {
+        const rect = el.getBoundingClientRect();
+        otherWidgets.push({
+          id: widgetId,
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    });
+    
+    return otherWidgets;
+  }, [id]);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging) return;
@@ -479,10 +521,67 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
         }
       }
       
-      setCurrentPosition(newPosition);
-      positionRef.current = newPosition;
+      // Add snapping logic with helper lines
+      const gridSnappedX = Math.round(newPosition.x / GRID_SIZE) * GRID_SIZE;
+      const gridSnappedY = Math.round(newPosition.y / GRID_SIZE) * GRID_SIZE;
+      
+      let snappedPosition = { ...newPosition };
+      let newHelperLines = { vertical: undefined as number | undefined, horizontal: undefined as number | undefined };
+      
+      // Grid snapping
+      if (Math.abs(gridSnappedX - newPosition.x) < SNAP_THRESHOLD) {
+        snappedPosition.x = gridSnappedX;
+        newHelperLines.vertical = gridSnappedX;
+      }
+      
+      if (Math.abs(gridSnappedY - newPosition.y) < SNAP_THRESHOLD) {
+        snappedPosition.y = gridSnappedY;
+        newHelperLines.horizontal = gridSnappedY;
+      }
+      
+      // Widget-to-widget snapping
+      const otherWidgets = getOtherWidgetPositions();
+      const isShiftKeyPressed = e.shiftKey;
+      
+      if (!isShiftKeyPressed) {
+        const isMovingDown = newPosition.y > currentPosition.y;
+        
+        otherWidgets.forEach((otherWidget) => {
+          // Horizontal snapping
+          if (Math.abs(otherWidget.x - snappedPosition.x) < WIDGET_SNAP_THRESHOLD) {
+            snappedPosition.x = otherWidget.x;
+            newHelperLines.vertical = otherWidget.x;
+          }
+          
+          // Right edge alignment
+          const currentWidgetRight = snappedPosition.x + size.width;
+          if (Math.abs(currentWidgetRight - otherWidget.x) < WIDGET_SNAP_THRESHOLD) {
+            snappedPosition.x = otherWidget.x - size.width;
+            newHelperLines.vertical = otherWidget.x;
+          }
+          
+          // Vertical snapping with reduced threshold when moving down
+          const verticalThreshold = WIDGET_SNAP_THRESHOLD * (isMovingDown ? VERTICAL_SNAP_MULTIPLIER : 1);
+          
+          if (Math.abs(otherWidget.y - snappedPosition.y) < verticalThreshold) {
+            snappedPosition.y = otherWidget.y;
+            newHelperLines.horizontal = otherWidget.y;
+          }
+          
+          // Bottom edge alignment
+          const currentWidgetBottom = snappedPosition.y + size.height;
+          if (Math.abs(currentWidgetBottom - otherWidget.y) < verticalThreshold) {
+            snappedPosition.y = otherWidget.y - size.height;
+            newHelperLines.horizontal = otherWidget.y;
+          }
+        });
+      }
+      
+      setHelperLines(newHelperLines);
+      setCurrentPosition(snappedPosition);
+      positionRef.current = snappedPosition;
     };
-
+    
     const handleTouchMove = (e: TouchEvent) => {
       if (!isDragging || !e.touches[0]) return;
       e.preventDefault();
@@ -519,8 +618,61 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
         }
       }
       
-      setCurrentPosition(newPosition);
-      positionRef.current = newPosition;
+      // Add snapping logic for touch events
+      const gridSnappedX = Math.round(newPosition.x / GRID_SIZE) * GRID_SIZE;
+      const gridSnappedY = Math.round(newPosition.y / GRID_SIZE) * GRID_SIZE;
+      
+      let snappedPosition = { ...newPosition };
+      let newHelperLines = { vertical: undefined as number | undefined, horizontal: undefined as number | undefined };
+      
+      // Grid snapping
+      if (Math.abs(gridSnappedX - newPosition.x) < SNAP_THRESHOLD) {
+        snappedPosition.x = gridSnappedX;
+        newHelperLines.vertical = gridSnappedX;
+      }
+      
+      if (Math.abs(gridSnappedY - newPosition.y) < SNAP_THRESHOLD) {
+        snappedPosition.y = gridSnappedY;
+        newHelperLines.horizontal = gridSnappedY;
+      }
+      
+      // Widget-to-widget snapping
+      const otherWidgets = getOtherWidgetPositions();
+      const isMovingDown = newPosition.y > currentPosition.y;
+      
+      otherWidgets.forEach((otherWidget) => {
+        // Horizontal snapping
+        if (Math.abs(otherWidget.x - snappedPosition.x) < WIDGET_SNAP_THRESHOLD) {
+          snappedPosition.x = otherWidget.x;
+          newHelperLines.vertical = otherWidget.x;
+        }
+        
+        // Right edge alignment
+        const currentWidgetRight = snappedPosition.x + size.width;
+        if (Math.abs(currentWidgetRight - otherWidget.x) < WIDGET_SNAP_THRESHOLD) {
+          snappedPosition.x = otherWidget.x - size.width;
+          newHelperLines.vertical = otherWidget.x;
+        }
+        
+        // Vertical snapping with reduced threshold when moving down
+        const verticalThreshold = WIDGET_SNAP_THRESHOLD * (isMovingDown ? VERTICAL_SNAP_MULTIPLIER : 1);
+        
+        if (Math.abs(otherWidget.y - snappedPosition.y) < verticalThreshold) {
+          snappedPosition.y = otherWidget.y;
+          newHelperLines.horizontal = otherWidget.y;
+        }
+        
+        // Bottom edge alignment
+        const currentWidgetBottom = snappedPosition.y + size.height;
+        if (Math.abs(currentWidgetBottom - otherWidget.y) < verticalThreshold) {
+          snappedPosition.y = otherWidget.y - size.height;
+          newHelperLines.horizontal = otherWidget.y;
+        }
+      });
+      
+      setHelperLines(newHelperLines);
+      setCurrentPosition(snappedPosition);
+      positionRef.current = snappedPosition;
     };
 
     const handleMouseUp = () => {
@@ -529,6 +681,8 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       if (onWidgetPositionChange && id) {
         onWidgetPositionChange(id, positionRef.current);
       }
+      // Clear helper lines with small delay to let the user see them briefly
+      setTimeout(() => setHelperLines({ vertical: undefined, horizontal: undefined }), 300);
     };
 
     const handleTouchEnd = () => {
@@ -537,6 +691,8 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       if (onWidgetPositionChange && id) {
         onWidgetPositionChange(id, positionRef.current);
       }
+      // Clear helper lines with small delay
+      setTimeout(() => setHelperLines({ vertical: undefined, horizontal: undefined }), 300);
     };
 
     if (isDragging) {
@@ -552,7 +708,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [isDragging, dragStart, id, onWidgetPositionChange]);
+  }, [isDragging, dragStart, id, onWidgetPositionChange, getOtherWidgetPositions, size]);
 
   // Setup WebSocket watch for the trend log's register
   const setupRegisterWatch = useCallback((registerId: string, analyzerId: string) => {
@@ -630,12 +786,31 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
         zIndex: isDragging ? 100 : 1,
         transition: isDragging ? 'none' : 'box-shadow 0.2s ease',
         boxShadow: isDragging ? '0 10px 25px rgba(0, 0, 0, 0.15)' : '',
-        backgroundColor: appearance ? 
-          `rgba(${hexToRgb(appearance.backgroundColor)}, ${appearance.opacity / 100})` : 
+        backgroundColor: appearance ?
+          `rgba(${hexToRgb(appearance.backgroundColor)}, ${appearance.opacity / 100})` :
           'white',
         fontFamily: appearance?.fontFamily || 'inherit',
       }}
     >
+      {/* Helper lines for alignment - similar to RegisterWidget */}
+      {helperLines.vertical !== undefined && (
+        <div
+          className="fixed top-0 h-screen w-[2px] bg-blue-500 pointer-events-none"
+          style={{
+            left: `${helperLines.vertical}px`,
+            zIndex: 9999
+          }}
+        />
+      )}
+      {helperLines.horizontal !== undefined && (
+        <div
+          className="fixed left-0 w-screen h-[2px] bg-blue-500 pointer-events-none"
+          style={{
+            top: `${helperLines.horizontal}px`,
+            zIndex: 9999
+          }}
+        />
+      )}
       {/* Widget Edit/Delete Buttons */}
       {isAdmin && (
         <div className="absolute -top-8 left-2 flex items-center gap-1 z-10">
