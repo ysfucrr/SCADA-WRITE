@@ -96,11 +96,10 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     positionRef.current = position;
   }, [position]);
 
-  // Fetch trend log data
+  // Fetch trend log data - only on initial load and when dependencies change
   useEffect(() => {
     fetchTrendLogData();
-    const interval = setInterval(fetchTrendLogData, 60000); // Refresh every minute
-    return () => clearInterval(interval);
+    // Removed automatic refresh interval - only update when live values change via WebSocket
   }, [trendLogId, currentTimeFilter]);
 
   // When liveRegisterValue changes, update comparisonData with the new value
@@ -126,15 +125,19 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
 
   const fetchTrendLogData = async () => {
     try {
-      setLoading(true);
+      // Only show loading on initial load, not on subsequent updates
+      if (!comparisonData && !monthlyData) {
+        setLoading(true);
+      }
+
       const response = await fetch(`/api/trend-logs/${trendLogId}/entries?timeFilter=${currentTimeFilter}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch trend log data');
       }
-      
+
       const data = await response.json();
-      
+
       if (data.comparison) {
         // If we have a live value and we're in month view, use the live value for current period
         if (currentTimeFilter === 'month' && liveRegisterValue !== null) {
@@ -152,7 +155,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       } else {
         setComparisonData(null);
       }
-      
+
       if (data.monthlyData) {
         setMonthlyData(data.monthlyData);
       } else {
@@ -164,7 +167,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
         console.log('Setting up WebSocket watch for register:', data.trendLog.registerId);
         setupRegisterWatch(data.trendLog.registerId, data.trendLog.analyzerId || 'default');
       }
-      
+
       setError(null);
     } catch (err) {
       console.error('Error fetching trend log data:', err);
@@ -875,6 +878,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
         <select
           value={currentTimeFilter}
           onChange={(e) => setCurrentTimeFilter(e.target.value as any)}
+
           className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="month">Monthly</option>
