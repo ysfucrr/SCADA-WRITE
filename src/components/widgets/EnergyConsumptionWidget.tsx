@@ -206,7 +206,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
   };
 
   // Chart options for column chart
-  const chartOptions: ApexOptions = currentTimeFilter === 'year' && monthlyData ? {
+  const chartOptions: ApexOptions = currentTimeFilter === 'year' && monthlyData ? ({
     // Yearly view with 12 months
     chart: {
       type: 'bar',
@@ -229,10 +229,12 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     plotOptions: {
       bar: {
         columnWidth: '80%',
+        distributed: false,
+        grouped: true,
         dataLabels: {
           position: 'top'
         }
-      }
+      } as any
     },
     dataLabels: {
       enabled: false // Disable for cleaner look with many bars
@@ -286,13 +288,37 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       shared: true,
       intersect: false,
       custom: function({ series, seriesIndex, dataPointIndex, w }) {
-        const previousValue = series[0][dataPointIndex];
-        const currentValue = series[1][dataPointIndex];
+        // Safety check for series data
+        if (!series || series.length === 0) {
+          return '<div class="custom-tooltip">No data available</div>';
+        }
+        
+        // For yearly view, we expect two series
+        if (series.length < 2 || !series[0] || !series[1]) {
+          // Handle case where we only have one series or incomplete data
+          const value = series[0] ? series[0][dataPointIndex] : 0;
+          const monthName = w.globals.labels[dataPointIndex];
+          
+          return '<div class="custom-tooltip">' +
+            '<div class="tooltip-header">' + monthName + '</div>' +
+            '<div class="tooltip-body">' +
+            '<div class="tooltip-row">' +
+            '<span>Value: </span>' +
+            '<strong>' + formatEnergyValue(value, 1) + '</strong>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+        }
+        
+        const previousValue = series[0][dataPointIndex] || 0;
+        const currentValue = series[1][dataPointIndex] || 0;
         const monthName = w.globals.labels[dataPointIndex];
         
         let percentChange = 0;
         if (previousValue && previousValue !== 0) {
           percentChange = ((currentValue - previousValue) / previousValue) * 100;
+        } else if (previousValue === 0 && currentValue > 0) {
+          percentChange = 100;
         }
         
         return '<div class="custom-tooltip">' +
@@ -300,12 +326,12 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
           '<div class="tooltip-body">' +
           '<div class="tooltip-row">' +
           '<span class="tooltip-marker" style="background-color: #90CAF9"></span>' +
-          '<span>All - ' + monthlyData.previousYearLabel + ': </span>' +
+          '<span>All - ' + (monthlyData?.previousYearLabel || 'Previous Year') + ': </span>' +
           '<strong>' + formatEnergyValue(previousValue, 1) + '</strong>' +
           '</div>' +
           '<div class="tooltip-row">' +
           '<span class="tooltip-marker" style="background-color: #FFC107"></span>' +
-          '<span>All - ' + monthlyData.currentYearLabel + ': </span>' +
+          '<span>All - ' + (monthlyData?.currentYearLabel || 'Current Year') + ': </span>' +
           '<strong>' + formatEnergyValue(currentValue, 1) + '</strong>' +
           '</div>' +
           '<div class="tooltip-row">' +
@@ -322,7 +348,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     legend: {
       show: false // Hide ApexCharts legend since we're using custom legend
     }
-  } : {
+  } as ApexOptions) : {
     // Regular view (hour, day, month)
     chart: {
       type: 'bar',
@@ -422,12 +448,12 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
 
   const series = currentTimeFilter === 'year' && monthlyData ? [
     {
-      name: `All - ${monthlyData.previousYearLabel}`,
-      data: monthlyData.previousYear.map(m => m.value)
+      name: `All - ${monthlyData.previousYearLabel || 'Previous Year'}`,
+      data: monthlyData.previousYear ? monthlyData.previousYear.map(m => m?.value || 0) : []
     },
     {
-      name: `All - ${monthlyData.currentYearLabel}`,
-      data: monthlyData.currentYear.map(m => m.value)
+      name: `All - ${monthlyData.currentYearLabel || 'Current Year'}`,
+      data: monthlyData.currentYear ? monthlyData.currentYear.map(m => m?.value || 0) : []
     }
   ] : [{
     name: 'Consumption',
