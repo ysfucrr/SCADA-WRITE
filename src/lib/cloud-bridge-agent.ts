@@ -155,7 +155,8 @@ class CloudBridgeAgent {
               $or: [
                 { operationType: 'insert' },
                 { operationType: 'update' },
-                { operationType: 'replace' }
+                { operationType: 'replace' },
+                { operationType: 'delete' }
               ]
             }
           }
@@ -170,25 +171,81 @@ class CloudBridgeAgent {
       this.settingsChangeStream.on('change', async (change: any) => {
         this.log('Cloud settings changed, processing update...');
         
+        // Delete operasyonu kontrolü
+        if (change.operationType === 'delete') {
+          this.log('Cloud settings deleted from database');
+          
+          // Bağlantı varsa kes
+          if (this.socket && this.socket.connected) {
+            this.log('Disconnecting due to settings deletion');
+            this.socket.disconnect();
+          }
+          
+          // Status'u güncelle
+          this.updateConnectionStatus('disconnected');
+          
+          // URL'i default'a çevir
+          this.BRIDGE_URL = DEFAULT_BRIDGE_URL;
+          this.agentName = '';
+          this.machineId = '';
+          
+          return;
+        }
+        
         // fullDocument change event'in içinde olabilir
         const newSettings = (change as any).fullDocument;
         if (newSettings && newSettings.serverIp) {
-          const newUrl = `https://${newSettings.serverIp}:${newSettings.httpsPort || 443}`;
+          let needsReconnect = false;
           
+          // URL değişikliği kontrolü
+          const newUrl = `https://${newSettings.serverIp}:${newSettings.httpsPort || 443}`;
           if (this.BRIDGE_URL !== newUrl) {
             this.log(`Cloud Bridge URL changed from ${this.BRIDGE_URL} to ${newUrl}`);
             this.BRIDGE_URL = newUrl;
-            
-            // Bağlantı varsa yeniden bağlan
-            if (this.socket && this.socket.connected) {
-              this.log('Reconnecting with new settings...');
-              this.socket.disconnect();
-              // Disconnect event handler otomatik olarak yeniden bağlanmayı tetikleyecek
-            } else if (this.connectionStatus === 'disconnected') {
-              // Bağlı değilse ve yeni ayarlar geldiyse bağlan
-              this.log('New settings received, attempting connection...');
-              await this.connectToBridge();
+            needsReconnect = true;
+          }
+          
+          // Agent name değişikliği kontrolü
+          if (newSettings.agentName && this.agentName !== newSettings.agentName) {
+            this.log(`Agent Name changed from "${this.agentName}" to "${newSettings.agentName}"`);
+            this.agentName = newSettings.agentName;
+            needsReconnect = true;
+          }
+          
+          // Machine ID değişikliği kontrolü
+          if (newSettings.machineId && this.machineId !== newSettings.machineId) {
+            this.log(`Machine ID changed from "${this.machineId}" to "${newSettings.machineId}"`);
+            this.machineId = newSettings.machineId;
+            needsReconnect = true;
+          }
+          
+          // Herhangi bir değişiklik varsa yeniden bağlan
+          if (needsReconnect) {
+            // Önce mevcut bağlantıyı tamamen temizle
+            if (this.socket) {
+              this.log('Settings changed, cleaning up existing connection...');
+              
+              // Reconnect timer'ı iptal et
+              if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+              }
+              
+              // Socket'i tamamen temizle
+              this.socket.removeAllListeners();
+              if (this.socket.connected) {
+                this.socket.disconnect();
+              }
+              this.socket = null;
+              
+              // Biraz bekle ki sunucu tarafı da temizlensin
+              await new Promise(resolve => setTimeout(resolve, 1000));
             }
+            
+            // Şimdi yeni ayarlarla bağlan
+            this.log('Connecting with updated settings...');
+            this.isConnecting = false; // Reset connecting state
+            await this.connectToBridge();
           }
         }
       });
@@ -434,12 +491,6 @@ class CloudBridgeAgent {
           this.log(`Updating Cloud Bridge URL to ${newUrl}`);
           this.BRIDGE_URL = newUrl;
           urlChanged = true;
-          
-          // If we already have a connection and the URL changed, reconnect
-          if (this.socket && this.socket.connected) {
-            this.log('URL changed, reconnecting...');
-            this.socket.disconnect();
-          }
         }
         
         // Check for agent name change
@@ -447,12 +498,6 @@ class CloudBridgeAgent {
           this.log(`Updating Agent Name from "${this.agentName}" to "${settings.agentName}"`);
           this.agentName = settings.agentName;
           agentNameChanged = true;
-          
-          // If agent name changed and we're connected, should reconnect to update identity
-          if (agentNameChanged && this.socket && this.socket.connected) {
-            this.log('Agent name changed, reconnecting to update identity...');
-            this.socket.disconnect();
-          }
         }
         
         // Check for machine ID change
@@ -460,12 +505,6 @@ class CloudBridgeAgent {
           this.log(`Updating Machine ID from "${this.machineId}" to "${settings.machineId}"`);
           this.machineId = settings.machineId;
           machineIdChanged = true;
-          
-          // If machine ID changed and we're connected, should reconnect to update identity
-          if (machineIdChanged && this.socket && this.socket.connected) {
-            this.log('Machine ID changed, reconnecting to update identity...');
-            this.socket.disconnect();
-          }
         }
       } else {
         this.log('No cloud settings found in database, will not attempt connection');
@@ -499,6 +538,14 @@ class CloudBridgeAgent {
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       
+      // Timer tetiklendiğinde önce ayarları kontrol et
+      const { hasSettings } = await this.loadCloudSettings();
+      
+      if (!hasSettings) {
+        this.log('No cloud settings found in database, will not attempt connection');
+        return; // Ayar yoksa reconnect denemesi yapma
+      }
+      
       // Timer tetiklendiğinde tekrar kontrol et - belki bu arada bağlanmıştır
       if (!this.socket?.connected && !this.isConnecting) {
         this.log('Executing scheduled reconnect');
@@ -528,7 +575,7 @@ class CloudBridgeAgent {
   private updateConnectionStatus(status: 'disconnected' | 'connected' | 'connecting'): void {
     // Çok hızlı tekrarlanan durum değişikliklerini önlemek için min bekleme süresi
     const now = Date.now();
-    const minTimeBetweenUpdates = 3000; // 3 saniye
+    const minTimeBetweenUpdates = 1000; // 1 saniye (3 saniyeden düşürüldü)
     
     // Eğer durum 'connecting' ise her zaman güncelle (geçici durum olduğu için)
     if (status === 'connecting') {
@@ -541,6 +588,15 @@ class CloudBridgeAgent {
     
     // Bağlantı veya bağlantı kesme durumları için stabilite kontrolü
     if (this.connectionStatus !== status) {
+      // İlk bağlantı veya disconnected'dan connected'a geçişte hemen güncelle
+      if (this.connectionStatus === 'disconnected' && status === 'connected') {
+        this.connectionStatus = status;
+        this.emitStatusChange();
+        this.log(`Connection status changed to: ${status}`);
+        this.lastStateChangeTime = now;
+        return;
+      }
+      
       // Son değişiklikten sonra min zaman geçmişse hemen değiştir
       if (now - this.lastStateChangeTime >= minTimeBetweenUpdates) {
         this.connectionStatus = status;
@@ -619,7 +675,9 @@ class CloudBridgeAgent {
         transports: ['websocket', 'polling'], // Transport önceliğini belirle
         path: '/socket.io/', // Explicit path belirt
         query: {
-          type: 'agent' // Agent olduğumuzu belirt, sunucu mobile client'tan ayırt edebilsin
+          type: 'agent', // Agent olduğumuzu belirt, sunucu mobile client'tan ayırt edebilsin
+          agentName: this.agentName || `SCADA-${os.hostname()}`,
+          machineId: this.machineId || ''
         }
       });
 
@@ -683,11 +741,13 @@ class CloudBridgeAgent {
         
         // Send identification data with agent name and machine ID
         this.socket?.emit('identify', {
+          type: 'agent', // Explicitly identify as agent
           version: '1.0.0',
           hostname: os.hostname(),
           platform: process.platform,
           agentName: this.agentName || `SCADA-${os.hostname()}`, // Use agent name if available, or fallback to hostname
-          machineId: this.machineId // Include machine ID for persistent identification
+          machineId: this.machineId || '', // Include machine ID for persistent identification
+          timestamp: new Date().toISOString()
         });
         
         // Temiz bir kod için önce eski ping interval'ı temizle
@@ -804,8 +864,17 @@ class CloudBridgeAgent {
           this.pingInterval = null;
         }
         
-        // Sadece kendi reconnect mekanizmamızı kullan
-        this.scheduleReconnect();
+        // Eğer sunucu tarafından disconnect edildiyse ve ayarlar değişmemişse reconnect dene
+        // Ama ayar değişikliği nedeniyle disconnect olduysa reconnect yapma (zaten yeni bağlantı kurulacak)
+        if (reason === 'io server disconnect' && !this.isConnecting) {
+          this.log('Server disconnected us, will attempt reconnect...');
+          this.scheduleReconnect();
+        } else if (reason === 'io client disconnect') {
+          this.log('Client-side disconnect, not scheduling reconnect');
+        } else {
+          this.log(`Disconnect reason: ${reason}, scheduling reconnect...`);
+          this.scheduleReconnect();
+        }
       });
       
       // Connection error
@@ -922,7 +991,15 @@ class CloudBridgeAgent {
     await this.watchSettingsChanges();
     
     // Periyodik bağlantı kontrolü başlat (her 30 saniyede bir)
-    setInterval(() => {
+    setInterval(async () => {
+      // Önce veritabanında ayar var mı kontrol et
+      const { hasSettings } = await this.loadCloudSettings();
+      
+      if (!hasSettings) {
+        // Ayar yoksa hiçbir şey yapma
+        return;
+      }
+      
       if (this.connectionStatus === 'connected' && this.socket) {
         // Bağlı görünüyoruz ama gerçekten bağlı mıyız kontrol et
         if (!this.socket.connected) {

@@ -103,13 +103,9 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    // Ayarlar başarıyla kaydedildikten sonra bağlantıyı yeniden kurma girişimi yap
-    try {
-      await cloudBridgeAgent.reconnect();
-    } catch (reconnectError) {
-      console.warn('Failed to reconnect to Cloud Bridge after settings change:', reconnectError);
-      // Bağlantı hatası durumunda bile ayarlar başarıyla kaydedildi
-    }
+    // MongoDB Change Stream otomatik olarak değişiklikleri algılayıp bağlantı kuracak
+    // Bu yüzden burada manuel reconnect yapmaya gerek yok
+    console.log('Cloud settings saved, MongoDB Change Stream will handle connection automatically');
     
     return NextResponse.json({ success: true, message: 'Cloud settings saved successfully' });
   } catch (error) {

@@ -480,7 +480,8 @@ const CloudSettingsPage = () => {
           serverIp: "",
           httpPort: 4000,
           httpsPort: 443,
-          wsPort: 4000
+          wsPort: 4000,
+          agentName: "" // Bu alan eksikti, undefined oluyordu
         });
         
         // Bağlantı durumunu sıfırla
