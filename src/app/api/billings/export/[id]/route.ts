@@ -98,7 +98,7 @@ export async function GET(request: Request,
     const disclaimer = "Ce montant est basé uniquement sur votre consommation d’énergie active.\nLes frais fixes, les pénalités et les taxes seront ajoutés séparément à votre facture par la Senelec.";
     doc.text(disclaimer, 14, noteY);
     doc.setTextColor(0, 0, 0); // Reset color to black
-    //create index if not exists
+    // Create indexes if not exists for both collections
     const indexExists = await db.collection('trend_log_entries').indexExists('exportedAt_1');
     if (!indexExists) {
       await db.collection('trend_log_entries').createIndex(
@@ -106,25 +106,65 @@ export async function GET(request: Request,
         { expireAfterSeconds: 365 * 24 * 60 * 60 }
       );
     }
+    
+    // Create index for onChange collection as well
+    const onChangeIndexExists = await db.collection('trend_log_entries_onchange').indexExists('exportedAt_1');
+    if (!onChangeIndexExists) {
+      await db.collection('trend_log_entries_onchange').createIndex(
+        { "exportedAt": 1 },
+        { expireAfterSeconds: 365 * 24 * 60 * 60 }
+      );
+    }
 
     // 4. Update Database and Reset Cycle
     for (const updatedLog of updatedTrendLogsForbilling) {
-      // Mark all previous entries for this log as exported
-      await db.collection('trend_log_entries').updateMany(
-        { trendLogId: new ObjectId(updatedLog.id), exported: { $ne: true } },
-        { $set: { exported: true, exportedAt: new Date() } }
-      );
-
-      // Insert the new "first value" entry for the next cycle.
-      // This is the most critical step for resetting the billing period.
-      await db.collection('trend_log_entries').insertOne({
-        trendLogId: new ObjectId(updatedLog.id),
-        value: updatedLog.firstValue, // This is the `currentValue` from the report, now becoming the new `firstValue`
-        timestamp: reportDate,
-        analyzerId: updatedLog.analyzerId,
-        registerId: updatedLog.registerId,
-        exported: false, // Ensure this new entry is part of the next calculation
-      });
+      // First, check which collection this trend log belongs to
+      const trendLogDoc = await db.collection('trendLogs').findOne({ _id: new ObjectId(updatedLog.id) });
+      const isOnChange = trendLogDoc?.period === 'onChange';
+      
+      if (isOnChange) {
+        // For onChange logs, find the latest entry (which has the current value)
+        const latestEntry = await db.collection('trend_log_entries_onchange')
+          .findOne(
+            { trendLogId: new ObjectId(updatedLog.id), exported: { $ne: true } },
+            { sort: { timestamp: -1 } }
+          );
+        
+        if (latestEntry) {
+          // Update all entries EXCEPT the latest one
+          await db.collection('trend_log_entries_onchange').updateMany(
+            {
+              trendLogId: new ObjectId(updatedLog.id),
+              exported: { $ne: true },
+              _id: { $ne: latestEntry._id } // En son kayıt hariç
+            },
+            { $set: { exported: true, exportedAt: new Date() } }
+          );
+          
+          // The latest entry remains with exported: false as the new first value
+        }
+      } else {
+        // For periodic logs, find the latest entry
+        const latestEntry = await db.collection('trend_log_entries')
+          .findOne(
+            { trendLogId: new ObjectId(updatedLog.id), exported: { $ne: true } },
+            { sort: { timestamp: -1 } }
+          );
+        
+        if (latestEntry) {
+          // Update all entries EXCEPT the latest one
+          await db.collection('trend_log_entries').updateMany(
+            {
+              trendLogId: new ObjectId(updatedLog.id),
+              exported: { $ne: true },
+              _id: { $ne: latestEntry._id } // En son kayıt hariç
+            },
+            { $set: { exported: true, exportedAt: new Date() } }
+          );
+          
+          // The latest entry remains with exported: false as the new first value
+        }
+      }
     }
 
     // Finally, update the billing itself to reflect the new state

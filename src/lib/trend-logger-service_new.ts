@@ -441,7 +441,8 @@ class TrendLogger {
             value: value,
             timestamp: now,
             analyzerId: this.analyzerId,
-            registerId: this.registerId
+            registerId: this.registerId,
+            exported: false  // Billing için exported alanı ekle
         };
         
         // Sadece onChange modunda expiresAt ekle

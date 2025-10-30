@@ -54,13 +54,22 @@ export async function PUT(
       }
 
       // Fetch the ilk value from the database
-      const firstValueEntry = await db.collection('trend_log_entries').findOne(
+      // Check both periodic and onChange collections
+      let firstValueEntry = await db.collection('trend_log_entries').findOne(
         { trendLogId: trendLogId },
         { sort: { timestamp: 1 } }
       );
+      
+      // If not found in periodic entries, check onChange entries
+      if (!firstValueEntry) {
+        firstValueEntry = await db.collection('trend_log_entries_onchange').findOne(
+          { trendLogId: trendLogId },
+          { sort: { timestamp: 1 } }
+        );
+      }
 
-       if (!firstValueEntry) {
-         return NextResponse.json({ error: `First value entry not found for Trend Log: ${trendLogRecord.name}.` }, { status: 400 });
+      if (!firstValueEntry) {
+        return NextResponse.json({ error: `First value entry not found for Trend Log: ${trendLogRecord.name}. Please ensure the trend log has recorded at least one value.` }, { status: 400 });
       }
 
       trendLogs.push({
