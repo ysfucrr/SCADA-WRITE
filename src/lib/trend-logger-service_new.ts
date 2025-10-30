@@ -240,9 +240,6 @@ export class TrendLoggerService {
         const trendLogs = await db.collection('trendLogs').find({ status: { $ne: 'stopped' } }).toArray();
         
         const newConfigMap = new Map<string, TrendLogger>();
-        
-        // onChange modundaki logger'lar için son kaydedilen değerleri yükle
-        await this.loadLastStoredValuesForOnChangeLoggers();
 
         for (const trendLog of trendLogs) {
             const registerId = trendLog.registerId;
@@ -278,6 +275,10 @@ export class TrendLoggerService {
             activeTrendLoggers.set(key, value);
         });
 
+        // onChange modundaki logger'lar için son kaydedilen değerleri yükle
+        // Bu artık activeTrendLoggers doldurulduktan SONRA çağrılıyor
+        await this.loadLastStoredValuesForOnChangeLoggers();
+
         // Logger tanımları yüklendi
     }
 
@@ -305,7 +306,6 @@ export class TrendLoggerService {
                 return; // Hiç onChange logger yoksa işlem yapmaya gerek yok
             }
 
-            // Son değerleri yükle
 
             // Her logger için en son değeri al
             for (const logger of onChangeLoggers) {
@@ -325,7 +325,6 @@ export class TrendLoggerService {
                     
                     // Son değeri haritaya kaydet
                     lastStoredValuesPerLogger.set(mapKey, lastValue);
-                    // Son değer yüklendi
                     
                     // Ayrıca Redis'e de kaydet (eğer mevcutsa)
                     if (redisClient.isReady) {
