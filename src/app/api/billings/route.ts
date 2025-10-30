@@ -17,12 +17,24 @@ export async function GET() {
 
     const { db } = await connectToDatabase();
     const billings = await db.collection('billings').find().toArray();
-    const firstValues = await db.collection('trend_log_entries').find({
+    
+    // Get first values from both periodic and onChange collections
+    const periodicFirstValues = await db.collection('trend_log_entries').find({
       $or: [
         { exported: false },
         { exported: { $exists: false } }
       ]
     }).toArray();
+    
+    const onChangeFirstValues = await db.collection('trend_log_entries_onchange').find({
+      $or: [
+        { exported: false },
+        { exported: { $exists: false } }
+      ]
+    }).toArray();
+    
+    // Combine both arrays
+    const firstValues = [...periodicFirstValues, ...onChangeFirstValues];
 
     billings.forEach((billing: any) => {
       billing.trendLogs.forEach((trendLog: any) => {
@@ -94,13 +106,22 @@ export async function POST(request: Request) {
       }
 
       // Fetch the ilk value from the database
-      const firstValueEntry = await db.collection('trend_log_entries').findOne(
+      // Check both periodic and onChange collections
+      let firstValueEntry = await db.collection('trend_log_entries').findOne(
         { trendLogId: trendLogId },
         { sort: { timestamp: 1 } }
       );
       
+      // If not found in periodic entries, check onChange entries
       if (!firstValueEntry) {
-         return NextResponse.json({ error: `First value entry not found for Trend Log: ${trendLogRecord.name}.` }, { status: 400 });
+        firstValueEntry = await db.collection('trend_log_entries_onchange').findOne(
+          { trendLogId: trendLogId },
+          { sort: { timestamp: 1 } }
+        );
+      }
+      
+      if (!firstValueEntry) {
+         return NextResponse.json({ error: `First value entry not found for Trend Log: ${trendLogRecord.name}. Please ensure the trend log has recorded at least one value.` }, { status: 400 });
       }
 
       const trendLog = {
