@@ -211,11 +211,16 @@ export class TrendLoggerService {
                     // Değer aynı değilse
                     const valueChanged = data.value !== lastStoredValue;
                     if (valueChanged) {
-                        // Yüzde eşiği aşıldı mı kontrol et (ya da ilk değer ise)
-                        const thresholdExceeded = trendLogger.hasPercentageThresholdExceeded(data.value, lastStoredValue);
-                        
-                        if (thresholdExceeded) {
+                        // KWH Counter ise doğrudan kaydet, değilse yüzde eşiği kontrolü yap
+                        if (trendLogger.isKWHCounter) {
                             trendLogger.storeRegisterValue(data.value);
+                        } else {
+                            // Yüzde eşiği aşıldı mı kontrol et (ya da ilk değer ise)
+                            const thresholdExceeded = trendLogger.hasPercentageThresholdExceeded(data.value, lastStoredValue);
+                            
+                            if (thresholdExceeded) {
+                                trendLogger.storeRegisterValue(data.value);
+                            }
                         }
                     }
                 } else {
@@ -252,7 +257,8 @@ export class TrendLoggerService {
                 trendLog.interval,
                 trendLog.endDate,
                 trendLog.cleanupPeriod,  // onChange için otomatik temizleme süresi
-                trendLog.percentageThreshold  // onChange için yüzde eşiği
+                trendLog.percentageThreshold,  // onChange için yüzde eşiği
+                trendLog.isKWHCounter  // KWH Counter flag
             );
 
             const existingLogger = activeTrendLoggers.get(mapKey);
@@ -360,8 +366,9 @@ class TrendLogger {
     lastSaveTimestamp: number = 0;
     cleanupPeriod?: number; // Ay cinsinden otomatik temizleme süresi (onChange modunda kullanılır)
     percentageThreshold?: number; // Yüzde eşiği (onChange modunda kullanılır)
+    isKWHCounter?: boolean; // KWH Counter flag
     
-    constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date, cleanupPeriod?: number, percentageThreshold?: number) {
+    constructor(_id: string, registerId: string, analyzerId: string, period: string, interval: number, endDate?: string | Date, cleanupPeriod?: number, percentageThreshold?: number, isKWHCounter?: boolean) {
         this._id = _id;
         this.registerId = registerId;
         this.analyzerId = analyzerId;
@@ -373,6 +380,7 @@ class TrendLogger {
         }
         this.cleanupPeriod = cleanupPeriod;
         this.percentageThreshold = percentageThreshold;
+        this.isKWHCounter = isKWHCounter;
     }
 
     getIntervalMs(): number {

@@ -108,8 +108,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Auto Cleanup Period is required for onChange mode' }, { status: 400 });
     }
 
-    // onChange için percentageThreshold gerekli
-    if (period === 'onChange' && (!percentageThreshold || percentageThreshold < 0.5)) {
+    // onChange için percentageThreshold gerekli - KWH Counter değilse
+    if (period === 'onChange' && !isKWHCounter && (!percentageThreshold || percentageThreshold < 0.5)) {
         return NextResponse.json({ error: 'Percentage Threshold is required for onChange mode and must be at least 0.5%' }, { status: 400 });
     }
     

@@ -245,7 +245,7 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
             byteOrder: selectedRegister.registerInfo.byteOrder,
             scale: selectedRegister.registerInfo.scale,
             cleanupPeriod: period === 'onChange' ? cleanupPeriod : undefined, // onChange ise temizleme süresi ekle
-            percentageThreshold: period === 'onChange' ? parseFloat(percentageThreshold as any) : undefined, // onChange ise yüzde eşiği ekle
+            percentageThreshold: period === 'onChange' && !isKWHCounter ? parseFloat(percentageThreshold as any) : undefined, // onChange ve KWH Counter değilse yüzde eşiği ekle
         });
         setSaving(false);
     };
@@ -416,8 +416,8 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                         </SmallText>
                     </div>
                 )}
-                {/* onChange için percentage threshold seçimi */}
-                {period === "onChange" && (
+                {/* onChange için percentage threshold seçimi - KWH Counter değilse göster */}
+                {period === "onChange" && !isKWHCounter && (
                     <div className="space-y-2">
                         <Label htmlFor="percentageThreshold">Percentage Threshold (%)</Label>
                         <InputField
