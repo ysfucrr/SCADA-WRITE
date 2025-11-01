@@ -1,276 +1,237 @@
-import { connectToDatabase } from '@/lib/mongodb';
 import { NextRequest, NextResponse } from 'next/server';
+import { connectToDatabase } from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
 
-// Mobile app için trend log karşılaştırma endpoint'i
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: trendLogId } = await params;
-    const timeFilter = request.nextUrl.searchParams.get('timeFilter') || 'month';
+    const { id } = await params;
+    const searchParams = request.nextUrl.searchParams;
+    const timeFilter = searchParams.get('timeFilter') || 'month';
 
     const { db } = await connectToDatabase();
 
-    // Trend log'u kontrol et
-    const trendLog = await db.collection('trendLogs').findOne({ 
-      _id: new ObjectId(trendLogId) 
+    // Get trend log details
+    const trendLog = await db.collection('trendLogs').findOne({
+      _id: new ObjectId(id)
     });
 
     if (!trendLog) {
-      return NextResponse.json({ 
-        error: 'Trend log not found',
-        success: false 
+      return NextResponse.json({
+        success: false,
+        error: 'Trend log not found'
       }, { status: 404 });
     }
 
-    // Tarih aralıklarını hesapla
+    const collectionName = trendLog.period === 'onChange' 
+      ? 'trend_log_entries_onchange' 
+      : 'trend_log_entries';
+
     const now = new Date();
-    let startDate = new Date();
-    let previousPeriodStart = new Date();
-    let previousPeriodEnd = new Date();
+    let comparison = null;
+    let monthlyData = null;
 
-    switch (timeFilter) {
-      case 'month':
-        // Bu ay - en son runtime değeri için
-        startDate.setDate(1);
-        startDate.setHours(0, 0, 0, 0);
-        
-        // Önceki ay - maksimum değer için
-        previousPeriodStart.setMonth(now.getMonth() - 1);
-        previousPeriodStart.setDate(1);
-        previousPeriodStart.setHours(0, 0, 0, 0);
-        
-        previousPeriodEnd.setMonth(now.getMonth());
-        previousPeriodEnd.setDate(0); // Önceki ayın son günü
-        previousPeriodEnd.setHours(23, 59, 59, 999);
-        break;
-        
-      case 'year':
-        // Bu yıl
-        startDate.setMonth(0, 1);
-        startDate.setHours(0, 0, 0, 0);
-        
-        // Önceki yıl
-        previousPeriodStart.setFullYear(now.getFullYear() - 1);
-        previousPeriodStart.setMonth(0, 1);
-        previousPeriodStart.setHours(0, 0, 0, 0);
-        
-        previousPeriodEnd.setFullYear(now.getFullYear() - 1);
-        previousPeriodEnd.setMonth(11, 31);
-        previousPeriodEnd.setHours(23, 59, 59, 999);
-        break;
-    }
-
-    // Koleksiyon adını belirle
-    const collectionName = trendLog.period === 'onChange' ? 
-      'trend_log_entries_onchange' : 'trend_log_entries';
-
-    // Güncel dönem verilerini al
-    const currentEntries = await db.collection(collectionName)
-      .find({
-        trendLogId: new ObjectId(trendLogId),
-        timestamp: { $gte: startDate, $lte: now }
-      })
-      .sort({ timestamp: -1 })
-      .limit(1)
-      .toArray();
-
-    // Önceki dönem verilerini al
-    let previousEntries = [];
     if (timeFilter === 'month') {
-      // Aylık için maksimum değeri al
-      previousEntries = await db.collection(collectionName)
-        .find({
-          trendLogId: new ObjectId(trendLogId),
-          timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd }
-        })
-        .sort({ value: -1 }) // Değere göre sıralayarak maksimumu al
-        .limit(1)
-        .toArray();
-    } else {
-      // Yıllık için son değeri al
-      previousEntries = await db.collection(collectionName)
-        .find({
-          trendLogId: new ObjectId(trendLogId),
-          timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd }
-        })
-        .sort({ timestamp: -1 })
-        .limit(1)
-        .toArray();
-    }
+      // Monthly comparison - calculate actual consumption
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      
+      const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-    // Karşılaştırma değerlerini hazırla
-    let currentValue = null;
-    let previousValue = null;
-    let currentTimestamp = null;
-    let previousTimestamp = null;
-    
-    if (currentEntries.length > 0) {
-      currentValue = currentEntries[0].value;
-      currentTimestamp = currentEntries[0].timestamp;
-    } else {
-      currentTimestamp = now;
-    }
-    
-    if (previousEntries.length > 0) {
-      previousValue = previousEntries[0].value;
-      previousTimestamp = previousEntries[0].timestamp;
-    } else {
-      previousTimestamp = previousPeriodStart;
-    }
+      // Get first and last values for current month
+      const currentMonthFirst = await db.collection(collectionName)
+        .findOne(
+          {
+            trendLogId: new ObjectId(id),
+            timestamp: { $gte: currentMonthStart, $lte: currentMonthEnd }
+          },
+          { sort: { timestamp: 1 } }
+        );
 
-    // Yüzde değişimi hesapla
-    let percentageChange = null;
-    if (previousValue !== null && currentValue !== null && previousValue !== 0) {
-      percentageChange = ((currentValue - previousValue) / previousValue) * 100;
-    } else if (previousValue === null && currentValue !== null) {
-      percentageChange = 100;
-    } else if (previousValue !== null && currentValue === null) {
-      percentageChange = -100;
-    }
+      const currentMonthLast = await db.collection(collectionName)
+        .findOne(
+          {
+            trendLogId: new ObjectId(id),
+            timestamp: { $gte: currentMonthStart, $lte: currentMonthEnd }
+          },
+          { sort: { timestamp: -1 } }
+        );
 
-    // Aylık görünüm için runtime değeri al
-    if (timeFilter === 'month' && currentValue === null) {
-      try {
-        const { redisClient } = require('@/lib/redis');
-        if (redisClient && redisClient.isReady) {
-          const registerId = trendLog.registerId;
-          const analyzerId = trendLog.analyzerId || 'default';
-          const cachedValue = await redisClient.get(`trendlog:lastvalue:${registerId}:${analyzerId}`);
-          
-          if (cachedValue) {
-            currentValue = parseFloat(cachedValue);
-            currentTimestamp = now;
-            
-            // Yüzde değişimi yeniden hesapla
-            if (previousValue !== null && previousValue !== 0) {
-              percentageChange = ((currentValue - previousValue) / previousValue) * 100;
-            } else if (previousValue === null) {
-              percentageChange = 100;
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Runtime değeri alınamadı:', error);
+      // Get first and last values for previous month
+      const previousMonthFirst = await db.collection(collectionName)
+        .findOne(
+          {
+            trendLogId: new ObjectId(id),
+            timestamp: { $gte: previousMonthStart, $lte: previousMonthEnd }
+          },
+          { sort: { timestamp: 1 } }
+        );
+
+      const previousMonthLast = await db.collection(collectionName)
+        .findOne(
+          {
+            trendLogId: new ObjectId(id),
+            timestamp: { $gte: previousMonthStart, $lte: previousMonthEnd }
+          },
+          { sort: { timestamp: -1 } }
+        );
+
+      // Calculate consumptions
+      let currentConsumption = 0;
+      let previousConsumption = 0;
+
+      if (currentMonthFirst && currentMonthLast) {
+        currentConsumption = currentMonthLast.value - currentMonthFirst.value;
       }
-    }
 
-    // Yıllık görünüm için aylık verileri hazırla
-    if (timeFilter === 'year') {
-      const currentYear = now.getFullYear();
-      const previousYear = currentYear - 1;
-      
-      // Bu yılın aylık verileri
-      const currentYearMonthly = [];
-      let currentYearTotal = 0;
-      
-      for (let month = 0; month < 12; month++) {
-        const monthStart = new Date(currentYear, month, 1);
-        const monthEnd = new Date(currentYear, month + 1, 0, 23, 59, 59, 999);
-        
-        const monthEntries = await db.collection(collectionName)
-          .find({
-            trendLogId: new ObjectId(trendLogId),
-            timestamp: { $gte: monthStart, $lte: monthEnd }
-          })
-          .sort({ value: -1 }) // En yüksek değeri al
-          .limit(1)
-          .toArray();
-          
-        const monthValue = monthEntries.length > 0 ? monthEntries[0].value : 0;
-        currentYearTotal += monthValue;
-        
-        currentYearMonthly.push({
-          month,
-          value: monthValue,
-          timestamp: monthStart
-        });
+      if (previousMonthFirst && previousMonthLast) {
+        previousConsumption = previousMonthLast.value - previousMonthFirst.value;
       }
-      
-      // Önceki yılın aylık verileri
-      const previousYearMonthly = [];
-      let previousYearTotal = 0;
-      
-      for (let month = 0; month < 12; month++) {
-        const monthStart = new Date(previousYear, month, 1);
-        const monthEnd = new Date(previousYear, month + 1, 0, 23, 59, 59, 999);
-        
-        const monthEntries = await db.collection(collectionName)
-          .find({
-            trendLogId: new ObjectId(trendLogId),
-            timestamp: { $gte: monthStart, $lte: monthEnd }
-          })
-          .sort({ value: -1 }) // En yüksek değeri al
-          .limit(1)
-          .toArray();
-          
-        const monthValue = monthEntries.length > 0 ? monthEntries[0].value : 0;
-        previousYearTotal += monthValue;
-        
-        previousYearMonthly.push({
-          month,
-          value: monthValue,
-          timestamp: monthStart
-        });
-      }
-      
-      // Yıllık yüzde değişimi hesapla
-      let yearlyPercentageChange = null;
-      if (previousYearTotal !== 0) {
-        yearlyPercentageChange = ((currentYearTotal - previousYearTotal) / previousYearTotal) * 100;
-      }
-      
-      return NextResponse.json({
-        success: true,
-        comparison: {
-          previousValue: previousYearTotal,
-          currentValue: currentYearTotal,
-          previousTimestamp,
-          currentTimestamp,
-          percentageChange: yearlyPercentageChange,
-          timeFilter
-        },
-        monthlyData: {
-          currentYear: currentYearMonthly,
-          previousYear: previousYearMonthly,
-          currentYearLabel: currentYear,
-          previousYearLabel: previousYear
-        },
-        trendLog: {
-          id: trendLog._id.toString(),
-          registerId: trendLog.registerId,
-          analyzerId: trendLog.analyzerId,
-          isKWHCounter: trendLog.isKWHCounter
-        }
-      });
-    }
 
-    // Aylık görünüm için yanıt
-    return NextResponse.json({
-      success: true,
-      comparison: {
-        previousValue,
-        currentValue,
-        previousTimestamp,
-        currentTimestamp,
+      // Calculate percentage change
+      let percentageChange = 0;
+      if (previousConsumption > 0) {
+        percentageChange = ((currentConsumption - previousConsumption) / previousConsumption) * 100;
+      } else if (previousConsumption === 0 && currentConsumption > 0) {
+        percentageChange = 100;
+      }
+
+      comparison = {
+        previousValue: previousConsumption,
+        currentValue: currentConsumption,
+        previousTimestamp: previousMonthStart,
+        currentTimestamp: currentMonthStart,
         percentageChange,
         timeFilter
-      },
+      };
+
+    } else if (timeFilter === 'year') {
+      // Yearly comparison - sum of monthly consumptions
+      const currentYear = now.getFullYear();
+      const previousYear = currentYear - 1;
+
+      const currentYearData = [];
+      const previousYearData = [];
+      let currentYearTotal = 0;
+      let previousYearTotal = 0;
+
+      // Calculate monthly consumptions for both years
+      for (let month = 0; month < 12; month++) {
+        // Current year month
+        const currentMonthStart = new Date(currentYear, month, 1);
+        const currentMonthEnd = new Date(currentYear, month + 1, 0, 23, 59, 59, 999);
+
+        const currentFirst = await db.collection(collectionName)
+          .findOne(
+            {
+              trendLogId: new ObjectId(id),
+              timestamp: { $gte: currentMonthStart, $lte: currentMonthEnd }
+            },
+            { sort: { timestamp: 1 } }
+          );
+
+        const currentLast = await db.collection(collectionName)
+          .findOne(
+            {
+              trendLogId: new ObjectId(id),
+              timestamp: { $gte: currentMonthStart, $lte: currentMonthEnd }
+            },
+            { sort: { timestamp: -1 } }
+          );
+
+        let currentMonthConsumption = 0;
+        if (currentFirst && currentLast) {
+          currentMonthConsumption = currentLast.value - currentFirst.value;
+        }
+
+        currentYearData.push({
+          month: month + 1,
+          value: currentMonthConsumption,
+          timestamp: currentMonthStart
+        });
+        currentYearTotal += currentMonthConsumption;
+
+        // Previous year month
+        const previousMonthStart = new Date(previousYear, month, 1);
+        const previousMonthEnd = new Date(previousYear, month + 1, 0, 23, 59, 59, 999);
+
+        const previousFirst = await db.collection(collectionName)
+          .findOne(
+            {
+              trendLogId: new ObjectId(id),
+              timestamp: { $gte: previousMonthStart, $lte: previousMonthEnd }
+            },
+            { sort: { timestamp: 1 } }
+          );
+
+        const previousLast = await db.collection(collectionName)
+          .findOne(
+            {
+              trendLogId: new ObjectId(id),
+              timestamp: { $gte: previousMonthStart, $lte: previousMonthEnd }
+            },
+            { sort: { timestamp: -1 } }
+          );
+
+        let previousMonthConsumption = 0;
+        if (previousFirst && previousLast) {
+          previousMonthConsumption = previousLast.value - previousFirst.value;
+        }
+
+        previousYearData.push({
+          month: month + 1,
+          value: previousMonthConsumption,
+          timestamp: previousMonthStart
+        });
+        previousYearTotal += previousMonthConsumption;
+      }
+
+      // Calculate percentage change
+      let percentageChange = 0;
+      if (previousYearTotal > 0) {
+        percentageChange = ((currentYearTotal - previousYearTotal) / previousYearTotal) * 100;
+      } else if (previousYearTotal === 0 && currentYearTotal > 0) {
+        percentageChange = 100;
+      }
+
+      comparison = {
+        previousValue: previousYearTotal,
+        currentValue: currentYearTotal,
+        previousTimestamp: new Date(previousYear, 0, 1),
+        currentTimestamp: new Date(currentYear, 0, 1),
+        percentageChange,
+        timeFilter
+      };
+
+      monthlyData = {
+        currentYear: currentYearData,
+        previousYear: previousYearData,
+        currentYearLabel: currentYear,
+        previousYearLabel: previousYear
+      };
+    }
+
+    return NextResponse.json({
+      success: true,
+      comparison,
+      monthlyData,
       trendLog: {
-        id: trendLog._id.toString(),
+        _id: trendLog._id,
         registerId: trendLog.registerId,
         analyzerId: trendLog.analyzerId,
-        isKWHCounter: trendLog.isKWHCounter
+        period: trendLog.period,
+        interval: trendLog.interval
       }
     });
 
   } catch (error) {
-    console.error('Mobile trend log comparison hatası:', error);
-    return NextResponse.json({ 
-      error: 'Trend log karşılaştırması alınamadı',
-      success: false 
+    console.error('Error fetching trend log comparison:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to fetch trend log comparison'
     }, { status: 500 });
   }
 }

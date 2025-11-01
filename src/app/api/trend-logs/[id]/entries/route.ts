@@ -67,7 +67,7 @@ export async function GET(
         // This month - to fetch latest runtime value
         startDate.setDate(1);
         startDate.setHours(0, 0, 0, 0);
-        // Previous month - to fetch maximum value
+        // Previous month - full month range
         previousPeriodStart.setMonth(now.getMonth() - 1);
         previousPeriodStart.setDate(1);
         previousPeriodStart.setHours(0, 0, 0, 0);
@@ -109,17 +109,44 @@ export async function GET(
       .limit(1)
       .toArray();
 
-    // For month filter, fetch the maximum value from previous month
-    let previousEntries = [];
+    // For month filter, calculate actual consumption (last value - first value)
+    let previousEntries: any[] = [];
+    let previousMonthConsumption = null;
+    
     if (timeFilter === 'month') {
-      previousEntries = await db.collection(collectionName)
+      // Get first value of previous month
+      const firstValuePreviousMonth = await db.collection(collectionName)
         .find({
           trendLogId: new ObjectId(trendLogId),
           timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd }
         })
-        .sort({ value: -1 }) // Sort by value in descending order to get the maximum value
+        .sort({ timestamp: 1 }) // Sort ascending to get first value
         .limit(1)
         .toArray();
+      
+      // Get last value of previous month
+      const lastValuePreviousMonth = await db.collection(collectionName)
+        .find({
+          trendLogId: new ObjectId(trendLogId),
+          timestamp: { $gte: previousPeriodStart, $lte: previousPeriodEnd }
+        })
+        .sort({ timestamp: -1 }) // Sort descending to get last value
+        .limit(1)
+        .toArray();
+      
+      // Calculate consumption for previous month
+      if (firstValuePreviousMonth.length > 0 && lastValuePreviousMonth.length > 0) {
+        const firstValue = firstValuePreviousMonth[0].value;
+        const lastValue = lastValuePreviousMonth[0].value;
+        previousMonthConsumption = lastValue - firstValue;
+        
+        // For display purposes, we'll use the consumption value
+        previousEntries = [{
+          value: previousMonthConsumption,
+          timestamp: previousPeriodEnd,
+          isConsumption: true
+        }];
+      }
     } else {
       // For other filters, use the original logic
       previousEntries = await db.collection(collectionName)
@@ -137,28 +164,59 @@ export async function GET(
     let previousValue = null;
     let currentTimestamp = null;
     let previousTimestamp = null;
+    let currentMonthConsumption = null;
     
-    if (currentEntries.length > 0) {
-      currentValue = currentEntries[0].value;
-      currentTimestamp = currentEntries[0].timestamp;
-    } else {
-      // If no current value, use current time as timestamp
-      currentTimestamp = now;
-    }
-    
-    if (previousEntries.length > 0) {
-      previousValue = previousEntries[0].value;
-      previousTimestamp = previousEntries[0].timestamp;
-    } else {
-      // If no previous value, use the period start time as timestamp
-      if (timeFilter === 'hour') {
-        previousTimestamp = new Date(now);
-        previousTimestamp.setHours(now.getHours() - 1);
-      } else if (timeFilter === 'day') {
-        previousTimestamp = new Date(now);
-        previousTimestamp.setDate(now.getDate() - 1);
+    // For month filter, calculate current month consumption too
+    if (timeFilter === 'month') {
+      // Get first value of current month
+      const firstValueCurrentMonth = await db.collection(collectionName)
+        .find({
+          trendLogId: new ObjectId(trendLogId),
+          timestamp: { $gte: startDate, $lte: now }
+        })
+        .sort({ timestamp: 1 })
+        .limit(1)
+        .toArray();
+      
+      if (currentEntries.length > 0 && firstValueCurrentMonth.length > 0) {
+        const firstValue = firstValueCurrentMonth[0].value;
+        const lastValue = currentEntries[0].value;
+        currentMonthConsumption = lastValue - firstValue;
+        currentValue = currentMonthConsumption;
+        currentTimestamp = currentEntries[0].timestamp;
       } else {
-        previousTimestamp = previousPeriodStart;
+        currentTimestamp = now;
+      }
+      
+      // Previous value is already set as consumption
+      if (previousEntries.length > 0) {
+        previousValue = previousEntries[0].value;
+        previousTimestamp = previousEntries[0].timestamp;
+      } else {
+        previousTimestamp = previousPeriodEnd;
+      }
+    } else {
+      // For other time filters, use original logic
+      if (currentEntries.length > 0) {
+        currentValue = currentEntries[0].value;
+        currentTimestamp = currentEntries[0].timestamp;
+      } else {
+        currentTimestamp = now;
+      }
+      
+      if (previousEntries.length > 0) {
+        previousValue = previousEntries[0].value;
+        previousTimestamp = previousEntries[0].timestamp;
+      } else {
+        if (timeFilter === 'hour') {
+          previousTimestamp = new Date(now);
+          previousTimestamp.setHours(now.getHours() - 1);
+        } else if (timeFilter === 'day') {
+          previousTimestamp = new Date(now);
+          previousTimestamp.setDate(now.getDate() - 1);
+        } else {
+          previousTimestamp = previousPeriodStart;
+        }
       }
     }
 
@@ -203,60 +261,68 @@ export async function GET(
       }
     }
 
-    // For year filter, get monthly data for both years
+    // For year filter, get monthly consumption data for both years
     if (timeFilter === 'year') {
       const currentYear = now.getFullYear();
       const previousYear = currentYear - 1;
       
-      // Get monthly data for current year
+      // Helper function to calculate monthly consumption
+      const calculateMonthlyConsumption = async (year: number, month: number) => {
+        const monthStart = new Date(year, month, 1);
+        const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+        
+        // Get first value of the month
+        const firstEntry = await db.collection(collectionName)
+          .find({
+            trendLogId: new ObjectId(trendLogId),
+            timestamp: { $gte: monthStart, $lte: monthEnd }
+          })
+          .sort({ timestamp: 1 })
+          .limit(1)
+          .toArray();
+        
+        // Get last value of the month
+        const lastEntry = await db.collection(collectionName)
+          .find({
+            trendLogId: new ObjectId(trendLogId),
+            timestamp: { $gte: monthStart, $lte: monthEnd }
+          })
+          .sort({ timestamp: -1 })
+          .limit(1)
+          .toArray();
+        
+        // Calculate consumption
+        if (firstEntry.length > 0 && lastEntry.length > 0) {
+          return lastEntry[0].value - firstEntry[0].value;
+        }
+        return 0;
+      };
+      
+      // Get monthly consumption data for current year
       const currentYearMonthly = [];
       let currentYearTotal = 0;
       for (let month = 0; month < 12; month++) {
-        const monthStart = new Date(currentYear, month, 1);
-        const monthEnd = new Date(currentYear, month + 1, 0, 23, 59, 59, 999);
-        
-        const monthEntries = await db.collection(collectionName)
-          .find({
-            trendLogId: new ObjectId(trendLogId),
-            timestamp: { $gte: monthStart, $lte: monthEnd }
-          })
-          .sort({ timestamp: -1 })
-          .limit(1)
-          .toArray();
-          
-        const monthValue = monthEntries.length > 0 ? monthEntries[0].value : 0;
-        currentYearTotal += monthValue;
+        const monthConsumption = await calculateMonthlyConsumption(currentYear, month);
+        currentYearTotal += monthConsumption;
         
         currentYearMonthly.push({
           month,
-          value: monthValue,
-          timestamp: monthStart
+          value: monthConsumption,
+          timestamp: new Date(currentYear, month, 1)
         });
       }
       
-      // Get monthly data for previous year
+      // Get monthly consumption data for previous year
       const previousYearMonthly = [];
       let previousYearTotal = 0;
       for (let month = 0; month < 12; month++) {
-        const monthStart = new Date(previousYear, month, 1);
-        const monthEnd = new Date(previousYear, month + 1, 0, 23, 59, 59, 999);
-        
-        const monthEntries = await db.collection(collectionName)
-          .find({
-            trendLogId: new ObjectId(trendLogId),
-            timestamp: { $gte: monthStart, $lte: monthEnd }
-          })
-          .sort({ timestamp: -1 })
-          .limit(1)
-          .toArray();
-          
-        const monthValue = monthEntries.length > 0 ? monthEntries[0].value : 0;
-        previousYearTotal += monthValue;
+        const monthConsumption = await calculateMonthlyConsumption(previousYear, month);
+        previousYearTotal += monthConsumption;
         
         previousYearMonthly.push({
           month,
-          value: monthValue,
-          timestamp: monthStart
+          value: monthConsumption,
+          timestamp: new Date(previousYear, month, 1)
         });
       }
       

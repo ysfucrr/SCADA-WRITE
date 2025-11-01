@@ -190,7 +190,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     }
   };
 
-  // Get period labels - now returns formatted dates
+  // Get period labels - now returns formatted dates with consumption indicator
   const getPeriodLabels = () => {
     if (currentTimeFilter === 'year' && monthlyData) {
       // For yearly view, return month names
@@ -200,8 +200,8 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     if (!comparisonData) return ['', ''];
     
     return [
-      formatDate(comparisonData.previousTimestamp),
-      formatDate(comparisonData.currentTimestamp)
+      `${formatDate(comparisonData.previousTimestamp)} Consumption`,
+      `${formatDate(comparisonData.currentTimestamp)} Consumption`
     ];
   };
 
@@ -326,12 +326,12 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
           '<div class="tooltip-body">' +
           '<div class="tooltip-row">' +
           '<span class="tooltip-marker" style="background-color: #90CAF9"></span>' +
-          '<span>All - ' + (monthlyData?.previousYearLabel || 'Previous Year') + ': </span>' +
+          '<span>' + (monthlyData?.previousYearLabel || 'Previous Year') + ' Consumption: </span>' +
           '<strong>' + formatEnergyValue(previousValue, 1) + '</strong>' +
           '</div>' +
           '<div class="tooltip-row">' +
           '<span class="tooltip-marker" style="background-color: #FFC107"></span>' +
-          '<span>All - ' + (monthlyData?.currentYearLabel || 'Current Year') + ': </span>' +
+          '<span>' + (monthlyData?.currentYearLabel || 'Current Year') + ' Consumption: </span>' +
           '<strong>' + formatEnergyValue(currentValue, 1) + '</strong>' +
           '</div>' +
           '<div class="tooltip-row">' +
@@ -448,11 +448,11 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
 
   const series = currentTimeFilter === 'year' && monthlyData ? [
     {
-      name: `All - ${monthlyData.previousYearLabel || 'Previous Year'}`,
+      name: `${monthlyData.previousYearLabel || 'Previous Year'} Consumption`,
       data: monthlyData.previousYear ? monthlyData.previousYear.map(m => m?.value || 0) : []
     },
     {
-      name: `All - ${monthlyData.currentYearLabel || 'Current Year'}`,
+      name: `${monthlyData.currentYearLabel || 'Current Year'} Consumption`,
       data: monthlyData.currentYear ? monthlyData.currentYear.map(m => m?.value || 0) : []
     }
   ] : [{
@@ -886,15 +886,20 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       >
         <span className="flex-1 text-center">{title}</span>
         
-        {/* Percentage Change Display in Header */}
-        {comparisonData && comparisonData.percentageChange !== null && (
+        {/* Consumption Display in Header */}
+        {comparisonData && comparisonData.currentValue !== null && (
           <div className="flex flex-col items-end text-sm">
             <div className="text-xs text-gray-600 dark:text-gray-400">
-              {currentTimeFilter === 'month' ? 'Monthly' : 'Yearly'} Change
+              {currentTimeFilter === 'month' ? 'Monthly' : 'Yearly'} Consumption
             </div>
-            <div className={`text-base font-bold ${comparisonData.percentageChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-              {comparisonData.percentageChange >= 0 ? '+' : ''}{comparisonData.percentageChange.toFixed(1)}%
+            <div className="text-base font-bold text-blue-600">
+              {formatEnergyValue(comparisonData.currentValue, 1)}
             </div>
+            {comparisonData.percentageChange !== null && (
+              <div className={`text-xs ${comparisonData.percentageChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                {comparisonData.percentageChange >= 0 ? '+' : ''}{comparisonData.percentageChange.toFixed(1)}%
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -917,13 +922,13 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-full bg-[#90CAF9]"></span>
               <span className="text-sm" style={{ color: appearance?.textColor || '#666' }}>
-                All - {monthlyData.previousYearLabel}
+                {monthlyData.previousYearLabel} Consumption
               </span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-full bg-[#FFC107]"></span>
               <span className="text-sm" style={{ color: appearance?.textColor || '#666' }}>
-                All - {monthlyData.currentYearLabel}
+                {monthlyData.currentYearLabel} Consumption
               </span>
             </div>
           </div>
