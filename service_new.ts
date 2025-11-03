@@ -182,6 +182,70 @@ expressApp.get('/express-api/get-register-value', async (req: Request, res: Resp
     }
 });
 
+// System Logs API endpoint - Service'teki BackendLogger'dan logları döndürür
+expressApp.get('/express-api/system-logs', async (req: Request, res: Response) => {
+    try {
+        const { level, source, search, limit } = req.query;
+        const limitNum = limit ? parseInt(limit as string, 10) : 1000;
+        
+        // BackendLogger'dan tüm logları al (service process'indeki instance)
+        const allLogs = backendLogger.getLogs();
+        
+        // Filtreleme uygula
+        let filteredLogs = [...allLogs];
+        
+        // Level filtresi
+        if (level && level !== 'ALL') {
+            filteredLogs = filteredLogs.filter(log => log.level === level);
+        }
+        
+        // Source filtresi
+        if (source) {
+            filteredLogs = filteredLogs.filter(log => 
+                log.source.toLowerCase().includes((source as string).toLowerCase())
+            );
+        }
+        
+        // Search filtresi
+        if (search) {
+            const searchTerm = (search as string).toLowerCase();
+            filteredLogs = filteredLogs.filter(log => 
+                log.message.toLowerCase().includes(searchTerm) || 
+                log.source.toLowerCase().includes(searchTerm) ||
+                (log.details && JSON.stringify(log.details).toLowerCase().includes(searchTerm))
+            );
+        }
+        
+        // En yeni loglar önce gelecek şekilde ters çevir ve limit uygula
+        const reversedLogs = [...filteredLogs].reverse();
+        const limitedLogs = reversedLogs.slice(0, limitNum);
+        
+        res.status(200).json({
+            success: true,
+            total: allLogs.length,
+            filtered: filteredLogs.length,
+            returned: limitedLogs.length,
+            logs: limitedLogs.map(log => ({
+                timestamp: log.timestamp,
+                level: log.level,
+                message: log.message,
+                source: log.source,
+                details: log.details || null,
+            }))
+        });
+    } catch (error) {
+        backendLogger.error('Get system logs API error', 'SystemLogsAPI', { error: (error as Error).message });
+        res.status(500).json({ 
+            error: 'System logs could not be fetched',
+            success: false,
+            logs: [],
+            total: 0,
+            filtered: 0,
+            returned: 0
+        });
+    }
+});
+
 io.on('connection', (socket: Socket) => {
   connections.set(socket.id, socket);
 
