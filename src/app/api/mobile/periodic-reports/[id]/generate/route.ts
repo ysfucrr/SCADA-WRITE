@@ -1,0 +1,452 @@
+import { connectToDatabase } from '@/lib/mongodb';
+import { NextRequest, NextResponse } from 'next/server';
+import { ObjectId } from 'mongodb';
+import { mailService } from '@/lib/mail-service';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as archiver from 'archiver';
+import { Readable } from 'stream';
+
+// Mobile app için periodic report generate endpoint'i
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<any> }
+) {
+  try {
+    const resolvedParams = await params;
+    const id = resolvedParams.id;
+    
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json({ error: 'Invalid report ID format' }, { status: 400 });
+    }
+
+    const { db } = await connectToDatabase();
+    
+    // Fetch the report configuration
+    const report = await db.collection('periodicReports').findOne({ _id: new ObjectId(id) });
+    
+    if (!report) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+    }
+
+    // Fetch trend log data based on the report settings
+    const timeLimit = report.last24HoursOnly ? new Date(Date.now() - 24 * 60 * 60 * 1000) : null;
+    const trendLogIds = report.trendLogs.map((item: any) => item.id);
+    const trendLogEntries = await fetchTrendLogData(db, trendLogIds, timeLimit);
+    
+    if (!trendLogEntries || trendLogEntries.length === 0) {
+      return NextResponse.json({ error: 'No trend log data available for the report' }, { status: 400 });
+    }
+
+    // Fetch trend log details for creating better report labels
+    const trendLogs = await db.collection('trendLogs').find({
+      _id: { $in: trendLogIds.map((id: string) => new ObjectId(id)) }
+    }).toArray();
+    
+    // Fetch analyzer details for better display
+    const analyzerIds = trendLogs.map((log: any) => log.analyzerId).filter(Boolean);
+    const analyzers = await db.collection('analyzers').find({
+      _id: { $in: analyzerIds.map((id: string) => new ObjectId(id)) }
+    }).toArray();
+
+    // Create label map from report.trendLogs
+    const labelMap = new Map<string, string>(report.trendLogs.map((item: any) => [item.id, item.label]));
+
+    // Generate the report content
+    const { reportSubject, reportText, reportHtml, entriesByTrendLog, trendLogMap, analyzerMap } = await generateReportContent(
+      report,
+      trendLogs,
+      trendLogEntries,
+      db,
+      labelMap
+    );
+
+    // Send the report
+    let success = false;
+
+    if (report.format === 'pdf') {
+      // Generate separate PDFs for each trend log
+      const attachments = [];
+      for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
+        const trendLog = trendLogMap.get(trendLogId);
+        if (trendLog) {
+          const customLabel = labelMap.get(trendLogId);
+          const defaultTitle = (() => {
+            const analyzer = analyzerMap.get(trendLog.analyzerId);
+            return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+          })();
+
+          const title = customLabel || defaultTitle;
+          const pdfBuffer = await generateSinglePdfReport(title, entries, "Periodic Report");
+
+          // Create unique filename
+          const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '_');
+          const filename = `Periodic_Report_${safeTitle}.pdf`;
+
+          attachments.push({
+            filename: filename,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          });
+        }
+      }
+
+      let finalAttachments = attachments;
+
+      // If multiple PDFs, create a ZIP file
+      if (attachments.length > 1) {
+        const zipBuffer = await createZipFromBuffers(attachments);
+        finalAttachments = [{
+          filename: `Periodic_Report_${new Date().toISOString().split('T')[0]}.zip`,
+          content: zipBuffer,
+          contentType: 'application/zip'
+        }];
+      }
+
+      // Send attachments
+      const notificationHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+          <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h2 style="color: #2563eb; margin-bottom: 10px;">Periodic Report</h2>
+            <p style="color: #374151; font-size: 16px; line-height: 1.5;">
+              Please find the attached ${attachments.length > 1 ? 'ZIP file containing PDF reports' : 'PDF report'} generated on ${new Date().toLocaleDateString()}.
+            </p>
+            <div style="margin-top: 20px; padding: 15px; background-color: #e0f2fe; border-left: 4px solid #2563eb; border-radius: 4px;">
+              <p style="margin: 0; color: #1e40af; font-weight: bold;">Report Details:</p>
+              <ul style="margin: 10px 0 0 20px; color: #374151;">
+                <li>Generated: ${new Date().toLocaleString()}</li>
+                <li>Format: ${attachments.length > 1 ? 'ZIP (Multiple PDFs)' : 'PDF'}</li>
+                <li>Number of reports: ${attachments.length}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      `;
+
+      success = await mailService.sendMail(
+        reportSubject,
+        `Please find the attached ${attachments.length > 1 ? 'ZIP file with PDF reports' : 'PDF report'}.`,
+        notificationHtml,
+        3,
+        finalAttachments
+      );
+    }
+
+    if (!success) {
+      return NextResponse.json({ error: 'Failed to send the report email' }, { status: 500 });
+    }
+
+    // Update the lastSent timestamp
+    await db.collection('periodicReports').updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          lastSent: new Date(),
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Report generated and sent successfully'
+    });
+  } catch (error) {
+    console.error('Mobile periodic report generate error:', error);
+    return NextResponse.json({ 
+      error: 'Failed to generate and send report',
+      success: false
+    }, { status: 500 });
+  }
+}
+
+// Helper function to fetch trend log data
+async function fetchTrendLogData(db: any, trendLogIds: string[], timeLimit?: Date | null) {
+  try {
+    const objectIds = trendLogIds.map((id: string) => new ObjectId(id));
+
+    const query: any = {
+      trendLogId: { $in: objectIds }
+    };
+
+    if (timeLimit) {
+      query.timestamp = { $gte: timeLimit };
+    }
+
+    const trendLogsInfo = await db.collection('trendLogs').find({
+      _id: { $in: objectIds }
+    }, { projection: { _id: 1, period: 1 }}).toArray();
+
+    const onChangeTrendLogIds = new Set();
+    const regularTrendLogIds = new Set();
+
+    trendLogsInfo.forEach((log: any) => {
+      if (log.period === 'onChange') {
+        onChangeTrendLogIds.add(log._id.toString());
+      } else {
+        regularTrendLogIds.add(log._id.toString());
+      }
+    });
+
+    let allEntries: any[] = [];
+
+    if (regularTrendLogIds.size > 0) {
+      const regularQuery = { ...query };
+      regularQuery.trendLogId = { $in: Array.from(regularTrendLogIds).map(id => new ObjectId(id as string)) };
+      const regularEntries = await db.collection('trend_log_entries')
+        .find(regularQuery)
+        .sort({ timestamp: 1 })
+        .toArray();
+      allEntries = allEntries.concat(regularEntries);
+    }
+
+    if (onChangeTrendLogIds.size > 0) {
+      const onChangeQuery = { ...query };
+      onChangeQuery.trendLogId = { $in: Array.from(onChangeTrendLogIds).map(id => new ObjectId(id as string)) };
+      const onChangeEntries = await db.collection('trend_log_entries_onchange')
+        .find(onChangeQuery)
+        .sort({ timestamp: 1 })
+        .toArray();
+      allEntries = allEntries.concat(onChangeEntries);
+    }
+
+    allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    return allEntries;
+  } catch (error) {
+    console.error('Error fetching trend log data:', error);
+    return [];
+  }
+}
+
+// Helper function to generate report content
+async function generateReportContent(
+  report: any,
+  trendLogs: any[],
+  trendLogEntries: any[],
+  db: any,
+  labelMap: Map<string, string>
+) {
+  const trendLogMap = new Map();
+  for (const log of trendLogs) {
+    trendLogMap.set(log._id.toString(), log);
+  }
+  
+  const analyzerMap = new Map();
+  const analyzerIds = trendLogs.map((log: any) => log.analyzerId).filter(Boolean);
+  
+  if (analyzerIds.length > 0) {
+    const analyzers = await db.collection('analyzers').find({
+      _id: { $in: analyzerIds.map((id: string) => new ObjectId(id)) }
+    }).toArray();
+    
+    for (const analyzer of analyzers) {
+      analyzerMap.set(analyzer._id.toString(), analyzer);
+    }
+  }
+
+  const entriesByTrendLog = new Map();
+  for (const entry of trendLogEntries) {
+    const trendLogId = entry.trendLogId.toString();
+    
+    if (!entriesByTrendLog.has(trendLogId)) {
+      entriesByTrendLog.set(trendLogId, []);
+    }
+    
+    entriesByTrendLog.get(trendLogId).push(entry);
+  }
+
+  const reportSubject = `Periodic Report - ${new Date().toLocaleDateString()}`;
+  let reportText = `Periodic Report\n\nDate: ${new Date().toLocaleDateString()}\n\n`;
+
+  for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
+    const trendLog = trendLogMap.get(trendLogId);
+
+    if (trendLog) {
+      const customLabel = labelMap.get(trendLogId);
+      const defaultTitle = (() => {
+        const analyzer = trendLog.analyzerId ? analyzerMap.get(trendLog.analyzerId) : null;
+        return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+      })();
+
+      const title = customLabel || defaultTitle;
+
+      reportText += `Trend Log: ${title}\n`;
+      reportText += `Entries: ${entries.length}\n\n`;
+
+      for (const entry of entries) {
+        const timestamp = new Date(entry.timestamp).toLocaleString();
+        reportText += `${timestamp} - Value: ${entry.value}\n`;
+      }
+
+      reportText += '\n';
+    }
+  }
+
+  let reportHtml = `
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; }
+        h1 { color: #2563eb; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th { background-color: #e5edff; color: #1e40af; font-weight: bold; text-align: left; padding: 8px; }
+        td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+        .section { margin-bottom: 30px; }
+      </style>
+    </head>
+    <body>
+      <h1>Periodic Report</h1>
+      <p>Date: ${new Date().toLocaleDateString()}</p>
+  `;
+
+  for (const [trendLogId, entries] of entriesByTrendLog.entries()) {
+    const trendLog = trendLogMap.get(trendLogId);
+
+    if (trendLog) {
+      const customLabel = labelMap.get(trendLogId);
+      const defaultTitle = (() => {
+        const analyzer = trendLog.analyzerId ? analyzerMap.get(trendLog.analyzerId) : null;
+        return analyzer ? `${analyzer.name} (Slave: ${analyzer.slaveId || 'N/A'})` : trendLog.registerId;
+      })();
+
+      const title = customLabel || defaultTitle;
+
+      reportHtml += `
+        <div class="section">
+          <h2>Trend Log: ${title}</h2>
+          <p>Entries: ${entries.length}</p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      for (const entry of entries) {
+        const timestamp = new Date(entry.timestamp).toLocaleString();
+        reportHtml += `
+          <tr>
+            <td>${timestamp}</td>
+            <td>${entry.value}</td>
+          </tr>
+        `;
+      }
+
+      reportHtml += `
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+  }
+
+  reportHtml += `
+    </body>
+    </html>
+  `;
+
+  return {
+    reportSubject,
+    reportText,
+    reportHtml,
+    entriesByTrendLog,
+    trendLogMap,
+    analyzerMap
+  };
+}
+
+// Helper function to generate a single PDF report for one trend log
+async function generateSinglePdfReport(title: string, entries: any[], reportName: string): Promise<Buffer> {
+  const doc = new jsPDF();
+  const reportDate = new Date();
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // Header with background
+  doc.setFillColor(102, 126, 234);
+  doc.rect(0, 0, pageWidth, 40, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22);
+  doc.text(reportName, pageWidth / 2, 20, { align: 'center' });
+
+  doc.setFontSize(12);
+  doc.text(`Generated: ${reportDate.toLocaleDateString()}`, pageWidth / 2, 30, { align: 'center' });
+
+  doc.setTextColor(0, 0, 0);
+
+  let startY = 50;
+
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, startY - 5, pageWidth - 28, 15, 'F');
+
+  doc.setFontSize(16);
+  doc.setTextColor(30, 41, 59);
+  doc.text(title, 20, startY + 5);
+
+  startY += 20;
+
+  autoTable(doc, {
+    head: [['Timestamp', 'Value']],
+    body: entries.map(entry => [
+      new Date(entry.timestamp).toLocaleString(),
+      entry.value
+    ]),
+    startY: startY,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [71, 85, 105],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold'
+    },
+    styles: {
+      fontSize: 10,
+      cellPadding: 8
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252]
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Periodic Report - Confidential', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
+  const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+  return pdfBuffer;
+}
+
+// Helper function to create ZIP from buffer attachments
+async function createZipFromBuffers(attachments: any[]): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const archive = archiver.create('zip', {
+      zlib: { level: 9 }
+    });
+
+    const buffers: Buffer[] = [];
+
+    archive.on('data', (chunk: Buffer) => {
+      buffers.push(chunk);
+    });
+
+    archive.on('end', () => {
+      resolve(Buffer.concat(buffers));
+    });
+
+    archive.on('error', reject);
+
+    attachments.forEach((attachment) => {
+      const bufferStream = Readable.from(attachment.content);
+      archive.append(bufferStream, { name: attachment.filename });
+    });
+
+    archive.finalize();
+  });
+}
+
