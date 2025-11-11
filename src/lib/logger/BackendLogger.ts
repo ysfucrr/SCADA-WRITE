@@ -39,7 +39,7 @@ export class BackendLogger {
   private io: Server | Namespace | null = null;
   private logs: LogMessage[] = [];
   // Tutulacak maksimum log sayısı - bellek sızıntısını engellemek için bir üst sınır koyduk
-  private readonly maxLogEntries: number = Number(process.env.BACKEND_LOGGER_MAX_ENTRIES || 5000);
+  private readonly maxLogEntries: number = Number(process.env.BACKEND_LOGGER_MAX_ENTRIES || 1000);
   private consoleOutput = true; // Console çıktısı aktif/pasif
   private logRedirectionCallback: ((log: LogMessage) => void) | null = null;
 
