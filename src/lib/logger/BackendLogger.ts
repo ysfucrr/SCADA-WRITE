@@ -38,7 +38,8 @@ export class BackendLogger {
   private static instance: BackendLogger;
   private io: Server | Namespace | null = null;
   private logs: LogMessage[] = [];
-  // Maksimum log sayısı sınırı kaldırıldı - manuel temizleme ile yönetilecek
+  // Tutulacak maksimum log sayısı - bellek sızıntısını engellemek için bir üst sınır koyduk
+  private readonly maxLogEntries: number = Number(process.env.BACKEND_LOGGER_MAX_ENTRIES || 5000);
   private consoleOutput = true; // Console çıktısı aktif/pasif
   private logRedirectionCallback: ((log: LogMessage) => void) | null = null;
 
@@ -179,7 +180,12 @@ export class BackendLogger {
 
     // Normal durumda logları history'e ekle ve UI'ye gönder
     this.logs.push(logMessage);
-    // Otomatik log silme kaldırıldı - manuel temizleme ile yönetilecek
+
+    // Bellek kullanımını sınırlamak için log geçmişini maks. entries ile sınırla
+    if (this.logs.length > this.maxLogEntries) {
+      const excess = this.logs.length - this.maxLogEntries;
+      this.logs.splice(0, excess);
+    }
 
     // Socket.IO üzerinden yayınla
     if (this.io) {

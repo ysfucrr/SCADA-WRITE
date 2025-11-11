@@ -76,6 +76,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     vertical: undefined,
     horizontal: undefined
   });
+  const watchedRegisterRef = useRef<{ config: any; callback: (value: number) => void } | null>(null);
   
   // Constants for snapping - same as RegisterWidget
   const SNAP_THRESHOLD = 10;
@@ -96,29 +97,54 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
     positionRef.current = position;
   }, [position]);
 
+  const getRegisterKey = (config: any) =>
+    config.dataType === 'boolean' && typeof config.bit === 'number'
+      ? `${config.analyzerId}-${config.address}-bit${config.bit}`
+      : `${config.analyzerId}-${config.address}`;
+
+  const stopWatchingRegister = useCallback(() => {
+    if (watchedRegisterRef.current) {
+      const { config, callback } = watchedRegisterRef.current;
+      console.log('[SocketIO] Cleaning up WebSocket watch for:', getRegisterKey(config));
+      unwatchRegister(config, callback);
+      watchedRegisterRef.current = null;
+    }
+  }, [unwatchRegister]);
+
+  const liveValueUpdateHandler = useCallback((value: number) => {
+    console.log('Live register value updated:', value);
+    setLiveRegisterValue(value);
+  }, []);
+
   // Fetch trend log data - only on initial load and when dependencies change
   useEffect(() => {
     fetchTrendLogData();
     // Removed automatic refresh interval - only update when live values change via WebSocket
-  }, [trendLogId, currentTimeFilter]);
+  }, [trendLogId, currentTimeFilter, stopWatchingRegister]);
 
   // When liveRegisterValue changes, update comparisonData with the new value
   useEffect(() => {
-    if (liveRegisterValue !== null && comparisonData && currentTimeFilter === 'month') {
-      const previousValue = comparisonData.previousValue;
-      let newPercentageChange = 0;
-      
-      if (previousValue !== null && previousValue !== 0) {
-        newPercentageChange = ((liveRegisterValue - previousValue) / previousValue) * 100;
-      } else if (previousValue === 0 || previousValue === null) {
-        newPercentageChange = 100; // 100% increase if there was no previous value
-      }
-      
-      setComparisonData({
-        ...comparisonData,
-        currentValue: liveRegisterValue,
-        currentTimestamp: new Date(),
-        percentageChange: newPercentageChange
+    if (liveRegisterValue !== null && currentTimeFilter === 'month') {
+      setComparisonData((prev) => {
+        if (!prev) {
+          return prev;
+        }
+
+        const previousValue = prev.previousValue;
+        let newPercentageChange = 0;
+
+        if (previousValue !== null && previousValue !== 0) {
+          newPercentageChange = ((liveRegisterValue - previousValue) / previousValue) * 100;
+        } else if (previousValue === 0 || previousValue === null) {
+          newPercentageChange = 100; // 100% increase if there was no previous value
+        }
+
+        return {
+          ...prev,
+          currentValue: liveRegisterValue,
+          currentTimestamp: new Date(),
+          percentageChange: newPercentageChange
+        };
       });
     }
   }, [liveRegisterValue, currentTimeFilter]);
@@ -166,6 +192,8 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       if (data.trendLog && currentTimeFilter === 'month' && data.trendLog.registerId) {
         console.log('Setting up WebSocket watch for register:', data.trendLog.registerId);
         setupRegisterWatch(data.trendLog.registerId, data.trendLog.analyzerId || 'default');
+      } else {
+        stopWatchingRegister();
       }
 
       setError(null);
@@ -757,10 +785,15 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
           };
           
           // Start watching this register
-          watchRegister(watchConfig, (value: number) => {
-            console.log('Live register value updated:', value);
-            setLiveRegisterValue(value);
-          });
+          const existingKey = watchedRegisterRef.current ? getRegisterKey(watchedRegisterRef.current.config) : null;
+          const newKey = getRegisterKey(watchConfig);
+
+          if (existingKey && existingKey !== newKey) {
+            stopWatchingRegister();
+          }
+
+          watchRegister(watchConfig, liveValueUpdateHandler);
+          watchedRegisterRef.current = { config: watchConfig, callback: liveValueUpdateHandler };
         } else {
           console.error('Invalid register data format:', register);
         }
@@ -768,7 +801,7 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       .catch(err => {
         console.error('Error fetching register details:', err);
       });
-  }, [watchRegister]);
+  }, [watchRegister, liveValueUpdateHandler, stopWatchingRegister]);
   
   // Cleanup WebSocket subscription when component unmounts
   useEffect(() => {
@@ -778,9 +811,10 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       // Clean up any WebSocket subscriptions
       if (cleanupRegisterId) {
         console.log('Cleaning up WebSocket subscriptions for:', cleanupRegisterId);
+        stopWatchingRegister();
       }
     };
-  }, [trendLogId]);
+  }, [trendLogId, stopWatchingRegister]);
 
   // Helper function to convert hex to RGB
   const hexToRgb = (hex: string): string => {
