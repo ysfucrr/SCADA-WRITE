@@ -185,14 +185,17 @@ async function fetchTrendLogData(db: any, trendLogIds: string[], timeLimit?: Dat
     // Fetch trend log information to determine which collection to use
     const trendLogsInfo = await db.collection('trendLogs').find({
       _id: { $in: objectIds }
-    }, { projection: { _id: 1, period: 1 }}).toArray();
+    }, { projection: { _id: 1, period: 1, isKWHCounter: 1 }}).toArray();
 
-    // Create maps for onChange and regular trend logs
+    // Create maps for different collection types
     const onChangeTrendLogIds = new Set();
     const regularTrendLogIds = new Set();
+    const kwhTrendLogIds = new Set();
 
     trendLogsInfo.forEach((log: any) => {
-      if (log.period === 'onChange') {
+      if (log.isKWHCounter) {
+        kwhTrendLogIds.add(log._id.toString());
+      } else if (log.period === 'onChange') {
         onChangeTrendLogIds.add(log._id.toString());
       } else {
         regularTrendLogIds.add(log._id.toString());
@@ -201,6 +204,17 @@ async function fetchTrendLogData(db: any, trendLogIds: string[], timeLimit?: Dat
 
     // Prepare array to collect all entries
     let allEntries: any[] = [];
+
+    // Fetch from trend_log_entries_kwh if we have KWH Counter trend logs
+    if (kwhTrendLogIds.size > 0) {
+      const kwhQuery = { ...query };
+      kwhQuery.trendLogId = { $in: Array.from(kwhTrendLogIds).map(id => new ObjectId(id as string)) };
+      const kwhEntries = await db.collection('trend_log_entries_kwh')
+        .find(kwhQuery)
+        .sort({ timestamp: 1 })
+        .toArray();
+      allEntries = allEntries.concat(kwhEntries);
+    }
 
     // Fetch from trend_log_entries if we have regular trend logs
     if (regularTrendLogIds.size > 0) {

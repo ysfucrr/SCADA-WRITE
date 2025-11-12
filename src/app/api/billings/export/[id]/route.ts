@@ -98,7 +98,7 @@ export async function GET(request: Request,
     const disclaimer = "Ce montant est basé uniquement sur votre consommation d’énergie active.\nLes frais fixes, les pénalités et les taxes seront ajoutés séparément à votre facture par la Senelec.";
     doc.text(disclaimer, 14, noteY);
     doc.setTextColor(0, 0, 0); // Reset color to black
-    // Create indexes if not exists for both collections
+    // Create indexes if not exists for all collections
     const indexExists = await db.collection('trend_log_entries').indexExists('exportedAt_1');
     if (!indexExists) {
       await db.collection('trend_log_entries').createIndex(
@@ -115,14 +115,45 @@ export async function GET(request: Request,
         { expireAfterSeconds: 365 * 24 * 60 * 60 }
       );
     }
+    
+    // Create index for KWH collection as well
+    const kwhIndexExists = await db.collection('trend_log_entries_kwh').indexExists('exportedAt_1');
+    if (!kwhIndexExists) {
+      await db.collection('trend_log_entries_kwh').createIndex(
+        { "exportedAt": 1 },
+        { expireAfterSeconds: 365 * 24 * 60 * 60 }
+      );
+    }
 
     // 4. Update Database and Reset Cycle
     for (const updatedLog of updatedTrendLogsForbilling) {
       // First, check which collection this trend log belongs to
       const trendLogDoc = await db.collection('trendLogs').findOne({ _id: new ObjectId(updatedLog.id) });
+      const isKWHCounter = trendLogDoc?.isKWHCounter;
       const isOnChange = trendLogDoc?.period === 'onChange';
       
-      if (isOnChange) {
+      if (isKWHCounter) {
+        // For KWH Counter logs, find the latest entry (which has the current value)
+        const latestEntry = await db.collection('trend_log_entries_kwh')
+          .findOne(
+            { trendLogId: new ObjectId(updatedLog.id), exported: { $ne: true } },
+            { sort: { timestamp: -1 } }
+          );
+        
+        if (latestEntry) {
+          // Update all entries EXCEPT the latest one
+          await db.collection('trend_log_entries_kwh').updateMany(
+            {
+              trendLogId: new ObjectId(updatedLog.id),
+              exported: { $ne: true },
+              _id: { $ne: latestEntry._id } // En son kayıt hariç
+            },
+            { $set: { exported: true, exportedAt: new Date() } }
+          );
+          
+          // The latest entry remains with exported: false as the new first value
+        }
+      } else if (isOnChange) {
         // For onChange logs, find the latest entry (which has the current value)
         const latestEntry = await db.collection('trend_log_entries_onchange')
           .findOne(

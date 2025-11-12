@@ -54,19 +54,17 @@ export async function PUT(
       }
 
       // Fetch the ilk value from the database
-      // Check both periodic and onChange collections
-      let firstValueEntry = await db.collection('trend_log_entries').findOne(
-        { trendLogId: trendLogId },
+      // Billing sadece KWH Counter logları ile ilgilenir, trend_log_entries_kwh koleksiyonundan oku
+      let firstValueEntry = await db.collection('trend_log_entries_kwh').findOne(
+        { 
+          trendLogId: trendLogId,
+          $or: [
+            { exported: false },
+            { exported: { $exists: false } }
+          ]
+        },
         { sort: { timestamp: 1 } }
       );
-      
-      // If not found in periodic entries, check onChange entries
-      if (!firstValueEntry) {
-        firstValueEntry = await db.collection('trend_log_entries_onchange').findOne(
-          { trendLogId: trendLogId },
-          { sort: { timestamp: 1 } }
-        );
-      }
 
       if (!firstValueEntry) {
         return NextResponse.json({ error: `First value entry not found for Trend Log: ${trendLogRecord.name}. Please ensure the trend log has recorded at least one value.` }, { status: 400 });
@@ -134,10 +132,80 @@ export async function DELETE(
     console.log('Session user ID:', session?.user?.id, 'Type:', typeof session?.user?.id);
     console.log('Request ID to delete:', id, 'Type:', typeof id);
     
-    // billing'yu silmesini engelle
     // billing bilgisini veritabanından alalım
     const billingToDelete = await db.collection('billings').findOne({ _id: new ObjectId(id) });
     console.log('billing to delete:', billingToDelete);
+    
+    if (!billingToDelete) {
+      return NextResponse.json({ error: 'billing not found' }, { status: 404 });
+    }
+    
+    // Billing silinmeden önce, exported mantığını uygula (export endpoint'teki gibi)
+    // Bu sayede son değer bir sonraki billing için first value olur
+    if (billingToDelete.trendLogs && billingToDelete.trendLogs.length > 0) {
+      for (const trendLog of billingToDelete.trendLogs) {
+        const trendLogDoc = await db.collection('trendLogs').findOne({ _id: new ObjectId(trendLog.id) });
+        const isKWHCounter = trendLogDoc?.isKWHCounter;
+        const isOnChange = trendLogDoc?.period === 'onChange';
+        
+        if (isKWHCounter) {
+          // For KWH Counter logs, find the latest entry (which has the current value)
+          const latestEntry = await db.collection('trend_log_entries_kwh')
+            .findOne(
+              { trendLogId: new ObjectId(trendLog.id), exported: { $ne: true } },
+              { sort: { timestamp: -1 } }
+            );
+          
+          if (latestEntry) {
+            // Update all entries EXCEPT the latest one
+            await db.collection('trend_log_entries_kwh').updateMany(
+              {
+                trendLogId: new ObjectId(trendLog.id),
+                exported: { $ne: true },
+                _id: { $ne: latestEntry._id } // En son kayıt hariç
+              },
+              { $set: { exported: true, exportedAt: new Date() } }
+            );
+          }
+        } else if (isOnChange) {
+          // For onChange logs, find the latest entry
+          const latestEntry = await db.collection('trend_log_entries_onchange')
+            .findOne(
+              { trendLogId: new ObjectId(trendLog.id), exported: { $ne: true } },
+              { sort: { timestamp: -1 } }
+            );
+          
+          if (latestEntry) {
+            await db.collection('trend_log_entries_onchange').updateMany(
+              {
+                trendLogId: new ObjectId(trendLog.id),
+                exported: { $ne: true },
+                _id: { $ne: latestEntry._id }
+              },
+              { $set: { exported: true, exportedAt: new Date() } }
+            );
+          }
+        } else {
+          // For periodic logs, find the latest entry
+          const latestEntry = await db.collection('trend_log_entries')
+            .findOne(
+              { trendLogId: new ObjectId(trendLog.id), exported: { $ne: true } },
+              { sort: { timestamp: -1 } }
+            );
+          
+          if (latestEntry) {
+            await db.collection('trend_log_entries').updateMany(
+              {
+                trendLogId: new ObjectId(trendLog.id),
+                exported: { $ne: true },
+                _id: { $ne: latestEntry._id }
+              },
+              { $set: { exported: true, exportedAt: new Date() } }
+            );
+          }
+        }
+      }
+    }
     
     const result = await db.collection('billings').deleteOne({ _id: new ObjectId(id) });
     

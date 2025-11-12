@@ -392,8 +392,14 @@ const TrendLogForm: React.FC<TrendLogFormProps> = ({ trendLog, onSubmit, onCance
                         id="is-kwh-counter"
                         checked={isKWHCounter}
                         onChange={setIsKWHCounter}
+                        disabled={trendLog?.isKWHCounter === true} // Eğer mevcut log KWH Counter ise değiştirilemez
                     />
                     <Label htmlFor="is-kwh-counter">Is KWH Counter</Label>
+                    {trendLog?.isKWHCounter === true && (
+                        <SmallText className="text-gray-500 dark:text-gray-400 ml-2">
+                            (KWH Counter logs cannot be changed)
+                        </SmallText>
+                    )}
                 </div>
                 {/* onChange için cleanupPeriod seçimi */}
                 {period === "onChange" && (

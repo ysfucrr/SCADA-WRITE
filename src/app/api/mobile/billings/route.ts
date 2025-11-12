@@ -16,23 +16,16 @@ export async function GET(request: NextRequest) {
       analyzerMap.set(analyzer._id.toString(), analyzer);
     });
     
-    // Get first values from both periodic and onChange collections
-    const periodicFirstValues = await db.collection('trend_log_entries').find({
+    // Get first values from KWH collection (billing sadece KWH Counter logları ile ilgilenir)
+    const kwhFirstValues = await db.collection('trend_log_entries_kwh').find({
       $or: [
         { exported: false },
         { exported: { $exists: false } }
       ]
     }).toArray();
     
-    const onChangeFirstValues = await db.collection('trend_log_entries_onchange').find({
-      $or: [
-        { exported: false },
-        { exported: { $exists: false } }
-      ]
-    }).toArray();
-    
-    // Combine both arrays
-    const firstValues = [...periodicFirstValues, ...onChangeFirstValues];
+    // Billing sadece KWH Counter logları ile ilgilenir
+    const firstValues = kwhFirstValues;
     
     // Billings'leri formatla ve analyzer bilgilerini ekle
     const formattedBillings = billings.map(billing => {

@@ -18,23 +18,16 @@ export async function GET() {
     const { db } = await connectToDatabase();
     const billings = await db.collection('billings').find().toArray();
     
-    // Get first values from both periodic and onChange collections
-    const periodicFirstValues = await db.collection('trend_log_entries').find({
+    // Get first values from KWH collection (billing sadece KWH Counter logları ile ilgilenir)
+    const kwhFirstValues = await db.collection('trend_log_entries_kwh').find({
       $or: [
         { exported: false },
         { exported: { $exists: false } }
       ]
     }).toArray();
     
-    const onChangeFirstValues = await db.collection('trend_log_entries_onchange').find({
-      $or: [
-        { exported: false },
-        { exported: { $exists: false } }
-      ]
-    }).toArray();
-    
-    // Combine both arrays
-    const firstValues = [...periodicFirstValues, ...onChangeFirstValues];
+    // Billing sadece KWH Counter logları ile ilgilenir
+    const firstValues = kwhFirstValues;
 
     billings.forEach((billing: any) => {
       billing.trendLogs.forEach((trendLog: any) => {
@@ -106,19 +99,11 @@ export async function POST(request: Request) {
       }
 
       // Fetch the ilk value from the database
-      // Check both periodic and onChange collections
-      let firstValueEntry = await db.collection('trend_log_entries').findOne(
+      // Billing sadece KWH Counter logları ile ilgilenir, trend_log_entries_kwh koleksiyonundan oku
+      const firstValueEntry = await db.collection('trend_log_entries_kwh').findOne(
         { trendLogId: trendLogId },
         { sort: { timestamp: 1 } }
       );
-      
-      // If not found in periodic entries, check onChange entries
-      if (!firstValueEntry) {
-        firstValueEntry = await db.collection('trend_log_entries_onchange').findOne(
-          { trendLogId: trendLogId },
-          { sort: { timestamp: 1 } }
-        );
-      }
       
       if (!firstValueEntry) {
          return NextResponse.json({ error: `First value entry not found for Trend Log: ${trendLogRecord.name}. Please ensure the trend log has recorded at least one value.` }, { status: 400 });

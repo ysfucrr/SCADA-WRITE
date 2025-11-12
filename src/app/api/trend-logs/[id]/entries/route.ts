@@ -95,9 +95,15 @@ export async function GET(
         previousPeriodEnd.setHours(23, 59, 59, 999);
     }
 
-    // Determine which collection to query based on the trend log period
-    const collectionName = trendLog.period === 'onChange' ? 
-      'trend_log_entries_onchange' : 'trend_log_entries';
+    // Determine which collection to query based on the trend log period and isKWHCounter
+    // Consumption sadece KWH Counter logları ile ilgilenir
+    let collectionName: string;
+    if (trendLog.isKWHCounter) {
+      collectionName = 'trend_log_entries_kwh';
+    } else {
+      collectionName = trendLog.period === 'onChange' ? 
+        'trend_log_entries_onchange' : 'trend_log_entries';
+    }
 
     // Fetch current period entries
     const currentEntries = await db.collection(collectionName)

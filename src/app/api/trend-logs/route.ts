@@ -161,8 +161,14 @@ export async function POST(request: NextRequest) {
     // If we have an initial value, write it to the appropriate collection immediately.
     if (initialValue !== null) {
         // Hangi koleksiyona yazılacağını belirle
-        const collectionName = period === 'onChange' ?
-            'trend_log_entries_onchange' : 'trend_log_entries';
+        // KWH Counter ise öncelikle trend_log_entries_kwh koleksiyonuna yaz
+        let collectionName: string;
+        if (isKWHCounter) {
+            collectionName = 'trend_log_entries_kwh';
+        } else {
+            collectionName = period === 'onChange' ?
+                'trend_log_entries_onchange' : 'trend_log_entries';
+        }
         
         // Entry oluştur
         const entryData: any = {
@@ -170,11 +176,12 @@ export async function POST(request: NextRequest) {
             value: initialValue,
             timestamp: new Date(),
             analyzerId: analyzerId,
-            registerId: registerId
+            registerId: registerId,
+            exported: false  // Billing için exported alanı ekle
         };
         
-        // Sadece onChange modunda expiresAt ekle
-        if (period === 'onChange' && cleanupPeriod) {
+        // Sadece onChange modunda ve KWH Counter değilse expiresAt ekle
+        if (period === 'onChange' && cleanupPeriod && !isKWHCounter) {
             const expiresAt = new Date();
             expiresAt.setMonth(expiresAt.getMonth() + cleanupPeriod);
             entryData.expiresAt = expiresAt;
@@ -182,8 +189,8 @@ export async function POST(request: NextRequest) {
             
         await db.collection(collectionName).insertOne(entryData);
         
-        // onChange modundaysa TTL indeksi varlığını kontrol et
-        if (period === 'onChange' && cleanupPeriod) {
+        // onChange modundaysa ve KWH Counter değilse TTL indeksi varlığını kontrol et
+        if (period === 'onChange' && cleanupPeriod && !isKWHCounter) {
             try {
                 const indexes = await db.collection('trend_log_entries_onchange').listIndexes().toArray();
                 const ttlIndexExists = indexes.some((idx) => idx.name === 'expiresAt_ttl_index');

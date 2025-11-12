@@ -48,9 +48,14 @@ export async function GET(
       }
     }
     
-    // onChange için farklı koleksiyon kullan
-    const collectionName = trendLog.period === 'onChange' ?
-      'trend_log_entries_onchange' : 'trend_log_entries';
+    // Koleksiyon seçimi: KWH Counter ise trend_log_entries_kwh, değilse period'a göre
+    let collectionName: string;
+    if (trendLog.isKWHCounter) {
+      collectionName = 'trend_log_entries_kwh';
+    } else {
+      collectionName = trendLog.period === 'onChange' ?
+        'trend_log_entries_onchange' : 'trend_log_entries';
+    }
     
     // Query builder oluştur
     let query: any = { trendLogId: new ObjectId(id) };

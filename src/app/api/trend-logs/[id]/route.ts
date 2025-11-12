@@ -58,6 +58,103 @@ async function migrateEntriesToOnChange(db: any, entries: any[], cleanupPeriod: 
   }
 }
 
+// Trend log verilerini KWH Counter koleksiyonuna taşıyan yardımcı fonksiyon
+async function migrateEntriesToKWH(db: any, entries: any[], sourceCollection: string): Promise<{migratedCount: number, deletedCount: number}> {
+  if (!entries || entries.length === 0) {
+    return { migratedCount: 0, deletedCount: 0 };
+  }
+
+  try {
+    // Tüm girdileri kopyala (expiresAt varsa kaldır çünkü KWH koleksiyonunda TTL yok)
+    const migratedEntries = entries.map(entry => {
+      const migratedEntry = { ...entry };
+      delete migratedEntry.expiresAt;
+      delete migratedEntry._id; // Yeni _id oluşturulacak
+      return migratedEntry;
+    });
+
+    if (migratedEntries.length === 0) {
+      return { migratedCount: 0, deletedCount: 0 };
+    }
+
+    const trendLogId = entries[0].trendLogId;
+
+    // Toplu ekleme işlemi yap
+    const insertResult = await db.collection('trend_log_entries_kwh').insertMany(migratedEntries);
+    const insertedCount = insertResult.insertedCount || 0;
+
+    let deletedCount = 0;
+    if (insertedCount > 0) {
+      backendLogger.info(`Successfully migrated ${insertedCount} entries to trend_log_entries_kwh, deleting from ${sourceCollection}`, 'TrendLogAPI');
+      
+      const deleteResult = await db.collection(sourceCollection).deleteMany({ trendLogId: trendLogId });
+      deletedCount = deleteResult.deletedCount || 0;
+      
+      backendLogger.info(`Deleted ${deletedCount} entries from ${sourceCollection} collection`, 'TrendLogAPI');
+    }
+
+    return { migratedCount: insertedCount, deletedCount: deletedCount };
+  } catch (error) {
+    backendLogger.error('Error migrating entries to KWH collection', 'TrendLogAPI', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
+}
+
+// Trend log verilerini KWH Counter koleksiyonundan normal koleksiyona taşıyan yardımcı fonksiyon
+async function migrateEntriesFromKWH(db: any, entries: any[], targetCollection: string, period: string, cleanupPeriod?: number): Promise<{migratedCount: number, deletedCount: number}> {
+  if (!entries || entries.length === 0) {
+    return { migratedCount: 0, deletedCount: 0 };
+  }
+
+  try {
+    // Tüm girdileri kopyala
+    const migratedEntries = entries.map(entry => {
+      const migratedEntry = { ...entry };
+      delete migratedEntry._id; // Yeni _id oluşturulacak
+      
+      // Eğer onChange moduna geçiliyorsa expiresAt ekle
+      if (period === 'onChange' && cleanupPeriod) {
+        const expiresAt = new Date();
+        expiresAt.setMonth(expiresAt.getMonth() + cleanupPeriod);
+        migratedEntry.expiresAt = expiresAt;
+      } else {
+        delete migratedEntry.expiresAt;
+      }
+      
+      return migratedEntry;
+    });
+
+    if (migratedEntries.length === 0) {
+      return { migratedCount: 0, deletedCount: 0 };
+    }
+
+    const trendLogId = entries[0].trendLogId;
+
+    // Toplu ekleme işlemi yap
+    const insertResult = await db.collection(targetCollection).insertMany(migratedEntries);
+    const insertedCount = insertResult.insertedCount || 0;
+
+    let deletedCount = 0;
+    if (insertedCount > 0) {
+      backendLogger.info(`Successfully migrated ${insertedCount} entries from trend_log_entries_kwh to ${targetCollection}, deleting from KWH collection`, 'TrendLogAPI');
+      
+      const deleteResult = await db.collection('trend_log_entries_kwh').deleteMany({ trendLogId: trendLogId });
+      deletedCount = deleteResult.deletedCount || 0;
+      
+      backendLogger.info(`Deleted ${deletedCount} entries from trend_log_entries_kwh collection`, 'TrendLogAPI');
+    }
+
+    return { migratedCount: insertedCount, deletedCount: deletedCount };
+  } catch (error) {
+    backendLogger.error('Error migrating entries from KWH collection', 'TrendLogAPI', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
+}
+
 // Trend log verilerini trend_log_entries_onchange'den trend_log_entries koleksiyonuna taşıyan yardımcı fonksiyon
 async function migrateEntriesFromOnChange(db: any, entries: any[]): Promise<{migratedCount: number, deletedCount: number}> {
   if (!entries || entries.length === 0) {
@@ -137,9 +234,14 @@ export async function GET(
       return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
     
-    // onChange için farklı koleksiyon kullan
-    const collectionName = trendLog.period === 'onChange' ?
-      'trend_log_entries_onchange' : 'trend_log_entries';
+    // Koleksiyon seçimi: KWH Counter ise trend_log_entries_kwh, değilse period'a göre
+    let collectionName: string;
+    if (trendLog.isKWHCounter) {
+      collectionName = 'trend_log_entries_kwh';
+    } else {
+      collectionName = trendLog.period === 'onChange' ?
+        'trend_log_entries_onchange' : 'trend_log_entries';
+    }
     
     // Create query builder
     let query = db.collection(collectionName)
@@ -200,9 +302,18 @@ export async function PUT(
         return NextResponse.json({ error: 'Trend log not found' }, { status: 404 });
     }
 
-    // Trend log'un önceki period değerini kontrol et
+    // Trend log'un önceki period ve isKWHCounter değerlerini kontrol et
     const isChangingToOnChange = existingLog.period !== 'onChange' && period === 'onChange';
     const isChangingFromOnChange = existingLog.period === 'onChange' && period !== 'onChange';
+    const isChangingToKWHCounter = !existingLog.isKWHCounter && isKWHCounter;
+    const isChangingFromKWHCounter = existingLog.isKWHCounter && !isKWHCounter;
+    
+    // Eğer mevcut log KWH Counter ise, isKWHCounter değeri değiştirilemez
+    if (existingLog.isKWHCounter && !isKWHCounter) {
+      return NextResponse.json({ 
+        error: 'KWH Counter logları değiştirilemez. isKWHCounter özelliği kaldırılamaz.' 
+      }, { status: 400 });
+    }
     
     // Start building the update operation
     const updateOperation: { $set: any, $unset?: any } = {
@@ -307,6 +418,99 @@ export async function PUT(
         }
       } catch (migrationError) {
         backendLogger.error(`Error migrating entries from onChange to regular collection for trend log ${id}`, 'TrendLogAPI', {
+          error: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        });
+        dataTransferResult = {
+          error: 'Migration failed but trend log updated successfully',
+          details: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        };
+      }
+    }
+    
+    // Eğer isKWHCounter true olarak değiştirilmişse, mevcut kayıtları KWH koleksiyonuna taşı
+    if (isChangingToKWHCounter) {
+      try {
+        backendLogger.info(`isKWHCounter changed to true for trend log ${id}, migrating existing entries to KWH collection`, 'TrendLogAPI');
+        
+        // Hangi koleksiyondan okuyacağımızı belirle
+        let sourceCollection: string;
+        if (existingLog.period === 'onChange') {
+          sourceCollection = 'trend_log_entries_onchange';
+        } else {
+          sourceCollection = 'trend_log_entries';
+        }
+        
+        const existingEntries = await db.collection(sourceCollection)
+          .find({ trendLogId: new ObjectId(id) })
+          .sort({ timestamp: 1 })
+          .toArray();
+        
+        if (existingEntries.length > 0) {
+          const { migratedCount, deletedCount } = await migrateEntriesToKWH(db, existingEntries, sourceCollection);
+          dataTransferResult = {
+            entriesFound: existingEntries.length,
+            entriesMigrated: migratedCount,
+            entriesDeleted: deletedCount,
+            direction: 'to_kwh'
+          };
+        } else {
+          dataTransferResult = {
+            entriesFound: 0,
+            entriesMigrated: 0,
+            entriesDeleted: 0,
+            direction: 'to_kwh'
+          };
+        }
+      } catch (migrationError) {
+        backendLogger.error(`Error migrating entries to KWH collection for trend log ${id}`, 'TrendLogAPI', {
+          error: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        });
+        dataTransferResult = {
+          error: 'Migration failed but trend log updated successfully',
+          details: migrationError instanceof Error ? migrationError.message : String(migrationError)
+        };
+      }
+    }
+    
+    // Eğer isKWHCounter false olarak değiştirilmişse, KWH koleksiyonundan normal koleksiyona taşı
+    if (isChangingFromKWHCounter) {
+      try {
+        backendLogger.info(`isKWHCounter changed to false for trend log ${id}, migrating existing entries from KWH collection`, 'TrendLogAPI');
+        
+        const existingKWHEntries = await db.collection('trend_log_entries_kwh')
+          .find({ trendLogId: new ObjectId(id) })
+          .sort({ timestamp: 1 })
+          .toArray();
+        
+        if (existingKWHEntries.length > 0) {
+          // Hangi koleksiyona yazacağımızı belirle
+          const targetCollection = period === 'onChange' ? 
+            'trend_log_entries_onchange' : 'trend_log_entries';
+          
+          const { migratedCount, deletedCount } = await migrateEntriesFromKWH(
+            db, 
+            existingKWHEntries, 
+            targetCollection, 
+            period, 
+            period === 'onChange' ? parseInt(cleanupPeriod, 10) : undefined
+          );
+          
+          dataTransferResult = {
+            entriesFound: existingKWHEntries.length,
+            entriesMigrated: migratedCount,
+            entriesDeleted: deletedCount,
+            direction: 'from_kwh'
+          };
+        } else {
+          dataTransferResult = {
+            entriesFound: 0,
+            entriesMigrated: 0,
+            entriesDeleted: 0,
+            direction: 'from_kwh'
+          };
+        }
+      } catch (migrationError) {
+        backendLogger.error(`Error migrating entries from KWH collection for trend log ${id}`, 'TrendLogAPI', {
           error: migrationError instanceof Error ? migrationError.message : String(migrationError)
         });
         dataTransferResult = {
@@ -498,12 +702,13 @@ export async function DELETE(
       backendLogger.error(`Error deleting consumption widgets for trend log ${id}: ${consumptionError}`, 'TrendLogAPI');
     }
 
-    // 6. Son olarak normal ve onChange koleksiyonlarından tüm kayıtları sil
+    // 6. Son olarak tüm koleksiyonlardan kayıtları sil
     const normalEntries = await db.collection('trend_log_entries').deleteMany({ trendLogId: new ObjectId(id) });
     const onChangeEntries = await db.collection('trend_log_entries_onchange').deleteMany({ trendLogId: new ObjectId(id) });
+    const kwhEntries = await db.collection('trend_log_entries_kwh').deleteMany({ trendLogId: new ObjectId(id) });
     
-    const totalDeleted = (normalEntries.deletedCount || 0) + (onChangeEntries.deletedCount || 0);
-    backendLogger.info(`${totalDeleted} trend log entries deleted for trend log ${id}.`, 'TrendLogAPI');
+    const totalDeleted = (normalEntries.deletedCount || 0) + (onChangeEntries.deletedCount || 0) + (kwhEntries.deletedCount || 0);
+    backendLogger.info(`${totalDeleted} trend log entries deleted for trend log ${id} (normal: ${normalEntries.deletedCount}, onChange: ${onChangeEntries.deletedCount}, kwh: ${kwhEntries.deletedCount}).`, 'TrendLogAPI');
     
     return NextResponse.json({
       success: true,

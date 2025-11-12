@@ -68,6 +68,23 @@ export class TrendLoggerService {
                 // Mevcut onChange loglarını migrasyon yap
                 await this.migrateExistingOnChangeTrendLogs();
             }
+            
+            // KWH Counter trend logları için koleksiyon yoksa oluştur
+            if (!collectionNames.includes('trend_log_entries_kwh')) {
+                await db.createCollection('trend_log_entries_kwh', {
+                    storageEngine: {
+                        wiredTiger: {
+                            configString: 'block_compressor=zstd'
+                        }
+                    }
+                });
+                backendLogger.info('Created trend_log_entries_kwh collection with zstd compression', 'TrendLoggerService');
+                
+                // Performans için indeksler oluştur
+                await db.collection('trend_log_entries_kwh').createIndex({ trendLogId: 1, timestamp: -1 });
+                await db.collection('trend_log_entries_kwh').createIndex({ exported: 1 });
+                backendLogger.info('Created indexes on trend_log_entries_kwh collection', 'TrendLoggerService');
+            }
         } catch (error) {
             backendLogger.error('Error ensuring collections exist', 'TrendLoggerService', {
                 error: error instanceof Error ? error.message : String(error)
@@ -309,7 +326,11 @@ export class TrendLoggerService {
 
             // Her logger için en son değeri al
             for (const logger of onChangeLoggers) {
-                const latestEntry = await db.collection('trend_log_entries_onchange')
+                // KWH Counter ise trend_log_entries_kwh koleksiyonundan oku
+                const collectionName = logger.isKWHCounter ? 
+                    'trend_log_entries_kwh' : 'trend_log_entries_onchange';
+                
+                const latestEntry = await db.collection(collectionName)
                     .find({
                         trendLogId: new ObjectId(logger._id),
                         registerId: logger.registerId,
@@ -451,8 +472,14 @@ class TrendLogger {
         }
 
         // Hangi koleksiyona yazılacağını belirle
-        const collectionName = this.period === 'onChange' ?
-            'trend_log_entries_onchange' : 'trend_log_entries';
+        // KWH Counter ise öncelikle trend_log_entries_kwh koleksiyonuna yaz
+        let collectionName: string;
+        if (this.isKWHCounter) {
+            collectionName = 'trend_log_entries_kwh';
+        } else {
+            collectionName = this.period === 'onChange' ?
+                'trend_log_entries_onchange' : 'trend_log_entries';
+        }
 
         // MongoDB'ye kaydet
         try {
