@@ -18,23 +18,71 @@ export async function GET() {
     const { db } = await connectToDatabase();
     const billings = await db.collection('billings').find().toArray();
     
-    // Get first values from KWH collection (billing sadece KWH Counter logları ile ilgilenir)
-    const kwhFirstValues = await db.collection('trend_log_entries_kwh').find({
-      $or: [
-        { exported: false },
-        { exported: { $exists: false } }
-      ]
-    }).toArray();
+    // Collect all unique trend log IDs from all billings
+    const trendLogIds = new Set<string>();
+    billings.forEach((billing: any) => {
+      if (billing.trendLogs && Array.isArray(billing.trendLogs)) {
+        billing.trendLogs.forEach((trendLog: any) => {
+          if (trendLog.id) {
+            trendLogIds.add(trendLog.id);
+          }
+        });
+      }
+    });
     
-    // Billing sadece KWH Counter logları ile ilgilenir
-    const firstValues = kwhFirstValues;
+    // Get first values from KWH collection only for trend logs used in billings
+    // This is much faster than fetching all exported: false entries
+    // Use aggregation pipeline to get first entry for each trend log in a single query
+    const firstValues: any[] = [];
+    if (trendLogIds.size > 0) {
+      const trendLogObjectIds = Array.from(trendLogIds).map(id => new ObjectId(id));
+      
+      // Optimized: Use aggregation to get first exported: false entry for each trend log in one query
+      const firstValuesPipeline = [
+        {
+          $match: {
+            trendLogId: { $in: trendLogObjectIds },
+            $or: [
+              { exported: false },
+              { exported: { $exists: false } }
+            ]
+          }
+        },
+        {
+          $sort: { trendLogId: 1, timestamp: 1 }
+        },
+        {
+          $group: {
+            _id: '$trendLogId',
+            firstValue: { $first: '$value' },
+            firstTimestamp: { $first: '$timestamp' },
+            entry: { $first: '$$ROOT' }
+          }
+        }
+      ];
+      
+      const firstValuesResults = await db.collection('trend_log_entries_kwh')
+        .aggregate(firstValuesPipeline)
+        .toArray();
+      
+      // Map results to include all entry fields
+      firstValuesResults.forEach((result: any) => {
+        firstValues.push({
+          ...result.entry,
+          value: result.firstValue,
+          timestamp: result.firstTimestamp
+        });
+      });
+    }
 
     billings.forEach((billing: any) => {
-      billing.trendLogs.forEach((trendLog: any) => {
-        // Correctly compare the ObjectId from the entry with the string ID from the billing
-        const matchingEntry = firstValues.find(firstValue => firstValue.trendLogId.toString() === trendLog.id);
-        trendLog.firstValue = matchingEntry ? matchingEntry.value : 0;
-      });
+      if (billing.trendLogs && Array.isArray(billing.trendLogs)) {
+        billing.trendLogs.forEach((trendLog: any) => {
+          // Correctly compare the ObjectId from the entry with the string ID from the billing
+          const matchingEntry = firstValues.find(firstValue => firstValue.trendLogId.toString() === trendLog.id);
+          trendLog.firstValue = matchingEntry ? matchingEntry.value : 0;
+        });
+      }
     });
     // ObjectId'leri string'e dönüştür
     const formattedbillings = billings.map(billing => ({
@@ -100,9 +148,16 @@ export async function POST(request: Request) {
 
       // Fetch the ilk value from the database
       // Billing sadece KWH Counter logları ile ilgilenir, trend_log_entries_kwh koleksiyonundan oku
+      // Sadece exported: false olan ilk değeri al
       const firstValueEntry = await db.collection('trend_log_entries_kwh').findOne(
-        { trendLogId: trendLogId },
-        { sort: { timestamp: 1 } }
+        { 
+          trendLogId: trendLogId,
+          $or: [
+            { exported: false },
+            { exported: { $exists: false } }
+          ]
+        },
+        { sort: { timestamp: 1 }, limit: 1 }
       );
       
       if (!firstValueEntry) {

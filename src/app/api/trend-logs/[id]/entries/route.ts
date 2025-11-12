@@ -267,69 +267,86 @@ export async function GET(
       }
     }
 
-    // For year filter, get monthly consumption data for both years
+    // For year filter, get monthly consumption data for both years using optimized aggregation
     if (timeFilter === 'year') {
       const currentYear = now.getFullYear();
       const previousYear = currentYear - 1;
       
-      // Helper function to calculate monthly consumption
-      const calculateMonthlyConsumption = async (year: number, month: number) => {
-        const monthStart = new Date(year, month, 1);
-        const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
-        
-        // Get first value of the month
-        const firstEntry = await db.collection(collectionName)
-          .find({
-            trendLogId: new ObjectId(trendLogId),
-            timestamp: { $gte: monthStart, $lte: monthEnd }
-          })
-          .sort({ timestamp: 1 })
-          .limit(1)
-          .toArray();
-        
-        // Get last value of the month
-        const lastEntry = await db.collection(collectionName)
-          .find({
-            trendLogId: new ObjectId(trendLogId),
-            timestamp: { $gte: monthStart, $lte: monthEnd }
-          })
-          .sort({ timestamp: -1 })
-          .limit(1)
-          .toArray();
-        
-        // Calculate consumption
-        if (firstEntry.length > 0 && lastEntry.length > 0) {
-          return lastEntry[0].value - firstEntry[0].value;
-        }
-        return 0;
-      };
+      // Calculate date ranges for both years
+      const currentYearStart = new Date(currentYear, 0, 1);
+      const currentYearEnd = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+      const previousYearStart = new Date(previousYear, 0, 1);
+      const previousYearEnd = new Date(previousYear, 11, 31, 23, 59, 59, 999);
       
-      // Get monthly consumption data for current year
+      // Optimized aggregation pipeline to get first and last values for each month in both years
+      const aggregationPipeline = [
+        {
+          $match: {
+            trendLogId: new ObjectId(trendLogId),
+            timestamp: {
+              $gte: previousYearStart,
+              $lte: currentYearEnd
+            }
+          }
+        },
+        {
+          $sort: { timestamp: 1 } // Sort by timestamp first for $first and $last to work correctly
+        },
+        {
+          $addFields: {
+            year: { $year: '$timestamp' },
+            month: { $month: '$timestamp' }
+          }
+        },
+        {
+          $group: {
+            _id: { year: '$year', month: '$month' },
+            firstValue: { $first: '$value' },
+            lastValue: { $last: '$value' },
+            firstTimestamp: { $first: '$timestamp' },
+            lastTimestamp: { $last: '$timestamp' }
+          }
+        },
+        {
+          $sort: { '_id.year': 1, '_id.month': 1 }
+        }
+      ];
+      
+      const monthlyData = await db.collection(collectionName).aggregate(aggregationPipeline).toArray();
+      
+      // Process aggregation results
       const currentYearMonthly = [];
+      const previousYearMonthly = [];
       let currentYearTotal = 0;
+      let previousYearTotal = 0;
+      
+      // Initialize all months with 0
       for (let month = 0; month < 12; month++) {
-        const monthConsumption = await calculateMonthlyConsumption(currentYear, month);
-        currentYearTotal += monthConsumption;
-        
         currentYearMonthly.push({
           month,
-          value: monthConsumption,
-          timestamp: new Date(currentYear, month, 1)
+          value: 0,
+          timestamp: new Date(currentYear, month, 1).getTime() // Timestamp as number for optimization
+        });
+        previousYearMonthly.push({
+          month,
+          value: 0,
+          timestamp: new Date(previousYear, month, 1).getTime() // Timestamp as number for optimization
         });
       }
       
-      // Get monthly consumption data for previous year
-      const previousYearMonthly = [];
-      let previousYearTotal = 0;
-      for (let month = 0; month < 12; month++) {
-        const monthConsumption = await calculateMonthlyConsumption(previousYear, month);
-        previousYearTotal += monthConsumption;
+      // Fill in actual consumption values
+      for (const data of monthlyData) {
+        const year = data._id.year;
+        const month = data._id.month - 1; // MongoDB month is 1-12, we need 0-11
+        const consumption = data.lastValue - data.firstValue;
         
-        previousYearMonthly.push({
-          month,
-          value: monthConsumption,
-          timestamp: new Date(previousYear, month, 1)
-        });
+        if (year === currentYear && month >= 0 && month < 12) {
+          currentYearMonthly[month].value = consumption;
+          currentYearTotal += consumption;
+        } else if (year === previousYear && month >= 0 && month < 12) {
+          previousYearMonthly[month].value = consumption;
+          previousYearTotal += consumption;
+        }
       }
       
       // Calculate yearly percentage change based on totals
@@ -338,12 +355,13 @@ export async function GET(
         yearlyPercentageChange = ((currentYearTotal - previousYearTotal) / previousYearTotal) * 100;
       }
       
+      // Optimize response - use numbers for timestamps to reduce JSON size
       return NextResponse.json({
         comparison: {
           previousValue: previousYearTotal,
           currentValue: currentYearTotal,
-          previousTimestamp,
-          currentTimestamp,
+          previousTimestamp: previousTimestamp instanceof Date ? previousTimestamp.getTime() : previousTimestamp,
+          currentTimestamp: currentTimestamp instanceof Date ? currentTimestamp.getTime() : currentTimestamp,
           percentageChange: yearlyPercentageChange,
           timeFilter
         },
@@ -362,12 +380,13 @@ export async function GET(
       });
     }
 
+    // Optimize response - use numbers for timestamps to reduce JSON size
     return NextResponse.json({
       comparison: {
         previousValue,
         currentValue,
-        previousTimestamp,
-        currentTimestamp,
+        previousTimestamp: previousTimestamp instanceof Date ? previousTimestamp.getTime() : previousTimestamp,
+        currentTimestamp: currentTimestamp instanceof Date ? currentTimestamp.getTime() : currentTimestamp,
         percentageChange,
         timeFilter
       },

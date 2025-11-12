@@ -18,10 +18,34 @@ export async function GET() {
       updatedAt: widget.updatedAt ? new Date(widget.updatedAt).toISOString() : null,
     }));
 
+    // Trend log entries ve billing gibi compression bilgisi ekle
+    const originalFormatSize = JSON.stringify(formattedWidgets).length;
+    
+    // Compact format - gereksiz alanları kaldır veya optimize et
+    const compactWidgets = formattedWidgets.map(widget => ({
+      _id: widget._id,
+      t: widget.title, // title -> t
+      tlid: widget.trendLogId, // trendLogId -> tlid
+      s: widget.size, // size -> s
+      a: widget.appearance, // appearance -> a
+      ct: widget.createdAt ? new Date(widget.createdAt).getTime() : null, // createdAt -> ct (timestamp)
+      ut: widget.updatedAt ? new Date(widget.updatedAt).getTime() : null // updatedAt -> ut (timestamp)
+    }));
+    
+    const compactFormatSize = JSON.stringify(compactWidgets).length;
+    const compressionRatio = ((1 - compactFormatSize / originalFormatSize) * 100).toFixed(2);
+    
+    console.log(`[CONSUMPTION-WIDGET] Found ${formattedWidgets.length} widgets`);
+    console.log(`[CONSUMPTION-WIDGET] Original format size: ${(originalFormatSize / 1024).toFixed(2)} KB`);
+    console.log(`[CONSUMPTION-WIDGET] Compact format size: ${(compactFormatSize / 1024).toFixed(2)} KB`);
+    console.log(`[CONSUMPTION-WIDGET] Data format compression: ${compressionRatio}%`);
+    
+    // Compact format kullan (trend log entries ve billing gibi)
     return NextResponse.json({
       success: true,
-      total: formattedWidgets.length,
-      widgets: formattedWidgets,
+      total: compactWidgets.length,
+      widgets: compactWidgets,
+      dataFormat: "compact" // Mobil uygulamanın bu formatı tanıması için
     });
   } catch (error) {
     console.error('Mobile consumption widgets fetch error:', error);

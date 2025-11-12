@@ -220,7 +220,8 @@ export async function GET(
       };
     }
 
-    return NextResponse.json({
+    // Trend log entries ve billing gibi compression bilgisi ekle
+    const responseData = {
       success: true,
       comparison,
       monthlyData,
@@ -231,6 +232,62 @@ export async function GET(
         period: trendLog.period,
         interval: trendLog.interval
       }
+    };
+    
+    const originalFormatSize = JSON.stringify(responseData).length;
+    
+    // Compact format - timestamp'leri number'a çevir ve alan isimlerini kısalt
+    const compactComparison = comparison ? {
+      pv: comparison.previousValue, // previousValue -> pv
+      cv: comparison.currentValue, // currentValue -> cv
+      pt: comparison.previousTimestamp instanceof Date ? comparison.previousTimestamp.getTime() : comparison.previousTimestamp, // previousTimestamp -> pt
+      ct: comparison.currentTimestamp instanceof Date ? comparison.currentTimestamp.getTime() : comparison.currentTimestamp, // currentTimestamp -> ct
+      pc: comparison.percentageChange, // percentageChange -> pc
+      tf: comparison.timeFilter // timeFilter -> tf
+    } : null;
+    
+    const compactMonthlyData = monthlyData ? {
+      cy: monthlyData.currentYear.map((m: any) => ({
+        m: m.month, // month -> m
+        v: m.value, // value -> v
+        t: m.timestamp instanceof Date ? m.timestamp.getTime() : m.timestamp // timestamp -> t
+      })),
+      py: monthlyData.previousYear.map((m: any) => ({
+        m: m.month,
+        v: m.value,
+        t: m.timestamp instanceof Date ? m.timestamp.getTime() : m.timestamp
+      })),
+      cyl: monthlyData.currentYearLabel, // currentYearLabel -> cyl
+      pyl: monthlyData.previousYearLabel // previousYearLabel -> pyl
+    } : null;
+    
+    const compactTrendLog = {
+      _id: trendLog._id,
+      rid: trendLog.registerId, // registerId -> rid
+      aid: trendLog.analyzerId, // analyzerId -> aid
+      p: trendLog.period, // period -> p
+      i: trendLog.interval // interval -> i
+    };
+    
+    const compactResponse = {
+      success: true,
+      c: compactComparison, // comparison -> c
+      md: compactMonthlyData, // monthlyData -> md
+      tl: compactTrendLog // trendLog -> tl
+    };
+    
+    const compactFormatSize = JSON.stringify(compactResponse).length;
+    const compressionRatio = ((1 - compactFormatSize / originalFormatSize) * 100).toFixed(2);
+    
+    console.log(`[TREND-LOG-COMPARISON] ID: ${id}, TimeFilter: ${timeFilter}`);
+    console.log(`[TREND-LOG-COMPARISON] Original format size: ${(originalFormatSize / 1024).toFixed(2)} KB`);
+    console.log(`[TREND-LOG-COMPARISON] Compact format size: ${(compactFormatSize / 1024).toFixed(2)} KB`);
+    console.log(`[TREND-LOG-COMPARISON] Data format compression: ${compressionRatio}%`);
+    
+    // Compact format kullan
+    return NextResponse.json({
+      ...compactResponse,
+      dataFormat: "compact" // Mobil uygulamanın bu formatı tanıması için
     });
 
   } catch (error) {

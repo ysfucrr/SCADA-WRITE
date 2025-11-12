@@ -165,25 +165,52 @@ export const EnergyConsumptionWidget: React.FC<EnergyConsumptionWidgetProps> = (
       const data = await response.json();
 
       if (data.comparison) {
+        // Convert timestamp numbers to Date objects if needed
+        const comparison = {
+          ...data.comparison,
+          previousTimestamp: typeof data.comparison.previousTimestamp === 'number' 
+            ? new Date(data.comparison.previousTimestamp) 
+            : new Date(data.comparison.previousTimestamp),
+          currentTimestamp: typeof data.comparison.currentTimestamp === 'number' 
+            ? new Date(data.comparison.currentTimestamp) 
+            : new Date(data.comparison.currentTimestamp)
+        };
+        
         // If we have a live value and we're in month view, use the live value for current period
         if (currentTimeFilter === 'month' && liveRegisterValue !== null) {
           setComparisonData({
-            ...data.comparison,
+            ...comparison,
             currentValue: liveRegisterValue,
             currentTimestamp: new Date(),
-            percentageChange: data.comparison.previousValue && data.comparison.previousValue !== 0 ?
-              ((liveRegisterValue - data.comparison.previousValue) / data.comparison.previousValue) * 100 :
+            percentageChange: comparison.previousValue && comparison.previousValue !== 0 ?
+              ((liveRegisterValue - comparison.previousValue) / comparison.previousValue) * 100 :
               100
           });
         } else {
-          setComparisonData(data.comparison);
+          setComparisonData(comparison);
         }
       } else {
         setComparisonData(null);
       }
 
       if (data.monthlyData) {
-        setMonthlyData(data.monthlyData);
+        // Convert timestamp numbers to Date objects if needed
+        const monthlyData = {
+          ...data.monthlyData,
+          currentYear: data.monthlyData.currentYear.map((item: any) => ({
+            ...item,
+            timestamp: typeof item.timestamp === 'number' 
+              ? new Date(item.timestamp) 
+              : new Date(item.timestamp)
+          })),
+          previousYear: data.monthlyData.previousYear.map((item: any) => ({
+            ...item,
+            timestamp: typeof item.timestamp === 'number' 
+              ? new Date(item.timestamp) 
+              : new Date(item.timestamp)
+          }))
+        };
+        setMonthlyData(monthlyData);
       } else {
         setMonthlyData(null);
       }
