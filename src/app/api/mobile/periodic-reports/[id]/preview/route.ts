@@ -26,10 +26,17 @@ export async function GET(
 
     // Fetch trend logs data for the specified trend logs
     const trendLogIds = report.trendLogs.map((item: any) => item.id);
+    
+    if (!trendLogIds || trendLogIds.length === 0) {
+      return NextResponse.json({ error: 'No trend logs configured for this report' }, { status: 400 });
+    }
+    
     const trendLogEntries = await fetchTrendLogData(db, trendLogIds);
 
     if (!trendLogEntries || trendLogEntries.length === 0) {
-      return NextResponse.json({ error: 'No trend log data available for the report' }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'No trend log data available for the report. Please ensure that trend logs have collected data in the last 24 hours.' 
+      }, { status: 400 });
     }
 
     // Fetch trend log details for creating better report labels
@@ -104,23 +111,43 @@ async function fetchTrendLogData(db: any, trendLogIds: string[]) {
     const objectIds = trendLogIds.map((id: string) => new ObjectId(id));
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+    // Fetch trend log information to determine which collection to use
     const trendLogsInfo = await db.collection('trendLogs').find({
       _id: { $in: objectIds }
-    }, { projection: { _id: 1, period: 1 }}).toArray();
+    }, { projection: { _id: 1, period: 1, isKWHCounter: 1 }}).toArray();
 
+    // Create maps for different collection types
     const onChangeTrendLogIds = new Set();
     const regularTrendLogIds = new Set();
+    const kwhTrendLogIds = new Set();
 
     trendLogsInfo.forEach((log: any) => {
-      if (log.period === 'onChange') {
+      if (log.isKWHCounter) {
+        kwhTrendLogIds.add(log._id.toString());
+      } else if (log.period === 'onChange') {
         onChangeTrendLogIds.add(log._id.toString());
       } else {
         regularTrendLogIds.add(log._id.toString());
       }
     });
 
+    // Prepare array to collect all entries
     let allEntries: any[] = [];
 
+    // Fetch from trend_log_entries_kwh if we have KWH Counter trend logs
+    if (kwhTrendLogIds.size > 0) {
+      const kwhQuery = {
+        trendLogId: { $in: Array.from(kwhTrendLogIds).map(id => new ObjectId(id as string)) },
+        timestamp: { $gte: twentyFourHoursAgo }
+      };
+      const kwhEntries = await db.collection('trend_log_entries_kwh')
+        .find(kwhQuery)
+        .sort({ timestamp: 1 })
+        .toArray();
+      allEntries = allEntries.concat(kwhEntries);
+    }
+
+    // Fetch from trend_log_entries if we have regular trend logs
     if (regularTrendLogIds.size > 0) {
       const regularQuery = {
         trendLogId: { $in: Array.from(regularTrendLogIds).map(id => new ObjectId(id as string)) },
@@ -133,6 +160,7 @@ async function fetchTrendLogData(db: any, trendLogIds: string[]) {
       allEntries = allEntries.concat(regularEntries);
     }
 
+    // Fetch from trend_log_entries_onchange if we have onChange trend logs
     if (onChangeTrendLogIds.size > 0) {
       const onChangeQuery = {
         trendLogId: { $in: Array.from(onChangeTrendLogIds).map(id => new ObjectId(id as string)) },
@@ -145,6 +173,7 @@ async function fetchTrendLogData(db: any, trendLogIds: string[]) {
       allEntries = allEntries.concat(onChangeEntries);
     }
 
+    // Sort all entries by timestamp
     allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     return allEntries;
