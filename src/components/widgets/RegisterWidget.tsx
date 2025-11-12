@@ -517,7 +517,31 @@ const RegisterValue: React.FC<{
           fontFamily: fontFamily || 'inherit',
           color: fontColor || 'inherit',
         }}>
-          {value !== null ? value.toString() : <span className="text-xs text-gray-500">Loading...</span>}
+          {value !== null ? (() => {
+            // Boolean register kontrolü
+            const isBooleanType = register.dataType?.toUpperCase() === 'BOOL' || 
+                                  register.dataType?.toUpperCase() === 'BOOLEAN';
+            
+            // Boolean değer kontrolü (number, boolean veya string olarak gelebilir)
+            const isBooleanValue = value === 1 || value === 0 || 
+                                   value === true || value === false ||
+                                   value === '1' || value === '0' ||
+                                   value === 'true' || value === 'false';
+            
+            if (isBooleanType || isBooleanValue) {
+              // Boolean değeri ON/OFF'e çevir
+              if (value === 1 || value === true || value === '1' || value === 'true') {
+                return 'ON';
+              } else if (value === 0 || value === false || value === '0' || value === 'false') {
+                return 'OFF';
+              }
+            }
+            
+            // Boolean değilse normal değeri göster
+            return value.toString();
+          })() : (
+            <span className="text-xs text-gray-500">Loading...</span>
+          )}
         </p>
         
         {isActive && (

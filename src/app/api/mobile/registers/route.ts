@@ -107,7 +107,11 @@ export async function GET(request: NextRequest) {
             opacity: node.data.opacity,
             status: 'active', // Building'de varsa aktif kabul et
             position: node.position,
-            style: node.style
+            style: node.style,
+            controlType: node.data.controlType,
+            dropdownOptions: node.data.dropdownOptions,
+            onValue: node.data.onValue,
+            offValue: node.data.offValue
           };
           
           allRegisters.push(register);
@@ -169,7 +173,9 @@ export async function GET(request: NextRequest) {
                   opacity: node.data.opacity,
                   status: 'active',
                   position: node.position,
-                  style: node.style
+                  style: node.style,
+                  controlType: node.data.controlType,
+                  dropdownOptions: node.data.dropdownOptions
                 };
                 
                 allRegisters.push(register);
@@ -258,7 +264,9 @@ export async function GET(request: NextRequest) {
                     opacity: node.data.opacity,
                     status: 'active',
                     position: node.position,
-                    style: node.style
+                    style: node.style,
+                    controlType: node.data.controlType,
+                    dropdownOptions: node.data.dropdownOptions
                   };
                   
                   allRegisters.push(register);
