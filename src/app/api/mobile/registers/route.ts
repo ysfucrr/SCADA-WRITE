@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
             analyzerName: analyzerName, // Analyzer ismini ekle
             address: node.data.address,
             dataType: node.data.dataType,
+            bit: node.data.bit, // Boolean register'lar için bit pozisyonu
             scale: node.data.scale || 1,
             scaleUnit: node.data.scaleUnit || '',
             byteOrder: node.data.byteOrder,
@@ -159,6 +160,7 @@ export async function GET(request: NextRequest) {
                   analyzerName: analyzerName,
                   address: node.data.address,
                   dataType: node.data.dataType,
+                  bit: node.data.bit, // Boolean register'lar için bit pozisyonu
                   scale: node.data.scale || 1,
                   scaleUnit: node.data.scaleUnit || '',
                   byteOrder: node.data.byteOrder,
@@ -250,6 +252,7 @@ export async function GET(request: NextRequest) {
                     analyzerName: analyzerName,
                     address: node.data.address,
                     dataType: node.data.dataType,
+                    bit: node.data.bit, // Boolean register'lar için bit pozisyonu
                     scale: node.data.scale || 1,
                     scaleUnit: node.data.scaleUnit || '',
                     byteOrder: node.data.byteOrder,
